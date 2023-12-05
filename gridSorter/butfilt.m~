@@ -1,0 +1,6 @@
+function filtsig = butfilt(sig):
+Fcp=200;  %cutoff frequency
+order = 2;
+[z,p,k]=butter(order,Fcp/(Fsp/2),'high');
+filsig=filtfilt(z,p,sig);
+end
