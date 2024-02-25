@@ -6,7 +6,7 @@ function [gridObj] = detectedSpikes2TIC(gridObj,varargin)
 %   otherwise in varargin (use 'ticPath' key,value to change this)
 %   NOTICE: changing these variables was not QA-ed, so use with caution
 
-ticPath=[gridObj.sortingDir '\GridSorterDetectedSpikes.mat'];
+ticPath=[gridObj.sortingDir filesep 'GridSorterDetectedSpikes.mat'];
 
 for i=1:2:numel(varargin)
    eval([varargin{i} '=varargin{' num2str(i+1) '};']);

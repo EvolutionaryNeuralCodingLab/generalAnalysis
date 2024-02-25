@@ -18,12 +18,12 @@ if upSamplingFactor~=round(upSamplingFactor) %check that upsampling factor is an
     disp(['upSampling factor was not an integer and was rounded to: ' num2str(upSamplingFactor)]);
 end
 
-gaussianityWindow=obj.detectionGaussianityWindow/1000*obj.dataRecordingObj.samplingFrequency(1);
+gaussianityWindow=round(obj.detectionGaussianityWindow/1000*obj.dataRecordingObj.samplingFrequency(1));
 testSamples=gaussianityWindow*1000;
 
-preSpikeSamples=obj.detectionPreSpikeWindow/1000*obj.dataRecordingObj.samplingFrequency(1); %must be > spikePeakInterval
-postSpikeSamples=obj.detectionPostSpikeWindow/1000*obj.dataRecordingObj.samplingFrequency(1); %must be > spikePeakInterval
-spikeTimeShiftIntervalSamples=obj.detectionSpikeTimeShiftInterval/1000*obj.dataRecordingObj.samplingFrequency(1);
+preSpikeSamples=round(obj.detectionPreSpikeWindow/1000*obj.dataRecordingObj.samplingFrequency(1)); %must be > spikePeakInterval
+postSpikeSamples=round(obj.detectionPostSpikeWindow/1000*obj.dataRecordingObj.samplingFrequency(1)); %must be > spikePeakInterval
+spikeTimeShiftIntervalSamples=round(obj.detectionSpikeTimeShiftInterval/1000*obj.dataRecordingObj.samplingFrequency(1));
 postSpikeSamplesInitial=postSpikeSamples+spikeTimeShiftIntervalSamples;
 
 timeVec=-preSpikeSamples:postSpikeSamplesInitial;
@@ -34,7 +34,7 @@ preSpikeSamplesIntrp=round(preSpikeSamples*upSamplingFactor); %must be > spikePe
 postSpikeSamplesIntrp=round(postSpikeSamples*upSamplingFactor); %must be > spikePeakInterval
 spikeTimeShiftIntervalIntrp=spikeTimeShiftIntervalSamples*upSamplingFactor; %must be > spikePeakInterval
 
-minimumDetectionIntervalSamplesIntrp=obj.detectionMinimumDetectionInterval/1000*obj.dataRecordingObj.samplingFrequency(1)*upSamplingFactor;
+minimumDetectionIntervalSamplesIntrp=round(obj.detectionMinimumDetectionInterval/1000*obj.dataRecordingObj.samplingFrequency(1)*upSamplingFactor);
 peakDetectionSmoothingSamples=round(obj.detectionPeakDetectionSmoothingWindow/1000*obj.dataRecordingObj.samplingFrequency(1)*upSamplingFactor);
 peakSmoothingKernel=fspecial('gaussian', [3*peakDetectionSmoothingSamples 1] ,peakDetectionSmoothingSamples);
 
