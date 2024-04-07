@@ -25,19 +25,36 @@ classdef (Abstract) recAnalysis < handle
         xlsSheet=1;
         startCol=1;
         figResJPG=300;
-        defaultXlsFile='/media/sil2/Data/Lizard/Stellagama/brainStatesSS.xlsx';
+        %defaultXlsFile='/media/sil2/Data/Lizard/Stellagama/brainStatesSS.xlsx';
     end
     
     methods
        
         %% recAnalysis - class constructor
         function [obj]=recAnalysis(xlsFile)
-            if nargin==0 || isempty(xlsFile)
-                obj=obj.getExcelData;
-            elseif nargin==1
-                obj=obj.getExcelData(xlsFile);
+            %check
+            if nargin==1
+                if ischar(xlsFile)
+                    if all(xlsFile(end-3:end)=='xlsx') || all(xlsFile(end-2:end)=='xls')
+                        obj=obj.getExcelData(xlsFile);
+                        obj.excelRecordingDataFileName=xlsFile;
+                    else
+                        error('Input should be a char variable with the excel file name!');
+                    end
+                else
+                    SC=superclasses(xlsFile);
+                    if all(SC{1}=='dataRecording')
+                        obj.currentDataObj=xlsFile;
+                        obj.currentDataDir=xlsFile.recordingDir;
+                        obj.currentPRec=1;
+                        obj.currentPlotFolder=cd;
+                        obj.currentAnalysisFolder=cd;
+                        disp('Notice!!! dataRecording object entered as input instead of an excel file! Functionality of sleep analysis will be partial');
+                    end
+                end
+            else
+                error('No input to recAnalysis or input invalid! recAnalysis requires either an excel file name or a data recording object!');
             end
-            obj.excelRecordingDataFileName=xlsFile;
         end
         %% getFileNames
         function [obj,fileName]=getFileNames(obj,methodName)
@@ -212,15 +229,16 @@ classdef (Abstract) recAnalysis < handle
         %% plotRecordingData
         function plotRecordingData(obj,excelRecordingDataFileName)
             if nargin==1
-                if isempty(obj.excelRecordingDataFileName)
-                    obj.excelRecordingDataFileName=obj.defaultXlsFile;
-                    disp(['setting excel data file to default: ' obj.defaultXlsFile]);
-                end
+                error('No excel recording data in object!')
+                %if isempty(obj.excelRecordingDataFileName)
+                %    obj.excelRecordingDataFileName=obj.defaultXlsFile;
+                %    disp(['setting excel data file to default: ' obj.defaultXlsFile]);
+                %end
             else
                 obj.excelRecordingDataFileName=excelRecordingDataFileName;
+                T = readtable(obj.excelRecordingDataFileName);
+                disp(T);
             end
-            T = readtable(obj.excelRecordingDataFileName);
-            disp(T);
         end
         
         %% convertExcelToNewFormat - required for loading data my Mike that used a different excel file format
@@ -271,69 +289,66 @@ classdef (Abstract) recAnalysis < handle
         
         %% getExcelData
         function [obj]=getExcelData(obj,excelRecordingDataFileName,additionalExcelFieldNames)
-            if nargin==1
-                if isempty(obj.excelRecordingDataFileName)
-                    obj.excelRecordingDataFileName=obj.defaultXlsFile;
-                    disp(['setting excel data file to default: ' obj.defaultXlsFile]);
-                end
-            else
+            if nargin>1
                 obj.excelRecordingDataFileName=excelRecordingDataFileName;
-            end
-            
-            %General rules for formatting excel files:
-            %1) All title names will be extracted as fields, except if they have a 'x_' as a first letters
-            %2) If a line does not contain data, it has to have 1 in the exclude colomn
-            
-            %get data from excel spread sheet
-            
-            if verLessThan('matlab', '9.8')
-                obj.recTable = readtable(obj.excelRecordingDataFileName);
-            else
-                obj.recTable = readtable(obj.excelRecordingDataFileName,'Format','auto');
-            end
-            xlsFieldNames=obj.recTable.Properties.VariableNames;
-            maxRow=size(obj.recTable,1);
-                
-            %get all fields except the ones starting with #
-            obj.relevantFieldsXls=xlsFieldNames;
-            pRelevantFields=cellfun(@(x) x(1)~='x' & x(2)~='_',obj.relevantFieldsXls);
-            obj.relevantFieldsXls=obj.relevantFieldsXls(pRelevantFields);
-            
-            %remove rows that have the exclude field true
-            pExclude=find(strcmp(xlsFieldNames,'Exclude'));
-            nonExludedRows=1:maxRow;
-            if ~isempty(pExclude)
-                if ~iscell(obj.recTable.Exclude)
-                    p2Remove=obj.recTable.Exclude==1;
+
+                %General rules for formatting excel files:
+                %1) All title names will be extracted as fields, except if they have a 'x_' as a first letters
+                %2) If a line does not contain data, it has to have 1 in the exclude colomn
+
+                %get data from excel spread sheet
+
+                if verLessThan('matlab', '9.8')
+                    obj.recTable = readtable(obj.excelRecordingDataFileName);
                 else
-                    p2Remove=cell2mat(obj.recTable.Exclude)==1;
+                    obj.recTable = readtable(obj.excelRecordingDataFileName,'Format','auto');
                 end
-                nonExludedRows(p2Remove)=[];
-            end
-            obj.nTotalRecordings=numel(nonExludedRows);
+                xlsFieldNames=obj.recTable.Properties.VariableNames;
+                maxRow=size(obj.recTable,1);
 
-            %remove all the excluded rows
-            obj.recTable=obj.recTable(nonExludedRows,:);
+                %get all fields except the ones starting with #
+                obj.relevantFieldsXls=xlsFieldNames;
+                pRelevantFields=cellfun(@(x) x(1)~='x' & x(2)~='_',obj.relevantFieldsXls);
+                obj.relevantFieldsXls=obj.relevantFieldsXls(pRelevantFields);
 
-            %check if critical fields for all analysis exist
-            pFolder=find(strcmp(obj.relevantFieldsXls,'folder'));
-            pMEAfiles=find(strcmp(obj.relevantFieldsXls,'MEAfiles'));
-            if isempty(pFolder) || isempty(pMEAfiles)  
-                error('Excel table must at least have the fields: ''folder'' and ''MEAfiles''');
-            elseif ~iscell(obj.recTable.MEAfiles)
-                obj.recTable.MEAfiles=cell(size(obj.recTable.MEAfiles));
-                obj.recTable.MEAfiles=cellfun(@(x) char,obj.recTable.MEAfiles,'UniformOutput',0);
-                %obj.recTable.MEAfiles=cellfun(@(x) isnan(x) 
-            end
-            %{
+                %remove rows that have the exclude field true
+                pExclude=find(strcmp(xlsFieldNames,'Exclude'));
+                nonExludedRows=1:maxRow;
+                if ~isempty(pExclude)
+                    if ~iscell(obj.recTable.Exclude)
+                        p2Remove=obj.recTable.Exclude==1;
+                    else
+                        p2Remove=cell2mat(obj.recTable.Exclude)==1;
+                    end
+                    nonExludedRows(p2Remove)=[];
+                end
+                obj.nTotalRecordings=numel(nonExludedRows);
+
+                %remove all the excluded rows
+                obj.recTable=obj.recTable(nonExludedRows,:);
+
+                %check if critical fields for all analysis exist
+                pFolder=find(strcmp(obj.relevantFieldsXls,'folder'));
+                pMEAfiles=find(strcmp(obj.relevantFieldsXls,'MEAfiles'));
+                if isempty(pFolder) || isempty(pMEAfiles)
+                    error('Excel table must at least have the fields: ''folder'' and ''MEAfiles''');
+                elseif ~iscell(obj.recTable.MEAfiles)
+                    obj.recTable.MEAfiles=cell(size(obj.recTable.MEAfiles));
+                    obj.recTable.MEAfiles=cellfun(@(x) char,obj.recTable.MEAfiles,'UniformOutput',0);
+                    %obj.recTable.MEAfiles=cellfun(@(x) isnan(x)
+                end
+                %{
             if isunix
                 for i=1:numel(obj.recTable.folder)
                     obj.recTable.folder{i}=convertPath2Linux(obj.recTable.folder{i});
                 end
             end
-            %}
-            
-            disp(['Experiment data retrieved from: ' num2str(obj.excelRecordingDataFileName)]);
+                %}
+
+                disp(['Experiment data retrieved from: ' num2str(obj.excelRecordingDataFileName)]);
+            else
+                error('No excel data file in object! Cant extract information');
+            end
         end
         
         

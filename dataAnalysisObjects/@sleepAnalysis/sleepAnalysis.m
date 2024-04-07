@@ -7,7 +7,7 @@ classdef sleepAnalysis < recAnalysis
         %% class constructor
         function obj=sleepAnalysis(xlsFile)
             if nargin==0
-                xlsFile='Y:\brainStates.xlsx';
+                xlsFile=[];
             end
             obj=obj@recAnalysis(xlsFile);
         end
@@ -147,7 +147,9 @@ classdef sleepAnalysis < recAnalysis
             addParameter(parseObj,'kurtosisNoiseThreshold',3,@isnumeric); %Spike detection - the threshold on the kurtosis value that differentiates noise samples from data
             addParameter(parseObj,'eventDetectionThresholdStd',4,@isnumeric);%Spike detection - number of standard deviations above the noise level for event detection
             addParameter(parseObj,'movLongWin',1000*60*30,@isnumeric); %max freq. to examine
-            
+            addParameter(parseObj,'zeroGBias',[472971.375013507,494947.777368294,493554.966062353]'); % the zeroGB accelerometer calibration value
+            addParameter(parseObj,'sensitivity',[34735.1293215227,34954.7241622606,34589.4195371905]'); % the sensitivity accelerometer calibration value
+
             addParameter(parseObj,'movWin',10000,@isnumeric);
             addParameter(parseObj,'movOLWin',9000,@isnumeric);
             addParameter(parseObj,'tStart',0,@isnumeric);
@@ -173,11 +175,13 @@ classdef sleepAnalysis < recAnalysis
                 disp('Error: no reference channel for Delta 2 Beta extraction');
                 return;
             end
-            if ~iscell(accCh)
-                disp('Error: no accelerometer channels provided for movement analysis');
-                return;
-            else
+            if iscell(accCh)
                 accCh=str2num(cell2mat(split(accCh{1},','))); %get accelerometer channel numbers as numerics
+            elseif isnumeric(accCh)
+                %do nothing, everything is fine
+            else
+                disp('Error: no accelerometer channels provided for movement analysis');
+                return;                
             end
             
             %check if analysis was already done done
@@ -190,7 +194,6 @@ classdef sleepAnalysis < recAnalysis
                 end
                 return;
             end
-            obj.getFilters;
             
             %check if accelerometer data is saved in analog channels or in electrode data channels and verify that they exist
             if all(ismember(accCh,obj.currentDataObj.channelNumbers)) && ~all(ismember(accCh,obj.currentDataObj.analogChannelNumbers)) %strcmp(class(obj.currentDataObj),'OERecording')
@@ -221,8 +224,20 @@ classdef sleepAnalysis < recAnalysis
             t_mov_ms=cell(1,nChunks);
             movAll=cell(1,nChunks);
             
+            Fs=obj.currentDataObj.samplingFrequency(1);
+            obj.filt.F=filterData(Fs);
+            obj.filt.F.downSamplingFactor=Fs/250;
+            obj.filt.F=obj.filt.F.designDownSample;
+            obj.filt.F.padding=true;
+            obj.filt.FFs=obj.filt.F.filteredSamplingFrequency;
+
+            obj.filt.FHD=filterData(obj.filt.FFs);
+            obj.filt.FHD.highPassCutoff = 1;
+            obj.filt.FHD=obj.filt.FHD.designHighPass;
+            obj.filt.FHD.padding=true;
+
             if applyNotch
-                obj.filt.FN=filterData(obj.currentDataObj.samplingFrequency(1));
+                obj.filt.FN=filterData(Fs);
                 obj.filt.FN.filterDesign='cheby1';
                 obj.filt.FN.padding=true;
                 obj.filt.FN=obj.filt.FN.designNotch;
@@ -235,29 +250,31 @@ classdef sleepAnalysis < recAnalysis
             for i=1:nChunks
                 fprintf('%d,',i);
                 if readFromAnalogCh
-                    MLong=obj.currentDataObj.getAnalogData(accCh,startTimes(i),movLongWin);
+                    MLong=obj.currentDataObj.getAnalogData(accCh,startTimes(i),min(win,movLongWin));
                 else
-                    MLong=obj.currentDataObj.getData(accCh,startTimes(i),movLongWin);
+                    MLong=obj.currentDataObj.getData(accCh,startTimes(i),min(win,movLongWin));
                 end
                 
                 %plot(squeeze(bsxfun(@minus,MLong,mean(MLong,3)))')
                 if applyNotch
                     MLong=obj.filt.FN.getFilteredData(MLong); %for 50Hz noise
                 end
-                [FMLong,t_ms]=obj.filt.F.getFilteredData(MLong);
+                [FMLong,t_ms]=obj.filt.F.getFilteredData(MLong); %lowpass with decimation
+                FMLong(:) = bsxfun(@rdivide, bsxfun(@minus,FMLong,zeroGBias),sensitivity);
+
+                mag=sqrt((FMLong(1,1,:)).^2+(FMLong(2,1,:)).^2+(FMLong(3,1,:)).^2);
+
+                [yupper,ylower] = envelope(squeeze(mag),envelopWindow,'peak');
+                allAxes=yupper-ylower;
+
                 %plot(squeeze(bsxfun(@minus,FMLong,mean(FMLong,3)))')
                 %y = hilbert(squeeze(FMLong)');
-                
+
                 %envelop should be able to work with matrices but for some reasdon upper and lower get the same value when using matrix
-                [yupper1,ylower1] = envelope(squeeze(FMLong(1,1,:)),envelopWindow,'peak');
-                [yupper2,ylower2] = envelope(squeeze(FMLong(2,1,:)),envelopWindow,'peak');
-                [yupper3,ylower3] = envelope(squeeze(FMLong(3,1,:)),envelopWindow,'peak');
-                %plot(squeeze(FMLong(1,:,:)));hold on;plot(yupper1-ylower1);
-                
-                allAxes=yupper1-ylower1+yupper2-ylower2+yupper3-ylower3;
-                %allAxes2=max([yupper1-ylower1 yupper2-ylower2 yupper3-ylower3],[],2);
-                
-                bufferedEnv=buffer(allAxes,500,0,'nodelay');
+                %plot(squeeze(FMLong(1,:,:)));hold on;plot(yupper-ylower);
+
+                allAxesHighpass = squeeze(obj.filt.FHD.getFilteredData(shiftdim(allAxes,-2)));
+                bufferedEnv=buffer(allAxesHighpass,800,0,'nodelay');
 
                 noiseSamples=bufferedEnv(:,kurtosis(bufferedEnv,0)<kurtosisNoiseThreshold);
                 noiseStd=std(noiseSamples(:));
@@ -2698,7 +2715,7 @@ classdef sleepAnalysis < recAnalysis
                 pTcycleNextMid=pTcycleMid(2:end);
                 pTcycleMid=pTcycleMid(1:end-1);
             else
-                pTcycleNextMid=pTcycleNextMid(2:end);
+                pTcycleNextMid=pTcycleMid(2:end);
                 pTcycleMid=pTcycleMid(1:end-1);
             end
             
@@ -3468,7 +3485,7 @@ classdef sleepAnalysis < recAnalysis
             addParameter(parseObj,'ch',obj.recTable.defaulLFPCh(obj.currentPRec),@isnumeric);
             addParameter(parseObj,'tStart',0,@isnumeric); %ms
             addParameter(parseObj,'win',obj.currentDataObj.recordingDuration_ms,@isnumeric);%ms
-            addParameter(parseObj,'maxPeriodBand',20,@isnumeric); %the frequency band around AC peak to look for it 
+            addParameter(parseObj,'maxPeriodBand',20,@isnumeric); %the frequency band around AC peak to look for it in sec
             addParameter(parseObj,'movOLWin',4000,@isnumeric);
             addParameter(parseObj,'MinPeakProminenceLimit',0.04,@isnumeric);
             addParameter(parseObj,'XCFLagIntialEstimation',500000,@isnumeric);% xcf lag in ms
