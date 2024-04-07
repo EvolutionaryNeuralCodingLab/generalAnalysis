@@ -144,14 +144,15 @@ classdef sleepAnalysis < recAnalysis
             addParameter(parseObj,'ch',obj.recTable.defaulLFPCh(obj.currentPRec),@isnumeric);
             addParameter(parseObj,'accCh',obj.recTable.accelerometerCh(obj.currentPRec),@isnumeric);
             addParameter(parseObj,'envelopWindow',15,@isnumeric); %max freq. to examine
-            addParameter(parseObj,'kurtosisNoiseThreshold',3,@isnumeric); %Spike detection - the threshold on the kurtosis value that differentiates noise samples from data
-            addParameter(parseObj,'eventDetectionThresholdStd',4,@isnumeric);%Spike detection - number of standard deviations above the noise level for event detection
-            addParameter(parseObj,'movLongWin',1000*60*30,@isnumeric); %max freq. to examine
+            addParameter(parseObj,'kurtosisNoiseThreshold',3.25,@isnumeric); %Spike detection - the threshold on the kurtosis value that differentiates noise samples from data
+            addParameter(parseObj,'eventDetectionThresholdStd',3,@isnumeric);%Spike detection - number of standard deviations above the noise level for event detection
+            addParameter(parseObj,'staticDetectionThresholdStd',2,@isnumeric);%Spike detection - number of standard deviations above the noise level for event detection
+            addParameter(parseObj,'movLongWin',1000*60*30,@isnumeric); %for max chunck size
             addParameter(parseObj,'zeroGBias',[472971.375013507,494947.777368294,493554.966062353]'); % the zeroGB accelerometer calibration value
             addParameter(parseObj,'sensitivity',[34735.1293215227,34954.7241622606,34589.4195371905]'); % the sensitivity accelerometer calibration value
 
-            addParameter(parseObj,'movWin',10000,@isnumeric);
-            addParameter(parseObj,'movOLWin',9000,@isnumeric);
+            addParameter(parseObj,'staticWin',1000,@isnumeric);%the duration [ms] for the static filter
+            addParameter(parseObj,'movLongOL',1000,@isnumeric);
             addParameter(parseObj,'tStart',0,@isnumeric);
             addParameter(parseObj,'win',0,@isnumeric); %if 0 uses the whole recording duration
             addParameter(parseObj,'applyNotch',0,@isnumeric);
@@ -208,29 +209,33 @@ classdef sleepAnalysis < recAnalysis
                 end
             end
             
-            movWinSamples=movWin/1000*obj.filt.FFs;%obj.filt.FFs in Hz, movWin in samples
-            movOLWinSamples=movOLWin/1000*obj.filt.FFs;
-            timeBin=(movWin-movOLWin); %ms
-            
             if win==0
                 win=obj.currentDataObj.recordingDuration_ms-tStart;
                 endTime=obj.currentDataObj.recordingDuration_ms;
             else
                 endTime=min(win+tStart,obj.currentDataObj.recordingDuration_ms);
             end
-            startTimes=tStart:(movLongWin-movOLWin):endTime;
-            
+            startTimes=tStart:(movLongWin-movLongOL):endTime;
+
             nChunks=numel(startTimes);
             t_mov_ms=cell(1,nChunks);
             movAll=cell(1,nChunks);
-            
+            t_static_ms=cell(1,nChunks);
+            staticAll=cell(1,nChunks);
+            angles=cell(1,nChunks);
+
             Fs=obj.currentDataObj.samplingFrequency(1);
             obj.filt.F=filterData(Fs);
             obj.filt.F.downSamplingFactor=Fs/250;
             obj.filt.F=obj.filt.F.designDownSample;
             obj.filt.F.padding=true;
             obj.filt.FFs=obj.filt.F.filteredSamplingFrequency;
-
+            staticSamples=obj.filt.FFs*staticWin/1000;
+            
+            %movWinSamples=movWin/1000*obj.filt.FFs; %obj.filt.FFs in Hz, movWin in samples
+            %movOLWinSamples=movOLWin/1000*obj.filt.FFs;
+            %timeBin=(movWin-movOLWin); %ms
+             
             obj.filt.FHD=filterData(obj.filt.FFs);
             obj.filt.FHD.highPassCutoff = 1;
             obj.filt.FHD=obj.filt.FHD.designHighPass;
@@ -274,23 +279,80 @@ classdef sleepAnalysis < recAnalysis
                 %plot(squeeze(FMLong(1,:,:)));hold on;plot(yupper-ylower);
 
                 allAxesHighpass = squeeze(obj.filt.FHD.getFilteredData(shiftdim(allAxes,-2)));
-                bufferedEnv=buffer(allAxesHighpass,800,0,'nodelay');
+                bufferedHighpass=buffer(allAxesHighpass,1500,0,'nodelay');
+                bufferedEnvelope=buffer(allAxes,1500,0,'nodelay');
 
-                noiseSamples=bufferedEnv(:,kurtosis(bufferedEnv,0)<kurtosisNoiseThreshold);
+                noiseSamples=bufferedEnvelope(:,kurtosis(bufferedHighpass,0)<kurtosisNoiseThreshold);
+                %if noiseSamples is empty try to decrease the chuck size to 500 (from 1500), but this results in contamination by non-gaussian data
                 noiseStd=std(noiseSamples(:));
                 noiseMean=mean(noiseSamples(:));
                 Th=noiseMean+eventDetectionThresholdStd*noiseStd;
 
                 t_mov_ms{i}=startTimes(i)+t_ms(allAxes>Th);
                 movAll{i}=allAxes(allAxes>Th)';
+
+                %head pitch and roll angle evaluation for static periods
+                ThStatic=noiseMean+staticDetectionThresholdStd*noiseStd;
+                staticBinary=abs(allAxes)<ThStatic;
+                staticBinary=convn(staticBinary,ones(staticSamples,1),'same')==staticSamples;
+
+                %figure;plot(t_ms,squeeze(allAxes));hold on;plot(t_ms(staticBinary),squeeze(allAxes(staticBinary)),'.r');
+
+                t_static_ms{i}=startTimes(i)+t_ms(staticBinary);
+                staticAll{i}=allAxes(staticBinary)';
+
+                P1 = squeeze(FMLong(:,1,staticBinary));
+
+                P2 = zeros(size(P1));
+                P2(1,:) = squeeze(FMLong(1,1,staticBinary));
+                a = atan2(vecnorm(cross(P1,P2)),dot(P1,P2));
+
+                P2 = zeros(size(P1));
+                P2(2,:) = squeeze(FMLong(2,1,staticBinary));
+                b = atan2(vecnorm(cross(P1,P2)),dot(P1,P2));
+
+
+                P2 = zeros(size(P1));
+                P2(3,:) = squeeze(FMLong(3,1,staticBinary));
+                c = atan2(vecnorm(cross(P1,P2)),dot(P1,P2));
+
+                angles{i}=[a;b;c];
+
+                quiver3(0,0,0, P1(1,1),P1(2,1),P1(3,1));hold on;
+                quiver3(0,0,0, P2(1,1),P2(2,1),P2(3,1));
+                axis equal
             end
-            
+
             fprintf('\n');
             
             t_mov_ms=cell2mat(t_mov_ms);
             movAll=cell2mat(movAll);
+            t_static_ms=cell2mat(t_static_ms);
+            staticAll=cell2mat(staticAll);
+            angles=cell2mat(angles);
+            
+            
 
-            save(obj.files.lizMov,'t_mov_ms','movAll','parLizMov');
+            %{
+            p=find(t_static_ms{1}>611508.3519 & t_static_ms{1}<611508.3519+16000);
+
+            pt = [0 0 0];
+            dir = [1 0 0 1];
+            h = quiver3(pt(1),pt(2),pt(3), dir(1),dir(2),dir(3));
+            xlim([-1 1])
+            ylim([-1 1])
+            zlim([-1 1])
+            for j = p
+                xfm = makehgtform('xrotate',angles(1,j),'yrotate',angles(2,j),'zrotate',angles(3,j));
+                newdir = xfm * dir';
+                h.UData = newdir(1);
+                h.VData = newdir(2);
+                h.WData = newdir(3);
+                drawnow
+            end
+            %}
+
+            save(obj.files.lizMov,'t_mov_ms','movAll','t_static_ms','staticAll','angles','parLizMov');
         end 
         
         
