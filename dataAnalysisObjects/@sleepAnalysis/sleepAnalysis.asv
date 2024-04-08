@@ -283,6 +283,14 @@ classdef sleepAnalysis < recAnalysis
                 bufferedEnvelope=buffer(allAxes,1500,0,'nodelay');
 
                 noiseSamples=bufferedEnvelope(:,kurtosis(bufferedHighpass,0)<kurtosisNoiseThreshold);
+                if isempty(noiseSamples)
+                    warning('Noise could not be estimated, some segment may be missing!!!Trying a smaller window - issues with detection may occur');
+                    bufferedEnvelope=buffer(allAxes,500,0,'nodelay');
+                    noiseSamples=bufferedEnvelope(:,kurtosis(bufferedHighpass,0)<kurtosisNoiseThreshold);
+                    if isempty(noiseSamples)
+                        disp('Could not find noise segments in '
+                    end
+                end
                 %if noiseSamples is empty try to decrease the chuck size to 500 (from 1500), but this results in contamination by non-gaussian data
                 noiseStd=std(noiseSamples(:));
                 noiseMean=mean(noiseSamples(:));
@@ -318,9 +326,9 @@ classdef sleepAnalysis < recAnalysis
 
                 angles{i}=[a;b;c];
 
-                quiver3(0,0,0, P1(1,1),P1(2,1),P1(3,1));hold on;
-                quiver3(0,0,0, P2(1,1),P2(2,1),P2(3,1));
-                axis equal
+                %quiver3(0,0,0, P1(1,1),P1(2,1),P1(3,1));hold on;
+                %quiver3(0,0,0, P2(1,1),P2(2,1),P2(3,1));
+                %axis equal
             end
 
             fprintf('\n');
@@ -331,17 +339,17 @@ classdef sleepAnalysis < recAnalysis
             staticAll=cell2mat(staticAll);
             angles=cell2mat(angles);
             
-            
-
             %{
             p=find(t_static_ms{1}>611508.3519 & t_static_ms{1}<611508.3519+16000);
 
             pt = [0 0 0];
             dir = [1 0 0 1];
             h = quiver3(pt(1),pt(2),pt(3), dir(1),dir(2),dir(3));
-            xlim([-1 1])
-            ylim([-1 1])
-            zlim([-1 1])
+            axis equal;
+            xlim([-2 2])
+            ylim([-2 2])
+            zlim([-2 2])
+            
             for j = p
                 xfm = makehgtform('xrotate',angles(1,j),'yrotate',angles(2,j),'zrotate',angles(3,j));
                 newdir = xfm * dir';

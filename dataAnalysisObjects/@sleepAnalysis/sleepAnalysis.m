@@ -149,7 +149,7 @@ classdef sleepAnalysis < recAnalysis
             addParameter(parseObj,'staticDetectionThresholdStd',2,@isnumeric);%Spike detection - number of standard deviations above the noise level for event detection
             addParameter(parseObj,'movLongWin',1000*60*30,@isnumeric); %for max chunck size
             addParameter(parseObj,'zeroGBias',[472971.375013507,494947.777368294,493554.966062353]'); % the zeroGB accelerometer calibration value
-            addParameter(parseObj,'sensitivity',[34735.1293215227,34954.7241622606,34589.4195371905]'); % the sensitivity accelerometer calibration value
+            addParameter(parseObj,'sensitivity',[-34735.1293215227,34954.7241622606,34589.4195371905]'); % the sensitivity accelerometer calibration value
 
             addParameter(parseObj,'staticWin',1000,@isnumeric);%the duration [ms] for the static filter
             addParameter(parseObj,'movLongOL',1000,@isnumeric);
@@ -284,7 +284,13 @@ classdef sleepAnalysis < recAnalysis
 
                 noiseSamples=bufferedEnvelope(:,kurtosis(bufferedHighpass,0)<kurtosisNoiseThreshold);
                 if isempty(noiseSamples)
-                    warning('Noise could not be estimated, some segment may be missing!!!')
+                    warning('Noise could not be estimated, some segment may be missing!!!Trying a smaller window - issues with detection may occur');
+                    bufferedEnvelope=buffer(allAxes,500,0,'nodelay');
+                    noiseSamples=bufferedEnvelope(:,kurtosis(bufferedHighpass,0)<kurtosisNoiseThreshold);
+                    if isempty(noiseSamples)
+                        disp('Could not find noise segments also in smaller window. Taking all semgments as noise');
+                        noiseSamples=bufferedEnvelope;
+                    end
                 end
                 %if noiseSamples is empty try to decrease the chuck size to 500 (from 1500), but this results in contamination by non-gaussian data
                 noiseStd=std(noiseSamples(:));
@@ -320,7 +326,7 @@ classdef sleepAnalysis < recAnalysis
                 c = atan2(vecnorm(cross(P1,P2)),dot(P1,P2));
 
                 angles{i}=[a;b;c];
-
+                
                 %quiver3(0,0,0, P1(1,1),P1(2,1),P1(3,1));hold on;
                 %quiver3(0,0,0, P2(1,1),P2(2,1),P2(3,1));
                 %axis equal
@@ -335,8 +341,9 @@ classdef sleepAnalysis < recAnalysis
             angles=cell2mat(angles);
             
             %{
+            p=1:size(angles,2);
             p=find(t_static_ms{1}>611508.3519 & t_static_ms{1}<611508.3519+16000);
-
+        
             pt = [0 0 0];
             dir = [1 0 0 1];
             h = quiver3(pt(1),pt(2),pt(3), dir(1),dir(2),dir(3));
