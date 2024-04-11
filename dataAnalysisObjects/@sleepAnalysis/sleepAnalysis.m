@@ -315,15 +315,17 @@ classdef sleepAnalysis < recAnalysis
                 P2 = zeros(size(P1));
                 P2(1,:) = squeeze(FMLong(1,1,staticBinary));
                 a = atan2(vecnorm(cross(P1,P2)),dot(P1,P2));
+                a(sign(P2(1,:))<0)=pi-a(sign(P2(1,:))<0); %take into account the cases of negative angles.
 
                 P2 = zeros(size(P1));
                 P2(2,:) = squeeze(FMLong(2,1,staticBinary));
                 b = atan2(vecnorm(cross(P1,P2)),dot(P1,P2));
-
+                b(sign(P2(2,:))<0)=pi-b(sign(P2(2,:))<0);%take into account the cases of negative angles.
 
                 P2 = zeros(size(P1));
                 P2(3,:) = squeeze(FMLong(3,1,staticBinary));
                 c = atan2(vecnorm(cross(P1,P2)),dot(P1,P2));
+                c(sign(P2(3,:))<0)=pi-c(sign(P2(3,:))<0);%take into account the cases of negative angles.
 
                 angles{i}=[a;b;c];
                 
@@ -2056,6 +2058,197 @@ classdef sleepAnalysis < recAnalysis
                 release(videoPlayer);
             end
             
+        end
+
+        %% plotMovementVideoWithAcc
+        function [data]=plotMovementVideoWithAcc(obj,varargin)
+            %% parameter and settings
+            obj.checkFileRecording;
+
+            parseObj = inputParser;
+            addParameter(parseObj,'videoFile',regexp(obj.recTable.VideoFiles{obj.currentPRec},',','split'),@(x) all(isfile(x)));
+            addParameter(parseObj,'nFramesVideo',[],@isnumeric);
+            addParameter(parseObj,'videoTriggerCh',7,@isnumeric); % the digital channels with video triggers
+            addParameter(parseObj,'startTime',0,@isnumeric); %%%  in seconds  %%%
+            addParameter(parseObj,'endTime',Inf,@isnumeric); %%%  in seconds  %%%
+            addParameter(parseObj,'analyzedFrameRateHz',2,@isnumeric);
+            addParameter(parseObj,'trackingVideoFrameRate',10,@isnumeric);
+            addParameter(parseObj,'overwrite',false,@isnumeric);
+            addParameter(parseObj,'savedFileName',[]);
+            addParameter(parseObj,'inputParams',false,@isnumeric);
+            parseObj.parse(varargin{:});
+            if parseObj.Results.inputParams
+                disp(parseObj.Results);
+                return;
+            end
+
+            %evaluate all input parameters in workspace
+            for i=1:numel(parseObj.Parameters)
+                eval([parseObj.Parameters{i} '=' 'parseObj.Results.(parseObj.Parameters{i});']);
+            end
+
+            %make parameter structure
+            par=parseObj.Results;
+
+            %the camera video file
+            if numel(videoFile)>1
+                videoFile=videoFile{1};
+                fprintf('\nMultiple video files identified. Using this one:\n%s\n',videoFile);
+            else
+                videoFile=videoFile{1};
+            end
+
+            %load required data
+            digiTrigFile=[obj.currentAnalysisFolder filesep 'getDigitalTriggers.mat'];
+            obj.checkFileRecording(digiTrigFile,'digital trigger file missing, please first run getDigitalTriggers');
+            load(digiTrigFile); %load data
+
+            lizardMovementFile=[obj.currentAnalysisFolder filesep 'lizMov.mat'];
+            obj.checkFileRecording(lizardMovementFile,'digital trigger file missing, please first run getDigitalTriggers');
+            load(lizardMovementFile); %load data
+
+            [~,videoFileName]=fileparts(videoFile);
+            if isempty(savedFileName)
+                trackingFileName=[obj.currentAnalysisFolder filesep videoFileName '_accMovement.avi'];
+            else
+                trackingFileName=[savedFileName '_accMovement.avi'];
+            end
+
+            %check if analysis was already done done
+            obj.files.accMov=[obj.currentAnalysisFolder filesep 'accMove_' videoFileName '.mat'];
+            if exist(obj.files.accMov,'file') & ~overwrite
+                if nargout==1
+                    data=load(obj.files.accMov);
+                else
+                    disp(['Accelerometer movement file for video: ' videoFileName 'already exists']);
+                end
+                return;
+            end
+
+            %% Pre processing
+            videoReader = VideoReader(videoFile); %initiate video obj
+            frameWidth=videoReader.Width;
+            frameHeight=videoReader.Height;
+            frameRate=videoReader.FrameRate;
+            videoDuration=videoReader.Duration;
+            nFramesVideo=round(videoDuration*frameRate);
+
+            par.frameWidth=frameWidth;
+            par.frameHeight=frameHeight;
+            par.frameRate=frameRate;
+            par.nFramesVideo=nFramesVideo;
+            par.videoDuration=videoDuration;
+            par.startFrame=startTime*frameRate;
+
+
+            if startTime~=0 % this is much faster!!!
+                videoReader.CurrentTime = startTime;
+            end
+            initFrame = rgb2gray(videoReader.readFrame);
+            startFrame = videoReader.FrameRate*videoReader.CurrentTime;
+
+            if isinf(endTime) %analyze the complete video
+                endTime=videoDuration;
+            end
+            endFrame=round((endTime/videoDuration)*nFramesVideo);
+            skipFrames=round(frameRate/analyzedFrameRateHz);
+            skipDuration=1/analyzedFrameRateHz*1000;
+
+            pFrames=startFrame:skipFrames:endFrame;
+
+            pStartEnd=find(diff(tTrig{videoTriggerCh})>1000);
+            [~,maxDiff]=max(diff(pStartEnd));
+            pStartEnd=pStartEnd(maxDiff:maxDiff+1);
+            T=tTrig{videoTriggerCh}(pStartEnd(1):pStartEnd(2));
+            if abs(numel(T)-par.nFramesVideo)<5
+                if numel(T)<pFrames(end)
+                    %reduce the number of analyzed frames if only a few frames are missing
+                    pFrames(pFrames>numel(T))=[];
+                end
+                T=T(pFrames);
+            end
+            nFrames=numel(pFrames);
+            delete(videoReader);
+
+            %figure;plot(t_static_ms/1000/60/60,ones(size(t_static_ms)),'or');hold on;plot(T/1000/60/60,2*ones(1,numel(T)),'.');ylim([0 3])
+
+            %initialization of video reader/converter objects
+            videoReader = VideoReader(videoFile); %initiate video obj since number of frames was already read (not allowed by matlab)
+            videoReader.CurrentTime = startTime;
+
+            videoWriter = vision.VideoFileWriter(trackingFileName,'FrameRate',trackingVideoFrameRate,'VideoCompressor','MJPEG Compressor');
+
+            f=figure('Position',[ 310          92        1200         630]);
+            h(1)=subplot(3,6,[1 17]);
+            h(2)=subplot(3,6,6,polaraxes);
+            h(3)=subplot(3,6,12,polaraxes);
+            h(4)=subplot(3,6,18);
+
+            %Pitch
+            pitchDim = 2;
+            angles(pitchDim,:) = angles(pitchDim,:) - pi/2; %change the angles such that they look nice on the plot (pointing up).
+
+            hP(1) = polarplot(h(2),[angles(pitchDim,1) angles(pitchDim,1)],[0 1],'linewidth',2);
+            h(2).RTick = [];
+            title(h(2),'Pitch');
+
+            %Roll
+            RolllDim = 1;
+            hP(2) = polarplot(h(3),[angles(RolllDim,1) angles(RolllDim,1)],[0 1],'linewidth',2);
+            h(3).RTick = [];
+            title(h(3),'Roll');
+
+            %view
+            pt = [0 0 0];
+            dir = [1 0 0 1];
+            hQ = quiver3(h(4),pt(1),pt(2),pt(3), dir(1),dir(2),dir(3),'linewidth',2);
+            view(h(4),[60 150]);
+            axis(h(4),'equal');
+            xlim(h(4),[-1 1]);xlabel(h(4),'x');
+            ylim(h(4),[-1 1]);ylabel(h(4),'y');
+            zlim(h(4),[-1 1]);zlabel(h(4),'z');
+
+            hWB=waitbar(0,'Genearating video for accelerometer head angle estimation...');
+            for i=1:nFrames-1
+                %videoReader.CurrentTime = (pFrames(i)/nFramesVideo)*videoDuration;
+                videoFrame = rgb2gray(videoReader.readFrame);
+                for j=1:(skipFrames-1),videoReader.readFrame;end %skip to the next frame to read.
+
+                imshow(videoFrame,'Parent',h(1));
+                [vMin,p]=min(abs(t_static_ms-T(i)));
+                if abs(vMin)<skipDuration
+
+                    xfm = makehgtform('xrotate',angles(1,p),'yrotate',angles(2,p),'zrotate',angles(3,p));
+                    newdir = xfm * dir';
+                    hQ.UData = newdir(1);
+                    hQ.VData = newdir(2);
+                    hQ.WData = newdir(3);
+                    hQ.Color=[0 0.447 0.741];
+                    
+                    hP(1).ThetaData = [angles(pitchDim,p) angles(pitchDim,p)];
+                    hP(2).ThetaData = [angles(RolllDim,p) angles(RolllDim,p)];
+                    hP(1).Color=[0 0.447 0.741];
+                    hP(2).Color=[0 0.447 0.741];
+                    drawnow
+                else
+                    hQ.Color=[0.9 0.9 0.9];
+                    hP(1).Color=[0.9 0.9 0.9];
+                    hP(2).Color=[0.9 0.9 0.9];
+                end
+                tmpFrame=getframe(f);
+                step(videoWriter, tmpFrame.cdata);
+                waitbar(i/nFrames,hWB);
+            end
+            close(hWB);
+
+            save(obj.files.accMov,'pFrames','frameRate','nFramesVideo');
+
+            % Clean uprelease(videoReader);
+            delete(videoReader);
+
+            release(videoWriter);
+
+            close(f);
         end
 
          %% getRespirationMovements
