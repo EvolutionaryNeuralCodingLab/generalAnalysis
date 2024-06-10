@@ -3327,7 +3327,134 @@ classdef sleepAnalysis < recAnalysis
             save(obj.files.sharpWaveAnalysis,'allSWAbsAI','meanProfiles','parSharpWavesAnalysis','maxNegativeShWAmp','maxPosShWAmp');
         end
         
-        
+        %% getArenaCSVs
+        % This function is meant to get all the triggers and Data point from 
+        % the preyTouch Arena. 
+        % 
+
+        function arenaCSVs = getArenaCSVs(obj,overwrite)
+            % this function gets the argunenmts from the SA excel, and returns a
+            % structure that has 3 arrays of the frames closes frames numbers for
+            % each event.
+            % maaning, this only takes the CSVs in hunter and converts the times
+            % there to frame numbers.
+            % then, it also calcultes the timings of the start, end and strikes
+            % during this trial in OE times.
+
+
+            % SA is an instance of sleep analysis class,with a record currently
+            % selected
+
+            if nargin ==0
+                overwrite = 0;
+            end
+            %check if analysis was already done done
+            obj.files.arenaCSV=[obj.currentAnalysisFolder filesep 'ArenaCSV.mat'];
+            if exist(obj.files.arenaCSV,'file') & ~overwrite
+                if nargout==1
+                    load(obj.files.arenaCSV);
+                    disp('arena CSV analysis already exists for this recording')
+                end
+                return;
+            end
+
+            % getting the videos data (csv of the triggers):
+            videoPath = obj.recTable.VideoFiles(obj.currentPRec);
+            [videosFolderPath,vidName,~] = fileparts(videoPath{1});
+            videoCSVpath = strcat(videosFolderPath,filesep,'frames_timestamps/',vidName,'.csv');
+            videoFrames = readmatrix(videoCSVpath,"NumHeaderLines",1); % timestamps - seconds from 1.1.1970
+
+            % get block data:
+            if all(cellfun(@isempty,obj.recTable.blockPath(obj.currentPRec)))
+                [blockPath,~] = fileparts(videosFolderPath);
+            else
+                bloPath = obj.recTable.blockPath(obj.currentPRec);
+                blockPath = bloPath{1};
+            end
+            blockLog = readtable(strcat(blockPath,'/block.log'), "Delimiter",' - ');
+
+
+            % get the bug location into a table and add timestamps (S):
+            %notice - if yu need the timestamps in ms the code needs to change.
+            bugs_path = strcat(blockPath,'/bug_trajectory.csv');
+            bugs = readtable(bugs_path);
+            bugs.DateTime = datetime(bugs.time, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSSSSSXXX', 'TimeZone', '+03:00');
+            bugs.Timestamps = posixtime(bugs.DateTime);
+
+            % getting the data of the recording: triggers times in oe
+            camTrigCh = obj.recTable.camTriggerCh(obj.currentPRec);% ch can be change according to the setup.
+            OEcamTrig = obj.currentDataObj.getCamerasTrigger(camTrigCh)';
+
+            % check trigger synchrony:
+            if length(OEcamTrig) == length(videoFrames)
+                disp('Triggers num match video frames.')
+            else
+                framediff = length(videoFrames)-length(OEcamTrig);
+                fprintf('Triggers num dont match video frames. Diff is %d. \n',framediff)
+            end
+
+            videoFPS = 1/mean(diff(videoFrames(:,2)));
+
+            % getting the trials start and end times in OE times:
+            bugStops = find(diff(bugs.Timestamps)>15)+1;
+            firstInd = 1;
+            startTrials = bugs.Timestamps([firstInd,bugStops.']);
+            endTrials = bugs.Timestamps([(bugStops.')-1,end]);
+            % change to frame number:
+            sTrialFrame = obj.getVideoFrames(videoFrames,startTrials);
+            eTrialFrame = obj.getVideoFrames(videoFrames,endTrials);
+            % change to frame time stamp in OE:
+            oeStartTrig = OEcamTrig(sTrialFrame); % this is the trigs for the start of trials.
+            oeEndTrig = OEcamTrig(eTrialFrame);
+
+            % strikes:
+            % get the strikes loginto a table and add timestamps:
+            screenTouchFile = strcat(blockPath,'/screen_touches.csv');
+            if exist("screenTouchFile","file") %make sure there were screen touches:
+                screenTouch = readtable(screenTouchFile);
+                screenTouch.DateTime = datetime(screenTouch.time, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSSSSSXXX', 'TimeZone', '+03:00');
+                screenTouch.Timestamps = posixtime(screenTouch.DateTime);
+                % taking the strike time from the strike plots
+
+                hitsIdx = strcmpi(screenTouch.is_hit,'true');
+                strikesTimes = screenTouch.Timestamps(hitsIdx);
+                strikesFrames = obj.getVideoFrames(videoFrames,strikesTimes); % theres a 15 frames difference.
+                oeStrikesTrig = OEcamTrig(strikesFrames);
+            else
+                disp('No screen touchs preformed for this session')
+                screenTouch = [];
+                strikesFrames = [];
+                oeStrikesTrig = [];
+            end
+
+
+            % save the data
+            arenaCSVs.videoFrames = videoFrames;
+            arenaCSVs.bugs = bugs;
+            arenaCSVs.blockLog = blockLog;
+            arenaCSVs.screenTouch = screenTouch;
+            arenaCSVs.startFrame = sTrialFrame;
+            arenaCSVs.endFrame = eTrialFrame;
+            arenaCSVs.strikesFrame = strikesFrames;
+            arenaCSVs.oeStartTrig = oeStartTrig;
+            arenaCSVs.oeEndTrig = oeEndTrig;
+            arenaCSVs.oeStrike = oeStrikesTrig;
+            arenaCSVs.videoFPS = videoFPS;
+            save(obj.files.arenaCSV,"arenaCSVs");
+        end
+        %% get video frames:
+        function vidFrames = getVideoFrames(obj, videoTable, arenaTimestamps)
+            % this function returns an array of the frame number the are the closes
+            % after the times in arenaTimeatmps, according to the videoTable. this
+            % should be allready loaded by readTable, without first row.
+            vidFrames = zeros(length(arenaTimestamps),1);
+            for i = 1:length(vidFrames)
+                t = find(arenaTimestamps(i)>videoTable(:,2));
+                vidFrames(i) = t(end);
+            end
+        end
+
+
         %% plotDelta2BetaRatio
         function [h]=plotSharpWavesAnalysis(obj,varargin)
             
