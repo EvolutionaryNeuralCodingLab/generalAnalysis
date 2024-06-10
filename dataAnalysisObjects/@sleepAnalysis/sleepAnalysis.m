@@ -3345,7 +3345,7 @@ classdef sleepAnalysis < recAnalysis
             % SA is an instance of sleep analysis class,with a record currently
             % selected
 
-            if nargin ==0
+            if nargin ==1
                 overwrite = 0;
             end
             %check if analysis was already done done
