@@ -3410,7 +3410,7 @@ classdef sleepAnalysis < recAnalysis
             % strikes:
             % get the strikes loginto a table and add timestamps:
             screenTouchFile = strcat(blockPath,'/screen_touches.csv');
-            if exist("screenTouchFile","file") %make sure there were screen touches:
+            if exist(screenTouchFile,'file') ==2 %make sure there were screen touches:
                 screenTouch = readtable(screenTouchFile);
                 screenTouch.DateTime = datetime(screenTouch.time, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSSSSSXXX', 'TimeZone', '+03:00');
                 screenTouch.Timestamps = posixtime(screenTouch.DateTime);
