@@ -3357,31 +3357,15 @@ classdef sleepAnalysis < recAnalysis
                 end
                 return;
             end
-
+            
+            
             % getting the videos data (csv of the triggers):
             videoPath = obj.recTable.VideoFiles(obj.currentPRec);
             [videosFolderPath,vidName,~] = fileparts(videoPath{1});
             videoCSVpath = strcat(videosFolderPath,filesep,'frames_timestamps/',vidName,'.csv');
             videoFrames = readmatrix(videoCSVpath,"NumHeaderLines",1); % timestamps - seconds from 1.1.1970
-
-            % get block data:
-            if all(cellfun(@isempty,obj.recTable.blockPath(obj.currentPRec)))
-                [blockPath,~] = fileparts(videosFolderPath);
-            else
-                bloPath = obj.recTable.blockPath(obj.currentPRec);
-                blockPath = bloPath{1};
-            end
-            blockLog = readtable(strcat(blockPath,'/block.log'), "Delimiter",' - ');
-
-
-            % get the bug location into a table and add timestamps (S):
-            %notice - if yu need the timestamps in ms the code needs to change.
-            bugs_path = strcat(blockPath,'/bug_trajectory.csv');
-            bugs = readtable(bugs_path);
-            bugs.DateTime = datetime(bugs.time, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSSSSSXXX', 'TimeZone', '+03:00');
-            bugs.Timestamps = posixtime(bugs.DateTime);
-
-            % getting the data of the recording: triggers times in oe
+            
+            % getting the data of the oe recording: triggers times in oe
             camTrigCh = obj.recTable.camTriggerCh(obj.currentPRec);% ch can be change according to the setup.
             OEcamTrig = obj.currentDataObj.getCamerasTrigger(camTrigCh)';
 
@@ -3395,6 +3379,30 @@ classdef sleepAnalysis < recAnalysis
 
             videoFPS = 1/mean(diff(videoFrames(:,2)));
 
+            % get block data:
+            if all(cellfun(@isempty,obj.recTable.blockPath(obj.currentPRec)))
+                [blockPath,~] = fileparts(videosFolderPath);
+            else
+                bloPath = obj.recTable.blockPath(obj.currentPRec);
+                blockPath = bloPath{1};
+            end
+            blockLog = readtable(strcat(blockPath,'/block.log'), "Delimiter",' - ');
+            %finding the ir trigger, 1 second after the "trigger was off
+            %for.."
+            blockLog.DateTime = datetime(blockLog{:,1}, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSS', 'TimeZone', 'Asia/Jerusalem');
+            blockLog.Timestamps = posixtime(blockLog.DateTime);
+            trigLogInd = find(startsWith(blockLog{:,5},'Trigger was off')); %index for the trigger annoncment
+            irTimestamp = blockLog.Timestamps(trigLogInd)+ 1; %adding 1 second to the posixtime
+            irFrame = getVideoFrames(obj,videoFrames,irTimestamp);
+            oeIrTrig = OEcamTrig(irFrame);
+
+            % get the bug location into a table and add timestamps (S):
+            %notice - if yu need the timestamps in ms the code needs to change.
+            bugs_path = strcat(blockPath,'/bug_trajectory.csv');
+            bugs = readtable(bugs_path);
+            bugs.DateTime = datetime(bugs.time, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSSSSSXXX','TimeZone','Asia/Jerusalem');
+            bugs.Timestamps = posixtime(bugs.DateTime);
+            
             % getting the trials start and end times in OE times:
             bugStops = find(diff(bugs.Timestamps)>15)+1;
             firstInd = 1;
@@ -3412,7 +3420,7 @@ classdef sleepAnalysis < recAnalysis
             screenTouchFile = strcat(blockPath,'/screen_touches.csv');
             if exist(screenTouchFile,'file') ==2 %make sure there were screen touches:
                 screenTouch = readtable(screenTouchFile);
-                screenTouch.DateTime = datetime(screenTouch.time, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSSSSSXXX', 'TimeZone', '+03:00');
+                screenTouch.DateTime = datetime(screenTouch.time, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSSSSSXXX', 'TimeZone', 'Asia/Jerusalem');
                 screenTouch.Timestamps = posixtime(screenTouch.DateTime);
                 % taking the strike time from the strike plots
 
@@ -3440,6 +3448,9 @@ classdef sleepAnalysis < recAnalysis
             arenaCSVs.oeEndTrig = oeEndTrig;
             arenaCSVs.oeStrike = oeStrikesTrig;
             arenaCSVs.videoFPS = videoFPS;
+            arenaCSVs.oeCamTrigs = OEcamTrig;
+            arenaCSVs.irFrame = irFrame;
+            arenaCSVs.oeIrTrig = oeIrTrig;
             save(obj.files.arenaCSV,"arenaCSVs");
         end
         %% get video frames:
