@@ -3340,6 +3340,9 @@ classdef sleepAnalysis < recAnalysis
             % there to frame numbers.
             % then, it also calcultes the timings of the start, end and strikes
             % during this trial in OE times.
+            % IRFrame - Gives out the frame shift between the trigger time
+            % in the oe and the time that was given by the Arena system.
+            % the first element in this array is the shift in the frames. 
 
 
             % SA is an instance of sleep analysis class,with a record currently
@@ -3369,6 +3372,8 @@ classdef sleepAnalysis < recAnalysis
             camTrigCh = obj.recTable.camTriggerCh(obj.currentPRec);% ch can be change according to the setup.
             OEcamTrig = obj.currentDataObj.getCamerasTrigger(camTrigCh)';
 
+
+
             % check trigger synchrony:
             if length(OEcamTrig) == length(videoFrames)
                 disp('Triggers num match video frames.')
@@ -3387,14 +3392,25 @@ classdef sleepAnalysis < recAnalysis
                 blockPath = bloPath{1};
             end
             blockLog = readtable(strcat(blockPath,'/block.log'), "Delimiter",' - ');
+            
+            % get the IR trigger timings, from the OE system:
+            irTrigCh = obj.recTable.IrtrigCh(obj.currentPRec);
+            t = obj.getDigitalTriggers;
+            irTrig = t.tTrig{irTrigCh};
+            % find the closest frame to the ir trigger
+            f = find(irTrig(1)>OEcamTrig);
+            oeIRFrame = f(end);
+            
             %finding the ir trigger, 1 second after the "trigger was off
             %for.."
             blockLog.DateTime = datetime(blockLog{:,1}, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSS', 'TimeZone', 'Asia/Jerusalem');
             blockLog.Timestamps = posixtime(blockLog.DateTime);
             trigLogInd = find(startsWith(blockLog{:,5},'Trigger was off')); %index for the trigger annoncment
             irTimestamp = blockLog.Timestamps(trigLogInd)+ 1; %adding 1 second to the posixtime
-            irFrame = getVideoFrames(obj,videoFrames,irTimestamp);
-            oeIrTrig = OEcamTrig(irFrame);
+            arenaIRFrame = getVideoFrames(obj,videoFrames,irTimestamp);
+%             oeIrTrig = OEcamTrig(arenairFrame);
+            IRframeShift = arenaIRFrame-oeIRFrame;
+            IRdata = [IRframeShift, oeIRFrame, arenaIRFrame];
 
             % get the bug location into a table and add timestamps (S):
             %notice - if yu need the timestamps in ms the code needs to change.
@@ -3449,8 +3465,7 @@ classdef sleepAnalysis < recAnalysis
             arenaCSVs.oeStrike = oeStrikesTrig;
             arenaCSVs.videoFPS = videoFPS;
             arenaCSVs.oeCamTrigs = OEcamTrig;
-            arenaCSVs.irFrame = irFrame;
-            arenaCSVs.oeIrTrig = oeIrTrig;
+            arenaCSVs.IRFrames = IRdata;
             save(obj.files.arenaCSV,"arenaCSVs");
         end
         %% get video frames:
