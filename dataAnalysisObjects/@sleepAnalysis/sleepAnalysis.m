@@ -2329,7 +2329,7 @@ classdef sleepAnalysis < recAnalysis
                     initialFrameSubregion=CTF.parChestTracking.initialFrameSubregion;
                 end
                 parChestTracking.startTime=startTime;
-                parChestTracking.startTime=endTime;
+                parChestTracking.endTime=endTime;
                 parChestTracking.initialFrameSubregion=initialFrameSubregion;
             end
             
