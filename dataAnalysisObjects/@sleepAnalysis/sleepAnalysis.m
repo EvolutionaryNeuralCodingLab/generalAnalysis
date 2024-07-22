@@ -3395,6 +3395,7 @@ classdef sleepAnalysis < recAnalysis
             
             % get the IR trigger timings, from the OE system:
             irTrigCh = obj.recTable.IrtrigCh(obj.currentPRec);
+            obj.getDigitalTriggers;
             t = obj.getDigitalTriggers;
             irTrig = t.tTrig{irTrigCh};
             % find the closest frame to the ir trigger
@@ -3450,19 +3451,26 @@ classdef sleepAnalysis < recAnalysis
                 strikesFrames = [];
                 oeStrikesTrig = [];
             end
+            
+            startFrameSh = ArenaCSVs.startFrame - ArenaCSVs.IRFrames(1);
+            endFramSh = ArenaCSVs.endFrame - ArenaCSVs.IRFrames(1);
+            strikeFrameSh = ArenaCSVs.strikesFrame - ArenaCSVs.IRFrames(1);
 
+            startTrigSh = ArenaCSVs.oeCamTrigs(startFrameSh) ;
+            endTrigSh = ArenaCSVs.oeCamTrigs(endFramSh) ;
+            strikeTrigSh = ArenaCSVs.oeCamTrigs(strikeFrameSh ) ;
 
             % save the data
             arenaCSVs.videoFrames = videoFrames;
             arenaCSVs.bugs = bugs;
             arenaCSVs.blockLog = blockLog;
             arenaCSVs.screenTouch = screenTouch;
-            arenaCSVs.startFrame = sTrialFrame;
-            arenaCSVs.endFrame = eTrialFrame;
-            arenaCSVs.strikesFrame = strikesFrames;
-            arenaCSVs.oeStartTrig = oeStartTrig;
-            arenaCSVs.oeEndTrig = oeEndTrig;
-            arenaCSVs.oeStrike = oeStrikesTrig;
+            arenaCSVs.startFrameSh = startFrameSh;
+            arenaCSVs.endFramSh = endFramSh;
+            arenaCSVs.strikeFrameSh = strikeFrameSh;
+            arenaCSVs.startTrigSh = startTrigSh;
+            arenaCSVs.endTrigSh = endTrigSh;
+            arenaCSVs.strikeTrigSh = strikeTrigSh;
             arenaCSVs.videoFPS = videoFPS;
             arenaCSVs.oeCamTrigs = OEcamTrig;
             arenaCSVs.IRFrames = IRdata;
@@ -3476,7 +3484,12 @@ classdef sleepAnalysis < recAnalysis
             vidFrames = zeros(length(arenaTimestamps),1);
             for i = 1:length(vidFrames)
                 t = find(arenaTimestamps(i)>videoTable(:,2));
+                if t ~= 0
                 vidFrames(i) = t(end);
+                elseif t==0
+                    break                   
+                end
+
             end
         end
 
