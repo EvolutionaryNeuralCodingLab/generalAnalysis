@@ -3374,15 +3374,15 @@ classdef sleepAnalysis < recAnalysis
             
             % getting the data of the oe recording: triggers times in oe
             camTrigCh = obj.recTable.camTriggerCh(obj.currentPRec);% ch can be change according to the setup.
-            OEcamTrig = obj.currentDataObj.getCamerasTrigger(camTrigCh)';
+            oeCamTrig = obj.currentDataObj.getCamerasTrigger(camTrigCh)';
 
 
 
             % check trigger synchrony:
-            if length(OEcamTrig) == length(videoFrames)
+            if length(oeCamTrig) == length(videoFrames)
                 disp('Triggers num match video frames.')
             else
-                framediff = length(videoFrames)-length(OEcamTrig);
+                framediff = length(videoFrames)-length(oeCamTrig);
                 fprintf('Triggers num dont match video frames. Diff is %d. \n',framediff)
             end
 
@@ -3399,10 +3399,11 @@ classdef sleepAnalysis < recAnalysis
             
             % get the IR trigger timings, from the OE system:
             irTrigCh = obj.recTable.IrtrigCh(obj.currentPRec);
+            obj.getDigitalTriggers;
             t = obj.getDigitalTriggers;
             irTrig = t.tTrig{irTrigCh};
             % find the closest frame to the ir trigger
-            f = find(irTrig(1)>OEcamTrig);
+            f = find(irTrig(1)>oeCamTrig);
             oeIRFrame = f(end);
             
             %finding the ir trigger, 1 second after the "trigger was off
@@ -3432,8 +3433,8 @@ classdef sleepAnalysis < recAnalysis
             sTrialFrame = obj.getVideoFrames(videoFrames,startTrials);
             eTrialFrame = obj.getVideoFrames(videoFrames,endTrials);
             % change to frame time stamp in OE:
-            oeStartTrig = OEcamTrig(sTrialFrame); % this is the trigs for the start of trials.
-            oeEndTrig = OEcamTrig(eTrialFrame);
+            oeStartTrig = oeCamTrig(sTrialFrame); % this is the trigs for the start of trials.
+            oeEndTrig = oeCamTrig(eTrialFrame);
 
             % strikes:
             % get the strikes loginto a table and add timestamps:
@@ -3446,29 +3447,36 @@ classdef sleepAnalysis < recAnalysis
 
                 hitsIdx = strcmpi(screenTouch.is_hit,'true');
                 strikesTimes = screenTouch.Timestamps(hitsIdx);
-                strikesFrames = obj.getVideoFrames(videoFrames,strikesTimes); % theres a 15 frames difference.
-                oeStrikesTrig = OEcamTrig(strikesFrames);
+                strikesFrame = obj.getVideoFrames(videoFrames,strikesTimes); % theres a 15 frames difference.
+                oeStrikesTrig = oeCamTrig(strikesFrame);
             else
                 disp('No screen touchs preformed for this session')
                 screenTouch = [];
-                strikesFrames = [];
+                strikesFrame = [];
                 oeStrikesTrig = [];
             end
+            
+            startFrameSh = sTrialFrame - IRframeShift;
+            endFramSh  = eTrialFrame - IRframeShift;
+            strikeFrameSh = strikesFrame - IRframeShift;
 
+            startTrigSh = oeCamTrig(startFrameSh) ;
+            endTrigSh = oeCamTrig(endFramSh) ;
+            strikeTrigSh = oeCamTrig(strikeFrameSh ) ;
 
             % save the data
             arenaCSVs.videoFrames = videoFrames;
             arenaCSVs.bugs = bugs;
             arenaCSVs.blockLog = blockLog;
             arenaCSVs.screenTouch = screenTouch;
-            arenaCSVs.startFrame = sTrialFrame;
-            arenaCSVs.endFrame = eTrialFrame;
-            arenaCSVs.strikesFrame = strikesFrames;
-            arenaCSVs.oeStartTrig = oeStartTrig;
-            arenaCSVs.oeEndTrig = oeEndTrig;
-            arenaCSVs.oeStrike = oeStrikesTrig;
+            arenaCSVs.startFrameSh = startFrameSh;
+            arenaCSVs.endFramSh = endFramSh;
+            arenaCSVs.strikeFrameSh = strikeFrameSh;
+            arenaCSVs.startTrigSh = startTrigSh;
+            arenaCSVs.endTrigSh = endTrigSh;
+            arenaCSVs.strikeTrigSh = strikeTrigSh;
             arenaCSVs.videoFPS = videoFPS;
-            arenaCSVs.oeCamTrigs = OEcamTrig;
+            arenaCSVs.oeCamTrigs = oeCamTrig;
             arenaCSVs.IRFrames = IRdata;
             save(obj.files.arenaCSV,"arenaCSVs");
         end
@@ -3480,7 +3488,12 @@ classdef sleepAnalysis < recAnalysis
             vidFrames = zeros(length(arenaTimestamps),1);
             for i = 1:length(vidFrames)
                 t = find(arenaTimestamps(i)>videoTable(:,2));
+                if t ~= 0
                 vidFrames(i) = t(end);
+                elseif t==0
+                    break                   
+                end
+
             end
         end
 
