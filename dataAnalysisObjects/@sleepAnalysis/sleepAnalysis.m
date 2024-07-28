@@ -4,6 +4,10 @@ classdef sleepAnalysis < recAnalysis
     end
     
     methods
+
+        %% getMultiBandSpectralAnalysis        
+        [data]=getMultiBandSpectralAnalysis(obj,varargin);
+
         %% class constructor
         function obj=sleepAnalysis(xlsFile)
             if nargin==0
@@ -2730,8 +2734,8 @@ classdef sleepAnalysis < recAnalysis
             t_ms=cell2mat(t_ms);
             
             save(obj.files.dbRatio,'t_ms','bufferedDelta2BetaRatio','parDBRatio','bufferedBetaRatio','bufferedDeltaRatio','allFreqProfiles');
-        end        
-        
+        end
+
         %% getPhaseAnalysis
         function data=getPhaseAnalysis(obj,varargin)
             obj.checkFileRecording;
