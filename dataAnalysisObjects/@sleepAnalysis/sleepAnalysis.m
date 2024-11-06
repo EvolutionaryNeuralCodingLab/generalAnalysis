@@ -3830,6 +3830,8 @@ classdef sleepAnalysis < recAnalysis
             addParameter(parseObj,'saveFigures',1,@isnumeric);
             addParameter(parseObj,'printLocalCopy',0,@isnumeric);
             addParameter(parseObj,'h',0);
+            addParameter(parseObj,'stim',0); % put non-zero to have light stimulations timings on
+            addParameter(parseObj,'stimCh',0, @isnumeric); %trigger channel
             
             addParameter(parseObj,'inputParams',false,@isnumeric);
             parseObj.parse(varargin{:});
@@ -3870,6 +3872,17 @@ classdef sleepAnalysis < recAnalysis
             set(h(1),'XTickLabel',[]);
             hold on;
             
+            if stim ~=0 && stimCh ~=0
+                T = obj.getDigitalTriggers;
+                stimStartT = T.tTrig{stimCh}(1);
+                stimEndT = T.tTrig{stimCh}(end);
+                
+                %plot x-lines
+                xline([stimStartT, stimEndT]/(1000*60*60),'LineWidth',2,'Color','r')
+                xlabel('Time [h]');
+
+            end
+
             x=[(tStartSleep-tStart)/1000/60/60 (tEndSleep-tStart)/1000/60/60 (tEndSleep-tStart)/1000/60/60 (tStartSleep-tStart)/1000/60/60];
             if ~isempty(x)
                 W=0.03;
@@ -3905,6 +3918,7 @@ classdef sleepAnalysis < recAnalysis
                 set(fSAC,'PaperPositionMode','auto');
                 fileName=[obj.currentPlotFolder filesep 'dbSAC_ch' num2str(parDbAutocorr.ch) '_t' num2str(parDbAutocorr.tStart) '_w' num2str(parDbAutocorr.win)];
                 print(fileName,'-djpeg',['-r' num2str(obj.figResJPG)]);
+                saveas(fSAC,[fileName '.pdf'])
                 if printLocalCopy
                     fileName=[cd filesep obj.recTable.Animal{obj.currentPRec} '_Rec' num2str(obj.currentPRec) '_dbSAC_ch' num2str(parDbAutocorr.ch) '_t' num2str(parDbAutocorr.tStart) '_w' num2str(parDbAutocorr.win)];
                     print(fileName,'-djpeg',['-r' num2str(obj.figResJPG)]);
