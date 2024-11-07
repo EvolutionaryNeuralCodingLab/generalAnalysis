@@ -3771,6 +3771,7 @@ classdef sleepAnalysis < recAnalysis
                 set(fDB,'PaperPositionMode','auto');
                 fileName=[obj.currentPlotFolder filesep 'dbRatio_ch' num2str(ch)];
                 print(fileName,'-djpeg',['-r' num2str(obj.figResJPG)]);
+                saveas(fDB,[fileName '.pfd'])
                 if printLocalCopy
                     fileName=[cd filesep obj.recTable.Animal{obj.currentPRec} '_Rec' num2str(obj.currentPRec) '_dbRatio_ch' num2str(ch)];
                     print(fileName,'-djpeg',['-r' num2str(obj.figResJPG)]);
