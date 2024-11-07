@@ -3700,7 +3700,11 @@ classdef sleepAnalysis < recAnalysis
             addParameter(parseObj,'chunksLength',1000*60*30,@isnumeric);
             addParameter(parseObj,'h',0,@ishandle);
             addParameter(parseObj,'printLocalCopy',0,@isnumeric);
+            addParameter(parseObj,'stim',0,@isnumeric); 
+            addParameter(parseObj,'stimCh',0,@isnumeric);
             addParameter(parseObj,'inputParams',false,@isnumeric);
+
+
             parseObj.parse(varargin{:});
             if parseObj.Results.inputParams
                 disp(parseObj.Results);
@@ -3741,11 +3745,28 @@ classdef sleepAnalysis < recAnalysis
             
             imagesc((1:size(chunks,1))*timeBin/1000/60,tLong,chunks',[0 estimateColorMapMax]);
             xlabel('Time [min]');ylabel('Time [hour]');
-            
+            hold on
+            if stim~=0 && stimCh ~=0
+                T = obj.getDigitalTriggers;
+                firstTrig=T.tTrig{stimCh}(1:8:end-2);
+                
+                for i=1:length(firstTrig)
+                    curStim = firstTrig(i);
+                    xTimes = (1:size(chunks,1))*timeBin/1000/60;
+                    xPos = xTimes(round(mod(curStim,chunksLength)/timeBin));
+                    
+                    yPosUp = tLong(floor(curStim/chunksLength))+0.08;
+                    yPosDo = tLong(floor(curStim/chunksLength)+1)+0.08;
+                    % plot x-lines
+                    line([xPos, xPos],[yPosUp, yPosDo],'LineWidth',1.5,'Color','r')
+                end
+            end
+            hold off
+
             h(2)=colorbar;
             set(h(2),'position',[0.9115    0.7040    0.0129    0.2220]);
             ylabel(h(2),'\delta/\beta');
-            
+
             if saveFigures
                 set(fDB,'PaperPositionMode','auto');
                 fileName=[obj.currentPlotFolder filesep 'dbRatio_ch' num2str(ch)];
