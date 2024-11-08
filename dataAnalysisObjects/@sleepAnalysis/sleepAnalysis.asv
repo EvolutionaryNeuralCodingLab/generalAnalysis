@@ -4,6 +4,10 @@ classdef sleepAnalysis < recAnalysis
     end
     
     methods
+
+        %% getMultiBandSpectralAnalysis        
+        [data]=getMultiBandSpectralAnalysis(obj,varargin);
+
         %% class constructor
         function obj=sleepAnalysis(xlsFile)
             if nargin==0
@@ -2730,8 +2734,8 @@ classdef sleepAnalysis < recAnalysis
             t_ms=cell2mat(t_ms);
             
             save(obj.files.dbRatio,'t_ms','bufferedDelta2BetaRatio','parDBRatio','bufferedBetaRatio','bufferedDeltaRatio','allFreqProfiles');
-        end        
-        
+        end
+
         %% getPhaseAnalysis
         function data=getPhaseAnalysis(obj,varargin)
             obj.checkFileRecording;
@@ -3370,15 +3374,15 @@ classdef sleepAnalysis < recAnalysis
             
             % getting the data of the oe recording: triggers times in oe
             camTrigCh = obj.recTable.camTriggerCh(obj.currentPRec);% ch can be change according to the setup.
-            OEcamTrig = obj.currentDataObj.getCamerasTrigger(camTrigCh)';
+            oeCamTrig = obj.currentDataObj.getCamerasTrigger(camTrigCh)';
 
 
 
             % check trigger synchrony:
-            if length(OEcamTrig) == length(videoFrames)
+            if length(oeCamTrig) == length(videoFrames)
                 disp('Triggers num match video frames.')
             else
-                framediff = length(videoFrames)-length(OEcamTrig);
+                framediff = length(videoFrames)-length(oeCamTrig);
                 fprintf('Triggers num dont match video frames. Diff is %d. \n',framediff)
             end
 
@@ -3399,7 +3403,7 @@ classdef sleepAnalysis < recAnalysis
             t = obj.getDigitalTriggers;
             irTrig = t.tTrig{irTrigCh};
             % find the closest frame to the ir trigger
-            f = find(irTrig(1)>OEcamTrig);
+            f = find(irTrig(1)>oeCamTrig);
             oeIRFrame = f(end);
             
             %finding the ir trigger, 1 second after the "trigger was off
@@ -3429,8 +3433,8 @@ classdef sleepAnalysis < recAnalysis
             sTrialFrame = obj.getVideoFrames(videoFrames,startTrials);
             eTrialFrame = obj.getVideoFrames(videoFrames,endTrials);
             % change to frame time stamp in OE:
-            oeStartTrig = OEcamTrig(sTrialFrame); % this is the trigs for the start of trials.
-            oeEndTrig = OEcamTrig(eTrialFrame);
+            oeStartTrig = oeCamTrig(sTrialFrame); % this is the trigs for the start of trials.
+            oeEndTrig = oeCamTrig(eTrialFrame);
 
             % strikes:
             % get the strikes loginto a table and add timestamps:
@@ -3443,29 +3447,36 @@ classdef sleepAnalysis < recAnalysis
 
                 hitsIdx = strcmpi(screenTouch.is_hit,'true');
                 strikesTimes = screenTouch.Timestamps(hitsIdx);
-                strikesFrames = obj.getVideoFrames(videoFrames,strikesTimes); % theres a 15 frames difference.
-                oeStrikesTrig = OEcamTrig(strikesFrames);
+                strikesFrame = obj.getVideoFrames(videoFrames,strikesTimes); % theres a 15 frames difference.
+                oeStrikesTrig = oeCamTrig(strikesFrame);
             else
                 disp('No screen touchs preformed for this session')
                 screenTouch = [];
-                strikesFrames = [];
+                strikesFrame = [];
                 oeStrikesTrig = [];
             end
+            
+            startFrameSh = sTrialFrame - IRframeShift;
+            endFramSh  = eTrialFrame - IRframeShift;
+            strikeFrameSh = strikesFrame - IRframeShift;
 
+            startTrigSh = oeCamTrig(startFrameSh) ;
+            endTrigSh = oeCamTrig(endFramSh) ;
+            strikeTrigSh = oeCamTrig(strikeFrameSh ) ;
 
             % save the data
             arenaCSVs.videoFrames = videoFrames;
             arenaCSVs.bugs = bugs;
             arenaCSVs.blockLog = blockLog;
             arenaCSVs.screenTouch = screenTouch;
-            arenaCSVs.startFrame = sTrialFrame;
-            arenaCSVs.endFrame = eTrialFrame;
-            arenaCSVs.strikesFrame = strikesFrames;
-            arenaCSVs.oeStartTrig = oeStartTrig;
-            arenaCSVs.oeEndTrig = oeEndTrig;
-            arenaCSVs.oeStrike = oeStrikesTrig;
+            arenaCSVs.startFrameSh = startFrameSh;
+            arenaCSVs.endFramSh = endFramSh;
+            arenaCSVs.strikeFrameSh = strikeFrameSh;
+            arenaCSVs.startTrigSh = startTrigSh;
+            arenaCSVs.endTrigSh = endTrigSh;
+            arenaCSVs.strikeTrigSh = strikeTrigSh;
             arenaCSVs.videoFPS = videoFPS;
-            arenaCSVs.oeCamTrigs = OEcamTrig;
+            arenaCSVs.oeCamTrigs = oeCamTrig;
             arenaCSVs.IRFrames = IRdata;
             save(obj.files.arenaCSV,"arenaCSVs");
         end
@@ -3480,8 +3491,7 @@ classdef sleepAnalysis < recAnalysis
                 if t ~= 0
                 vidFrames(i) = t(end);
                 elseif t==0
-                    disp('Timestamp is not during video. ch')
-
+                    break                   
                 end
 
             end
@@ -3820,6 +3830,8 @@ classdef sleepAnalysis < recAnalysis
             addParameter(parseObj,'saveFigures',1,@isnumeric);
             addParameter(parseObj,'printLocalCopy',0,@isnumeric);
             addParameter(parseObj,'h',0);
+            addParameter(parseObj,'stim',0); % put non-zero to have light stimulations timings on
+            addParameter(parseObj,'stimCh',0, @isnumeric); %trigger channel
             
             addParameter(parseObj,'inputParams',false,@isnumeric);
             parseObj.parse(varargin{:});
@@ -3860,6 +3872,15 @@ classdef sleepAnalysis < recAnalysis
             set(h(1),'XTickLabel',[]);
             hold on;
             
+            if stim ~=0 && stimCh ~=0
+                T = obj.getDigitalTriggers;
+                stimStartT = T.tTrig{stimCh}(1);
+                stimEndT = T.tTrig{stimCh}(end);
+                
+                %plot x-lines
+                xline([stimStartT, stimE ])
+            end
+
             x=[(tStartSleep-tStart)/1000/60/60 (tEndSleep-tStart)/1000/60/60 (tEndSleep-tStart)/1000/60/60 (tStartSleep-tStart)/1000/60/60];
             if ~isempty(x)
                 W=0.03;
