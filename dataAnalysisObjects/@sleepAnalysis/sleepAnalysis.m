@@ -35,6 +35,12 @@ classdef sleepAnalysis < recAnalysis
             addParameter(parseObj,'h',0,@ishandle);
             addParameter(parseObj,'inputParams',false,@isnumeric);
             addParameter(parseObj,'plotRandomDist',1,@isnumeric);
+            addParameter(parseObj,'stim',0,@isnumeric);
+            addParameter(parseObj,'part',1,@isnumeric); % 1 is for pre stimulations,% 2 is for stim
+            addParameter(parseObj,'tStartStim',0,@isnumeric); % 
+            addParameter(parseObj,'tEndStim',0,@isnumeric); % 
+
+          
             parseObj.parse(varargin{:});
             if parseObj.Results.inputParams
                 disp(parseObj.Results);
@@ -61,18 +67,31 @@ classdef sleepAnalysis < recAnalysis
             obj.checkFileRecording(slowCyclesFile,'slow cycles file missing, please first run getSlowCycles');
             load(slowCyclesFile); %load data
             
+            if stim ==1 && part==1
+                TcycleOnset = TcycleOnset(TcycleOnset<tStartStim);
+                %take only the cycle before the start of stimulatio
+            elseif stim ==1 && part==2
+                pCyc = find(TcycleOnset>tStartStim & TcycleOnset<tEndStim);
+                TcycleOnset = TcycleOnset(pCyc);
+                TcycleMid = TcycleMid(pCyc);
+                TcycleOffset = TcycleOffset (pCyc);
+
+            end
+            
             %calculate phase in db
+
             for i=1:numel(TcycleOnset)
                 cycleDuration=TcycleOffset(i)-TcycleOnset(i);
                 pTmp=find(t_mov_ms>(TcycleMid(i)-cycleDuration/2) & t_mov_ms<(TcycleMid(i)+cycleDuration/2));
                 phaseAll{i}=(t_mov_ms(pTmp)-(TcycleMid(i)-cycleDuration/2))/cycleDuration;
-                
+
                 shufTimes=rand(1,numel(pTmp))*cycleDuration;
                 phaseAllRand{i}=shufTimes/cycleDuration;
-                
+
                 pTmp=find(t_ms>(TcycleMid(i)-cycleDuration/2) & t_ms<(TcycleMid(i)+cycleDuration/2));
                 resampledTemplate(i,:) = interp1((0:(numel(pTmp)-1))./(numel(pTmp)-1),bufferedDelta2BetaRatio(pTmp)',(0:(nBins-1))/(nBins-1),'spline');
             end
+            
             mResampledTemplate=mean(resampledTemplate);
 
             phaseMov=cell2mat(phaseAll);
@@ -126,11 +145,17 @@ classdef sleepAnalysis < recAnalysis
             %if ~isempty(rLim4Rose)
             %    set(h_fake,'Visible','off');
             %end
+
+            hOut.hRoseAvg=polarplot([mPhaseMov-mPhaseDB mPhaseMov-mPhaseDB],[h.RLim],'LineWidth',2,'Color',[0.9 0.078 0.184]);
+            % hOut.hRoseAvg.Color=histColor;
             
             if saveFigures
                 set(fH,'PaperPositionMode','auto');
                 fileName=[obj.currentPlotFolder filesep 'lizardMovementDB'];
-                print(fileName,'-djpeg',['-r' num2str(obj.figResJPG)]);
+                if stim ==1
+                    fileName=[obj.currentPlotFolder filesep 'lizardMovementDBstimPart' num2str(part)];
+                end
+                print(fileName,'-dpdf',['-r' num2str(obj.figResJPG)]);
                 if printLocalCopy
                     fileName=[cd filesep obj.recTable.Animal{obj.currentPRec} '_Rec' num2str(obj.currentPRec) '_lizardMovementDB_' videoFileName];
                     print(fileName,'-djpeg',['-r' num2str(obj.figResJPG)]);
@@ -2959,7 +2984,7 @@ classdef sleepAnalysis < recAnalysis
 
             %plot(t_ms/1000/60/60,DBRatioMedFilt);hold on;plot(t_ms/1000/60/60,DBLongOrdFilt);
             
-            HAng=phase(hilbert(DBRatioMedFilt));
+            HAng=unwrap(angle(hilbert(DBRatioMedFilt)));
             %the peaks in this analysis are the end of the delta period and the troughs are the
             [cycleMidPeaks,pTcycleMid]=findpeaks(HAng,'MinPeakProminence',pi/8,'MinPeakDistance',minCycleSamples,'MinPeakHeight',0,'MinPeakWidth',minCycleSamples/4);
             cycleMid=t_ms(pTcycleMid);
