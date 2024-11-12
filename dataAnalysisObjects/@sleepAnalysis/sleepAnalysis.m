@@ -118,6 +118,19 @@ classdef sleepAnalysis < recAnalysis
             cMap=lines(8);
             
             hOut.hRose=polarhistogram(phaseMov*2*pi-mPhaseDB,nBins,'FaceColor',[0.9 0.078 0.184],'FaceAlpha',0.7);
+  
+            % Replot the histogram with percentages
+            totalCounts = sum(hOut.hRose.BinCounts);
+            percentages = (hOut.hRose.BinCounts / totalCounts) * 100;
+            binEdges = hOut.hRose.BinEdges; 
+            delete(hOut.hRose); % Delete the previous plot
+            hOut.hRose = polarhistogram('BinEdges', binEdges, ...
+                'BinCounts', percentages, 'FaceColor', [0.9, 0.078, 0.184], ...
+                'FaceAlpha', 0.7);
+            ax = gca;  % Get the current polar axes
+            rticks = ax.RTick;  % Get the current radial tick values
+            ax.RTickLabel = strcat(string(rticks), '%');
+            
             h.ThetaTick=[0:30:330];
             h.ThetaTickLabels([2 3 5 6 8 9 11 12])=cell(size([2 3 5 6 8 9 11 12]));
 
@@ -133,6 +146,16 @@ classdef sleepAnalysis < recAnalysis
             
             if plotRandomDist
                 hOut.hRose2=polarhistogram(phaseRand*2*pi-mPhaseDB,nBins,'FaceColor',[0.5 0.5 0.5],'FaceAlpha',0.2);
+                % Replot the histogram with percentages
+                totalCountsR = sum(hOut.hRose2.BinCounts);
+                percentagesR = (hOut.hRose2.BinCounts / totalCountsR) * 100;
+                binEdgesR = hOut.hRose2.BinEdges;
+
+                % Step 3: 
+                delete(hOut.hRose2); % Delete the previous plot
+                hOut.hRose2 = polarhistogram('BinEdges', binEdgesR, ...
+                    'BinCounts', percentagesR, 'FaceColor', [0.5 0.5 0.5], ...
+                    'FaceAlpha', 0.2);
                 hOut.l=legend([hOut.hRose hOut.hPolar hOut.hRose2],'Movement','\delta/\beta','shuffled','mean');
             else
                 hOut.l=legend([hOut.hRose hOut.hPolar],'Movement','\delta/\beta');
