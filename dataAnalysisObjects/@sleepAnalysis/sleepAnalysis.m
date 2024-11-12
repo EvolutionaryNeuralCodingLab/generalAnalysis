@@ -973,7 +973,7 @@ classdef sleepAnalysis < recAnalysis
                 set(hAxes(4),'XTickLabel',[]);
                 xlabel('Time [s]');
                 
-                %subplot(2,2,2);crosscorr(interHR,mStdHR,500);
+                %subplot(2,2,2);crosscorr(interHR,mStdHR,NumLags=500);
             end
             
         end
@@ -2959,7 +2959,7 @@ classdef sleepAnalysis < recAnalysis
 
             %plot(t_ms/1000/60/60,DBRatioMedFilt);hold on;plot(t_ms/1000/60/60,DBLongOrdFilt);
             
-            HAng=phase(hilbert(DBRatioMedFilt));
+            HAng=unwrap(angle(hilbert(DBRatioMedFilt)));
             %the peaks in this analysis are the end of the delta period and the troughs are the
             [cycleMidPeaks,pTcycleMid]=findpeaks(HAng,'MinPeakProminence',pi/8,'MinPeakDistance',minCycleSamples,'MinPeakHeight',0,'MinPeakWidth',minCycleSamples/4);
             cycleMid=t_ms(pTcycleMid);
@@ -3153,7 +3153,7 @@ classdef sleepAnalysis < recAnalysis
             save(obj.files.slowCycles,'parSlowCycles','TcycleOnset','TcycleOffset','TcycleMid','pSleepDBRatio','t_ms','DBRatioMedFilt','Th');
          end
         %}
-        %% plotDelta2BetaRatio
+        %% plotSlowCycles
         function [h]=plotSlowCycles(obj,varargin)
             
             parseObj = inputParser;
@@ -3980,7 +3980,7 @@ classdef sleepAnalysis < recAnalysis
             %R=xcorrmat(BetaRatioForSlidingAutocorr,BetaRatioForSlidingAutocorr,autoCorrSamples);
             acfSamples=floor(movingAutoCorrWinSamples/2);
             
-            [xcf,autoCorrSamples,xcf_bounds]=crosscorr(bufferedDelta2BetaRatio(pOscillation),bufferedDelta2BetaRatio(pOscillation),acfSamples);
+            [xcf,autoCorrSamples,xcf_bounds]=crosscorr(bufferedDelta2BetaRatio(pOscillation),bufferedDelta2BetaRatio(pOscillation),NumLags=acfSamples);
             
             %find first vally and peak in the autocorrelation function
             [~,pPeak] = findpeaks(xcf(acfSamples+1:end),'MinPeakProminence',0.1);
@@ -4011,7 +4011,7 @@ classdef sleepAnalysis < recAnalysis
             acf=zeros(maxACSample,size(BetaRatioForSlidingAutocorr,2));
             peak2VallyDiffSliding=zeros(1,size(BetaRatioForSlidingAutocorr,2));
             for i=1:size(BetaRatioForSlidingAutocorr,2)
-                [acf(:,i),autoCorrSamples] = crosscorr(BetaRatioForSlidingAutocorr(:,i),BetaRatioForSlidingAutocorr(:,i),acfSamples);
+                [acf(:,i),autoCorrSamples] = crosscorr(BetaRatioForSlidingAutocorr(:,i),BetaRatioForSlidingAutocorr(:,i),NumLags=acfSamples);
                 %calculate peak2VallyDiff for different times
                 acf(:,i)=smooth(acf(:,i),10,'moving');
                 
@@ -4291,7 +4291,7 @@ classdef sleepAnalysis < recAnalysis
 
             [respirationSignal,tRespFrames]=resample(double(respirationSignal),tRespFrames,respResampleRate/1000);
             XCFLagSamples=ceil(XCFLag/timeBin);
-            [xcf,xcf_lags,xcf_bounds]=crosscorr(respirationSignal,respirationSignal,XCFLagSamples);
+            [xcf,xcf_lags,xcf_bounds]=crosscorr(respirationSignal,respirationSignal,NumLags=XCFLagSamples);
             xcf_lags_sec=xcf_lags/respResampleRate;
 
             %calculate periodicity - find first vally and peak in the autocorrelation function
@@ -4337,7 +4337,7 @@ classdef sleepAnalysis < recAnalysis
             acfPeriodAll=zeros(1,size(respirationForSlidingAutocorr,2));
             acfHalfPeriodAll=zeros(1,size(respirationForSlidingAutocorr,2));
             for i=1:size(respirationForSlidingAutocorr,2)
-                [acf(:,i),autoCorrSamples] = crosscorr(respirationForSlidingAutocorr(:,i),respirationForSlidingAutocorr(:,i),acfSamples);
+                [acf(:,i),autoCorrSamples] = crosscorr(respirationForSlidingAutocorr(:,i),respirationForSlidingAutocorr(:,i),NumLags=acfSamples);
                 %calculate peak2VallyDiff for different times
                 acf(:,i)=smooth(acf(:,i),10,'moving');
                 
