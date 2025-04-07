@@ -195,6 +195,8 @@ classdef (Abstract) recAnalysis < handle
             obj.checkFileRecording;
             
             parseObj = inputParser;
+            addParameter(parseObj,'gapCameraTrigs',[],@isnumeric);
+            addParameter(parseObj,'gapDuration',1000,@isnumeric);% trigger time gaps bigger than this value will considered as triger start stop (only valid if gapCameraTrigs is not zero)
             addParameter(parseObj,'overwrite',false,@isnumeric);
             addParameter(parseObj,'inputParams',false,@isnumeric);
             parseObj.parse(varargin{:});
@@ -221,7 +223,21 @@ classdef (Abstract) recAnalysis < handle
             end
             disp(['Getting triggers for ' obj.currentRecName]);
             [tTrig]=obj.currentDataObj.getTrigger;
-            
+
+            for i=1:numel(par.gapCameraTrigs)
+                edges = find(diff(tTrig{par.gapCameraTrigs(i)})>par.gapDuration);
+                if length(edges) == 2
+                    tTrig{par.gapCameraTrigs(i)} = tTrig{par.gapCameraTrigs(i)}(edges(1)+1:edges(2)+1); % only the triggers between stops.
+                elseif length(edges) >= 3
+                    disp('more than 2 stops in triggers, taking the triggers between the largest gaps.')
+                    maxD = find(max(diff(edges)));
+                    tTrig{par.gapCameraTrigs(i)} = tTrig{par.gapCameraTrigs(i)}(edges(maxD)+1:edges(maxD+1)+1);
+
+                elseif length(edges)==1
+                    disp('only 1 stop in triggers, check recording integrity!!! Keeping triggers as they were despite gap!!!')
+                end
+            end
+
             %save files
             save(saveFileName,'tTrig','par');
         end
@@ -344,7 +360,6 @@ classdef (Abstract) recAnalysis < handle
                 end
             end
                 %}
-
                 disp(['Experiment data retrieved from: ' num2str(obj.excelRecordingDataFileName)]);
             else
                 error('No excel data file in object! Cant extract information');
@@ -414,7 +429,7 @@ classdef (Abstract) recAnalysis < handle
                     %obj = getCurrentObjectMeta(obj);
                     %obj.currentDataObj.samplingFrequency = obj.currentDataMeta.fs;
 
-                    %Find in which recording class is the data 
+                    %Find in which recording class is the data
                     if ~isempty(pFormat) & iscell(obj.recTable{pRec(1),pFormat})
                         recFormat=obj.recTable{pRec(1),pFormat};
                         fprintf('Setting %s, pRec=%d, file=%s\n',recFormat{1},pRec(1),obj.currentDataFiles{1});
@@ -435,26 +450,34 @@ classdef (Abstract) recAnalysis < handle
                         elseif strcmp(allFullFiles{1}(end-2:end),'.h5')
                             obj.currentDataObj=MCH5Recording(obj.currentDataFiles);
                         elseif isdir(allFullFiles{1}) %OE or NeuraLynx recording
-                            if ~isempty(regexp(allFullFiles{1}(end-8:end),'cheetah')) %identifies neuralynx recording by the ending of the folder name with "cheetah"
+                            cheetaFiles=dir([allFullFiles{1},filesep,'*.ncs']);
+                            OEFiles=dir([allFullFiles{1},filesep,'*.continous']);
+                            if numel(cheetaFiles)>0
                                 obj.currentDataObj=NLRecording(obj.currentDataFiles{1});
-                            else
+                            elseif numel(OEFiles)>0
                                 obj.currentDataObj=OERecording(obj.currentDataFiles{1});
+                            else
+                                obj.currentDataObj='Unknown';
                             end
                         else
-                            error(['dataRecording class could not be determined from the file extension: ' num2str(allFullFiles{1}) ',or directory not found']);
+                            obj.currentDataObj='Unknown';
                         end
                     end
-                    
-                    %check if no layout metadata exists and if not check if MEA_layout field was provided and use it to define electrode layout
-                    if isempty(obj.currentDataObj.chLayoutPositions)
-                        pLayout=find(strcmp(obj.recTable.Properties.VariableNames,'MEA_Layout'));
-                        if ~isempty(pFormat) & iscell(obj.recTable{pRec(1),pLayout})
-                            fprintf('Looking for layout in MEA_Layout...');
-                            recLayout=obj.recTable{pRec(1),pLayout};
-                            obj.currentDataObj.loadChLayout(recLayout{1});
+
+                    if strcmp(obj.currentDataObj,'Unknown')
+                        warning(['dataRecording class could not be determined from the file extension: ' num2str(allFullFiles{1}) ',or directory not found']);
+                    else
+                        %check if no layout metadata exists and if not check if MEA_layout field was provided and use it to define electrode layout
+                        if isempty(obj.currentDataObj.chLayoutPositions)
+                            pLayout=find(strcmp(obj.recTable.Properties.VariableNames,'MEA_Layout'));
+                            if ~isempty(pFormat) & iscell(obj.recTable{pRec(1),pLayout})
+                                fprintf('Looking for layout in MEA_Layout...');
+                                recLayout=obj.recTable{pRec(1),pLayout};
+                                obj.currentDataObj.loadChLayout(recLayout{1});
+                            end
                         end
                     end
-                    
+
                     obj.gridSorterObj=[]; %clear any existing grid sorter object from the past 
                     
                     %create data object

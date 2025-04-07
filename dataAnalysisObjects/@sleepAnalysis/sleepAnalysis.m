@@ -1183,12 +1183,14 @@ classdef sleepAnalysis < recAnalysis
                 saveFigures=0;
             end
             
+            cLim=quantile(resampledTemplate(:),[0.01 0.99]);
+
             if numel(h)>=1
                 edges=(0:parSyncDBEye.nBins)/(parSyncDBEye.nBins-0.0000001);
                 middles=(edges(1:end-1)+edges(2:end))/2;
                 
                 axes(h(1));
-                hOut.imagesc=imagesc(0:parSyncDBEye.nBins,1:size(resampledTemplate,1),resampledTemplate);hold on;
+                hOut.imagesc=imagesc(0:parSyncDBEye.nBins,1:size(resampledTemplate,1),resampledTemplate,cLim);hold on;
                 set(h(1),'XTickLabel',[]);
                 ylabel('# cycle');
                 p=cell2mat(cellfun(@(x) ~isempty(x),phaseAll,'UniformOutput',0));
@@ -1214,18 +1216,19 @@ classdef sleepAnalysis < recAnalysis
                 set(h(2),'XTick',[0 1],'XTickLabel',{'0','2\pi'});
                 hOut.l=legend('norm. \delta/\beta','norm. OF counts');
                 hOut.l.Box='off';
-                hOut.l.Position=[0.6434    0.9061    0.2596    0.0812];
+                hOut.l.Position=[0.1    0.9061    0.2596    0.0812];
             end
             
             if numel(h)>=3
                 axes(h(3));
-                imagesc(resampledTemplate);hold on;
+                imagesc(resampledTemplate,cLim);hold on;
                 set(h(3),'YTickLabel',[],'XTickLabel',[]);
                 p=cell2mat(cellfun(@(x) ~isempty(x),phaseAllRand,'UniformOutput',0));
                 for i=find(p)
                     plot(phaseAllRand{i}*parSyncDBEye.nBins,i*ones(size(phaseAllRand{i})),'*r');
                 end
                 I=histc(phaseRand,edges);
+                title('Randomized');
             end
             
             if numel(h)>=4
@@ -1470,7 +1473,7 @@ classdef sleepAnalysis < recAnalysis
             addParameter(parseObj,'useRobustFloatingAvg',1,@isnumeric); %if true uses floating median and MAD, if false uses a regular moving average.
             addParameter(parseObj,'nStd',6,@isnumeric); %MAD (std) threshold for 
             addParameter(parseObj,'nBins',18,@isnumeric);
-            addParameter(parseObj,'digitalVideoSyncCh',5,@isnumeric);
+            addParameter(parseObj,'digitalVideoSyncCh',7,@isnumeric);
             addParameter(parseObj,'pixelMoveThresh',10,@isnumeric);
             addParameter(parseObj,'overwrite',false,@isnumeric);
             addParameter(parseObj,'nFramesRemoveAfterROIShift',3,@isnumeric);
@@ -1813,11 +1816,14 @@ classdef sleepAnalysis < recAnalysis
             end
             
             if startTime~=0 % this is much faster!!!
-                videoReader.CurrentTime = startTime; 
+                videoReader.CurrentTime = startTime;
+                initFrame = rgb2gray(videoReader.readFrame);
+                startFrame = videoReader.FrameRate*videoReader.CurrentTime;
+            else
                 initFrame = rgb2gray(videoReader.readFrame);
                 startFrame = videoReader.FrameRate*videoReader.CurrentTime;
             end
-            
+
             if isempty(initialFrameSubregion) %to manually select region for extracting eye movements
                 f=figure('position',[100 100 1200 600]);
                 subplot(1,3,1:2);imshow(initFrame);
@@ -2205,7 +2211,7 @@ classdef sleepAnalysis < recAnalysis
                 videoReader.CurrentTime = startTime;
             end
             initFrame = rgb2gray(videoReader.readFrame);
-            startFrame = videoReader.FrameRate*videoReader.CurrentTime;
+            startFrame = round(videoReader.FrameRate*videoReader.CurrentTime);
 
             if isinf(endTime) %analyze the complete video
                 endTime=videoDuration;
@@ -2215,18 +2221,24 @@ classdef sleepAnalysis < recAnalysis
             skipDuration=1/analyzedFrameRateHz*1000;
 
             pFrames=startFrame:skipFrames:endFrame;
-
+            %cut triggers according to two gaps > 1000ms - after this the number of triggers should be the same as the number of images
             pStartEnd=find(diff(tTrig{videoTriggerCh})>1000);
             [~,maxDiff]=max(diff(pStartEnd));
             pStartEnd=pStartEnd(maxDiff:maxDiff+1);
             T=tTrig{videoTriggerCh}(pStartEnd(1):pStartEnd(2));
-            if abs(numel(T)-par.nFramesVideo)<5
-                if numel(T)<pFrames(end)
-                    %reduce the number of analyzed frames if only a few frames are missing
-                    pFrames(pFrames>numel(T))=[];
-                end
-                T=T(pFrames);
+            if abs(numel(T)-par.nFramesVideo)>5
+                fprintf('There is a difference of %d frames between triggers and video! Please check your synchronization!!!\n',numel(T)-par.nFramesVideo);                
             end
+            if numel(T)<pFrames(end)
+                %reduce the number of analyzed frames if only a few frames are missing
+                pFrames(pFrames>numel(T))=[];
+                fprintf('Cutting extra frames, assuming that all extra frames are at the end of the video.\n');
+            elseif numel(T)>pFrames(end)
+
+            end
+
+            T=T(pFrames);
+
             nFrames=numel(pFrames);
             delete(videoReader);
 
@@ -2275,7 +2287,7 @@ classdef sleepAnalysis < recAnalysis
                 for j=1:(skipFrames-1),videoReader.readFrame;end %skip to the next frame to read.
 
                 imshow(videoFrame,'Parent',h(1));
-                [vMin,p]=min(abs(t_static_ms-T(i)));
+                [vMin,p]=min(abs(t_static_ms-T(i))); %find the closest position of the static measurement time relaive to current frame 
                 if abs(vMin)<skipDuration
 
                     xfm = makehgtform('xrotate',angles(1,p),'yrotate',angles(2,p),'zrotate',angles(3,p));
@@ -2421,17 +2433,16 @@ classdef sleepAnalysis < recAnalysis
             end
             initFrame = rgb2gray(videoReader.readFrame);
             startFrame = videoReader.FrameRate*videoReader.CurrentTime;
-            
+
             if isempty(initialFrameSubregion) %to manually select region for extracting chest movements
                 f=figure('position',[100 100 1200 600]);
                 subplot(1,3,1:2);imshow(initFrame);
                 h = imrect(gca);
                 initialFrameSubregion=h.getPosition;
-                
+                initialFrameSubregion=round(h.getPosition);
                 subplot(1,3,3);imshow(initFrame(initialFrameSubregion(2):(initialFrameSubregion(2)+initialFrameSubregion(4)),initialFrameSubregion(1):(initialFrameSubregion(1)+initialFrameSubregion(3)),:));
                 title('Selected region - press any key');
                 pause;
-                initialFrameSubregion=round(h.getPosition);
                 close(f);
             end
             
@@ -2568,10 +2579,13 @@ classdef sleepAnalysis < recAnalysis
 
                     else
                         if manuallyUpdatePoints
+                            initFrame=videoFrame;
+                            
                             f=figure('position',[100 100 1200 600]);
                             subplot(1,3,1:2);imshow(initFrame);
                             h = imrect(gca);
                             frameSubregion=h.getPosition;
+                            frameSubregion([1 2])=frameSubregion([1 2])+1;frameSubregion([3 4])=frameSubregion([3 4])-2; %remove edges to avoid error when out of frame
                             
                             subplot(1,3,3);imshow(initFrame(frameSubregion(2):(frameSubregion(2)+frameSubregion(4)),frameSubregion(1):(frameSubregion(1)+frameSubregion(3)),:));
                             title('Selected region - press any key');
@@ -2594,6 +2608,7 @@ classdef sleepAnalysis < recAnalysis
                             oldPoints = points; %all new added points are tracked
                             visiblePoints = points; %all new added points are tracked
                             visiblePointsOld = points;
+                            fprintf('Manual annotation added in frame %d\n',i);
                         else
                             disp(['Tracking analysis stopped at ' num2str(i) '/' num2str(nFrames) ' since all tracking points were lost']);
                             parChestTracking.pStopDue2LostPoints=i;
@@ -4207,16 +4222,22 @@ classdef sleepAnalysis < recAnalysis
             for i=1:numel(parseObj.Parameters)
                 eval([parseObj.Parameters{i} '=' 'parseObj.Results.(parseObj.Parameters{i});']);
             end
-            
+
+            %make parameter structure
+            parDbAutocorr=parseObj.Results;
+
             dbAutocorrFile=[obj.currentAnalysisFolder filesep 'dbAutocorr_ch' num2str(ch) '.mat'];
             obj.checkFileRecording(dbAutocorrFile,'Autocorr analysis missing, please first run getDelta2BetaAC');
-            load(dbAutocorrFile);
+            DB=load(dbAutocorrFile);
             
             if win+tStart>obj.currentDataObj.recordingDuration_ms, win=obj.currentDataObj.recordingDuration_ms-tStart; end
-            pt=find(tSlidingAC>=tStart & tSlidingAC<=(tStart+win+parDbAutocorr.movingAutoCorrWin/2));
-            tSlidingAC=tSlidingAC-tSlidingAC(pt(1));
+            pt=find(DB.tSlidingAC>=tStart & DB.tSlidingAC<=(tStart+win+DB.parDbAutocorr.movingAutoCorrWin/2));
+            DB.tSlidingAC=DB.tSlidingAC-DB.tSlidingAC(pt(1));
             
             [~,videoFileName]=fileparts(videoFile);
+            if iscell(videoFileName)
+                videoFileName=videoFileName{1};
+            end
             respirationAutocorrFile=[obj.currentAnalysisFolder filesep 'respirationAC_' videoFileName '.mat'];
             obj.checkFileRecording(respirationAutocorrFile,'Autocorr analysis missing, please first run getRespirationAC');
             RAC=load(respirationAutocorrFile);
@@ -4230,26 +4251,26 @@ classdef sleepAnalysis < recAnalysis
             end
             
             axes(h(1));
-            h(3)=imagesc(tSlidingAC(pt)/1000/60/60,autocorrTimes/1000,real(acf(:,pt)),[-0.5 0.5]);
+            h(3)=imagesc(RAC.tSlidingAC(pt)/1000/60/60,RAC.slidingACLags_sec,real(RAC.acf(:,pt)),[-0.5 0.5]);
             ylabel('\delta/\beta Autocorr lag [s]');
-            ylim(xcf_lags([1 end])/1000);%important for panel plots
+            ylim(RAC.slidingACLags_sec([1 end]));%important for panel plots
             yl=ylim;
-            xlim(tSlidingAC(pt([1 end]))/1000/60/60); %important for panel plots
+            xlim(RAC.tSlidingAC(pt([1 end]))/1000/60/60); %important for panel plots
             xl=xlim;
             set(h(1),'YDir','normal');
             set(h(1),'XTickLabel',[]);
             hold on;
             
-            x=[(tStartSleep-tStart)/1000/60/60 (tEndSleep-tStart)/1000/60/60 (tEndSleep-tStart)/1000/60/60 (tStartSleep-tStart)/1000/60/60];
+            x=[(DB.tStartSleep-tStart)/1000/60/60 (DB.tEndSleep-tStart)/1000/60/60 (DB.tEndSleep-tStart)/1000/60/60 (DB.tStartSleep-tStart)/1000/60/60];
             W=0.03;
             y=yl(2)+W*[diff(yl) diff(yl) diff(yl)*3 diff(yl)*3];
             h(4)=patch(x,y,[0.2 0.2 0.2],'Clipping','off','lineStyle','none','FaceAlpha',0.5); 
             text((x(1)+x(2))/2,(y(1)+y(3))/2,'E-Sleep','HorizontalAlignment','center','VerticalAlignment','middle');
-            h(7)=line(xlim,[period/1000 period/1000],'color',[1 0.8 0.8]);
+            h(7)=line(xlim,[RAC.period RAC.period],'color',[1 0.8 0.8]);
 
             axes(h(2));
-            h(5)=scatter(RAC.tSlidingAC/1000/60/60,RAC.acfPeriodAll/1000,10,[0.8 0.8 1],'filled');hold on;
-            h(6)=plot((RAC.tFilteredSlidingPeriod)/1000/60/60,RAC.filteredSlidingPeriod/1000,'-','lineWidth',3);
+            h(5)=scatter(RAC.tSlidingAC/1000/60/60,RAC.acfPeriodAll,10,[0.8 0.8 1],'filled');hold on;
+            h(6)=plot((RAC.tFilteredSlidingPeriod)/1000/60/60,RAC.filteredSlidingPeriod,'-','lineWidth',3);
             ylabel('Respiration period [s]');
             xlabel('Time [h]');
             set(h(2),'Box','on');
@@ -4283,6 +4304,7 @@ classdef sleepAnalysis < recAnalysis
             addParameter(parseObj,'respResampleRate',5,@isnumeric); % the resampled respiration signal sampling freq for further analysis
             addParameter(parseObj,'movOLWin',400,@isnumeric);
             addParameter(parseObj,'XCFLag',20000,@isnumeric);
+            addParameter(parseObj,'manualPeakVally',[],@isnumeric); % [1X2] - [peak position [s], vally position [s]]
             addParameter(parseObj,'movingAutoCorrWin',24*1000,@isnumeric);
             addParameter(parseObj,'movingAutoCorrOL',22*1000,@isnumeric);
             addParameter(parseObj,'smoothingDuration',5*60*1000,@isnumeric);
@@ -4310,6 +4332,8 @@ classdef sleepAnalysis < recAnalysis
             if numel(videoFile)>1
                 videoFile=videoFile{1};
                 fprintf('\nMultiple video files identified. Using this one:\n%s\n',videoFile);
+            elseif iscell(videoFile)
+                videoFile=videoFile{1};
             end
             
             %check if analysis was already done done
@@ -4392,6 +4416,10 @@ classdef sleepAnalysis < recAnalysis
             %calculate periodicity - find first vally and peak in the autocorrelation function
             [~,pPeak] = findpeaks(xcf(XCFLagSamples+1:end),'MinPeakProminence',1e-4);pPeak=pPeak(1);
             [~,pVally] = findpeaks(-xcf(XCFLagSamples+1:end),'MinPeakProminence',1e-4);pVally=pVally(1);
+            if ~isempty(manualPeakVally)
+                pPeak=manualPeakVally(1)*respResampleRate;
+                pVally=manualPeakVally(2)*respResampleRate;
+            end
             %figure;plot(xcf_lags_sec,xcf);xlabel('Respiration lag [s]');hold on;plot(xcf_lags_sec(pPeak+XCFLagSamples),xcf(pPeak+XCFLagSamples),'or')
             
             if isempty(pPeak) | isempty(pVally)
@@ -4496,6 +4524,9 @@ classdef sleepAnalysis < recAnalysis
             %tSlidingAC=tSlidingAC-tSlidingAC(pt(1));
             
             [~,videoFileName]=fileparts(videoFile);
+            if iscell(videoFileName)
+                videoFileName=videoFileName{1};
+            end
             respirationAutocorrFile=[obj.currentAnalysisFolder filesep 'respirationAC_' videoFileName '.mat'];
             obj.checkFileRecording(respirationAutocorrFile,'Autocorr analysis missing, please first run getRespirationAC');
             RAC=load(respirationAutocorrFile);
