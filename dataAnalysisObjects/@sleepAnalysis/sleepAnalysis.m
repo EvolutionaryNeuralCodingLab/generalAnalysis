@@ -201,15 +201,15 @@ classdef sleepAnalysis < recAnalysis
             obj.checkFileRecording;
             
             parseObj = inputParser;
-            addParameter(parseObj,'ch',obj.recTable.defaulLFPCh(obj.currentPRec),@isnumeric);
+            %addParameter(parseObj,'ch',obj.recTable.defaulLFPCh(obj.currentPRec),@isnumeric);
             addParameter(parseObj,'accCh',obj.recTable.accelerometerCh(obj.currentPRec),@isnumeric);
             addParameter(parseObj,'envelopWindow',15,@isnumeric); %max freq. to examine
             addParameter(parseObj,'kurtosisNoiseThreshold',3.25,@isnumeric); %Spike detection - the threshold on the kurtosis value that differentiates noise samples from data
             addParameter(parseObj,'eventDetectionThresholdStd',3,@isnumeric);%Spike detection - number of standard deviations above the noise level for event detection
             addParameter(parseObj,'staticDetectionThresholdStd',2,@isnumeric);%Spike detection - number of standard deviations above the noise level for event detection
             addParameter(parseObj,'movLongWin',1000*60*30,@isnumeric); %for max chunck size
-            addParameter(parseObj,'zeroGBias',[472971.375013507,494947.777368294,493554.966062353]'); % the zeroGB accelerometer calibration value
-            addParameter(parseObj,'sensitivity',[-34735.1293215227,34954.7241622606,34589.4195371905]'); % the sensitivity accelerometer calibration value
+            addParameter(parseObj,'zeroGBias',[472971.375013507,494947.777368294,493554.966062353]',@(x) size(x,1)==3); % the zeroGB accelerometer calibration value [units uV]
+            addParameter(parseObj,'sensitivity',[-34735.1293215227,34954.7241622606,34589.4195371905]',@(x) size(x,1)==3); % the sensitivity accelerometer calibration value [units uV]
 
             addParameter(parseObj,'staticWin',1000,@isnumeric);%the duration [ms] for the static filter
             addParameter(parseObj,'movLongOL',1000,@isnumeric);
@@ -232,10 +232,10 @@ classdef sleepAnalysis < recAnalysis
             %make parameter structure
             parLizMov=parseObj.Results;
             
-            if isnan(ch)
-                disp('Error: no reference channel for Delta 2 Beta extraction');
-                return;
-            end
+            %if isnan(ch)
+            %    disp('Error: no reference channel for Delta 2 Beta extraction');
+            %    return;
+            %end
             if iscell(accCh)
                 accCh=str2num(cell2mat(split(accCh{1},','))); %get accelerometer channel numbers as numerics
             elseif isnumeric(accCh)
@@ -283,6 +283,7 @@ classdef sleepAnalysis < recAnalysis
             t_static_ms=cell(1,nChunks);
             staticAll=cell(1,nChunks);
             angles=cell(1,nChunks);
+            dotProductsXYZ=cell(1,nChunks);
 
             Fs=obj.currentDataObj.samplingFrequency(1);
             obj.filt.F=filterData(Fs);
@@ -369,26 +370,17 @@ classdef sleepAnalysis < recAnalysis
 
                 t_static_ms{i}=startTimes(i)+t_ms(staticBinary);
                 staticAll{i}=allAxes(staticBinary)';
+                %dotProductsXYZ is the dot product of the three accelerometer axes with g (earths force).
+                dotProductsXYZ{i} = squeeze(FMLong(:,1,staticBinary));
 
-                P1 = squeeze(FMLong(:,1,staticBinary));
+                %for X take 3, for y take 1, for z take 2
 
-                P2 = zeros(size(P1));
-                P2(1,:) = squeeze(FMLong(1,1,staticBinary));
-                a = atan2(vecnorm(cross(P1,P2)),dot(P1,P2));
-                a(sign(P2(1,:))<0)=pi-a(sign(P2(1,:))<0); %take into account the cases of negative angles.
+                %pitch = asin(dotProductsXYZ{i}(3,:) ./ sqrt(dotProductsXYZ{i}(1,:).^2 + P1(2,:).^2 + dotProductsXYZ{i}(3,:).^2));
+                pitch = atan(dotProductsXYZ{i}(3,:) ./ sqrt(dotProductsXYZ{i}(1,:).^2 + dotProductsXYZ{i}(2,:).^2));
+                roll = atan(dotProductsXYZ{i}(1,:)./dotProductsXYZ{i}(2,:));
 
-                P2 = zeros(size(P1));
-                P2(2,:) = squeeze(FMLong(2,1,staticBinary));
-                b = atan2(vecnorm(cross(P1,P2)),dot(P1,P2));
-                b(sign(P2(2,:))<0)=pi-b(sign(P2(2,:))<0);%take into account the cases of negative angles.
+                angles{i}=[roll;pitch];
 
-                P2 = zeros(size(P1));
-                P2(3,:) = squeeze(FMLong(3,1,staticBinary));
-                c = atan2(vecnorm(cross(P1,P2)),dot(P1,P2));
-                c(sign(P2(3,:))<0)=pi-c(sign(P2(3,:))<0);%take into account the cases of negative angles.
-
-                angles{i}=[a;b;c];
-                
                 %quiver3(0,0,0, P1(1,1),P1(2,1),P1(3,1));hold on;
                 %quiver3(0,0,0, P2(1,1),P2(2,1),P2(3,1));
                 %axis equal
@@ -401,6 +393,7 @@ classdef sleepAnalysis < recAnalysis
             t_static_ms=cell2mat(t_static_ms);
             staticAll=cell2mat(staticAll);
             angles=cell2mat(angles);
+            dotProductsXYZ=cell2mat(dotProductsXYZ);
             
             %{
             p=1:size(angles,2);
@@ -424,7 +417,7 @@ classdef sleepAnalysis < recAnalysis
             end
             %}
 
-            save(obj.files.lizMov,'t_mov_ms','movAll','t_static_ms','staticAll','angles','parLizMov');
+            save(obj.files.lizMov,'t_mov_ms','movAll','t_static_ms','staticAll','dotProductsXYZ','angles','parLizMov');
         end 
         
         
@@ -2258,27 +2251,33 @@ classdef sleepAnalysis < recAnalysis
 
             %Pitch
             pitchDim = 2;
-            angles(pitchDim,:) = angles(pitchDim,:) - pi/2; %change the angles such that they look nice on the plot (pointing up).
+            angles(pitchDim,:) = angles(pitchDim,:); %change the angles such that they look nice on the plot (pointing up).
 
             hP(1) = polarplot(h(2),[angles(pitchDim,1) angles(pitchDim,1)],[0 1],'linewidth',2);
             h(2).RTick = [];
-            title(h(2),'Pitch');
+            title(h(2),'Pitch| 0=head on ground (HS up)');
+
 
             %Roll
             RolllDim = 1;
             hP(2) = polarplot(h(3),[angles(RolllDim,1) angles(RolllDim,1)],[0 1],'linewidth',2);
             h(3).RTick = [];
-            title(h(3),'Roll');
+            title(h(3),'<- Right |Roll| Left ->');
+            h(3).ThetaZeroLocation = 'top';                                  % Change Angle Origin
+            h(3).ThetaDir = 'clockwise'; 
 
             %view
             pt = [0 0 0];
             dir = [1 0 0 1];
-            hQ = quiver3(h(4),pt(1),pt(2),pt(3), dir(1),dir(2),dir(3),'linewidth',2);
+            hQ = quiver3(h(4),pt(1),pt(2),pt(3), dir(1),dir(2),dir(3),'linewidth',2,'Marker','o','MaxHeadSize',1);
             view(h(4),[60 150]);
             axis(h(4),'equal');
             xlim(h(4),[-1 1]);xlabel(h(4),'x');
             ylim(h(4),[-1 1]);ylabel(h(4),'y');
             zlim(h(4),[-1 1]);zlabel(h(4),'z');
+
+            hL = line(h(4),[pt(1),dir(1)],[pt(2),dir(2)],[-1,-1],'linewidth',2);
+            hL.Color=[0.5 0.9 0.9];
 
             hWB=waitbar(0,'Genearating video for accelerometer head angle estimation...');
             for i=1:nFrames-1
@@ -2290,13 +2289,20 @@ classdef sleepAnalysis < recAnalysis
                 [vMin,p]=min(abs(t_static_ms-T(i))); %find the closest position of the static measurement time relaive to current frame 
                 if abs(vMin)<skipDuration
 
-                    xfm = makehgtform('xrotate',angles(1,p),'yrotate',angles(2,p),'zrotate',angles(3,p));
-                    newdir = xfm * dir';
-                    hQ.UData = newdir(1);
-                    hQ.VData = newdir(2);
-                    hQ.WData = newdir(3);
+                    %xfm = makehgtform('xrotate',dotProductsXYZ(1,p),'yrotate',dotProductsXYZ(2,p),'zrotate',dotProductsXYZ(3,p));
+                    %newdir = xfm * dir';
+                    %hQ.UData = newdir(1);
+                    %hQ.VData = newdir(2);
+                    %hQ.WData = newdir(3);
+
+                    hQ.UData = dotProductsXYZ(1,p);
+                    hQ.VData = dotProductsXYZ(2,p);
+                    hQ.WData = dotProductsXYZ(3,p);                    
                     hQ.Color=[0 0.447 0.741];
                     
+                    hL.XData=[pt(1),dotProductsXYZ(1,p)];
+                    hL.YData=[pt(2),dotProductsXYZ(2,p)];
+
                     hP(1).ThetaData = [angles(pitchDim,p) angles(pitchDim,p)];
                     hP(2).ThetaData = [angles(RolllDim,p) angles(RolllDim,p)];
                     hP(1).Color=[0 0.447 0.741];
