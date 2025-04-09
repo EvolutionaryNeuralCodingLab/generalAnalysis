@@ -2262,7 +2262,7 @@ classdef sleepAnalysis < recAnalysis
             RolllDim = 1;
             hP(2) = polarplot(h(3),[angles(RolllDim,1) angles(RolllDim,1)],[0 1],'linewidth',2);
             h(3).RTick = [];
-            title(h(3),'<- Right |Roll| Left ->');
+            title(h(3),'<- Left |Roll| Right ->');
             h(3).ThetaZeroLocation = 'top';                                  % Change Angle Origin
             h(3).ThetaDir = 'clockwise'; 
 
