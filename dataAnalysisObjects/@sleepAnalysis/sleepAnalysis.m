@@ -3528,12 +3528,12 @@ classdef sleepAnalysis < recAnalysis
                 hitsIdx = strcmpi(screenTouch.is_hit,'true');
                 strikesTimes = screenTouch.Timestamps(hitsIdx);
                 strikesFrame = obj.getVideoFrames(videoFrames,strikesTimes); % theres a 15 frames difference.
-                oeStrikesTrig = oeCamTrig(strikesFrame);
+                strikeTrialNum = screenTouch.in_block_trial_id;
             else
                 disp('No screen touchs preformed for this session')
                 screenTouch = [];
                 strikesFrame = [];
-                oeStrikesTrig = [];
+                strikeTrialNum = [];
             end
             
             startFrameSh = sTrialFrame - IRframeShift;
@@ -3558,6 +3558,8 @@ classdef sleepAnalysis < recAnalysis
             arenaCSVs.videoFPS = videoFPS;
             arenaCSVs.oeCamTrigs = oeCamTrig;
             arenaCSVs.IRFrames = IRdata;
+            arenaCSVs.strikeTrialNum = strikeTrialNum;
+
             save(obj.files.arenaCSV,"arenaCSVs");
         end
         %% get video frames:
