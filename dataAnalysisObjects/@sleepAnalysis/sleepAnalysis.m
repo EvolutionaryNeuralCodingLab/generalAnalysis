@@ -36,7 +36,7 @@ classdef sleepAnalysis < recAnalysis
             addParameter(parseObj,'inputParams',false,@isnumeric);
             addParameter(parseObj,'plotRandomDist',1,@isnumeric);
             addParameter(parseObj,'stim',0,@isnumeric);
-            addParameter(parseObj,'part',1,@isnumeric); % 1 is for pre stimulations,% 2 is for stim
+            addParameter(parseObj,'part',1,@isnumeric); % 1 is for pre stimulations,% 2 is for stim 3 for post
             addParameter(parseObj,'tStartStim',0,@isnumeric); % 
             addParameter(parseObj,'tEndStim',0,@isnumeric); % 
             addParameter(parseObj,'percentage',1,@isnumeric); %
@@ -82,7 +82,7 @@ classdef sleepAnalysis < recAnalysis
             end
             TcycleOnset = TcycleOnset(pCyc);
             TcycleMid = TcycleMid(pCyc);
-            TcycleOffset = TcycleOffset (pCyc);
+            TcycleOffset = TcycleOffset(pCyc);
             
             %calculate phase in db
 
