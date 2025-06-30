@@ -120,7 +120,7 @@ for i=1:nChunks
     band2All{i}=nan(1,numel(pValid));
     if any(pValid)
         [pxx,f] = pwelch(FMLongB(:,pValid),segmentWelchSamples,samplesOLWelch,dftPointsWelch,obj.filt.FFs);
-        band2to1RatioAll{i}(pValid)=(mean(pxx(pBand1,:))./mean(pxx(pBand2,:)))';
+        band2to1RatioAll{i}(pValid)=(mean(pxx(pBand2,:))./mean(pxx(pBand1,:)))';
         band1All{i}(pValid)=mean(pxx(pBand1,:))';
         band2All{i}(pValid)=mean(pxx(pBand2,:))';
     else
