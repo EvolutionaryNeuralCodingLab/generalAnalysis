@@ -36,7 +36,7 @@ classdef sleepAnalysis < recAnalysis
             addParameter(parseObj,'inputParams',false,@isnumeric);
             addParameter(parseObj,'plotRandomDist',1,@isnumeric);
             addParameter(parseObj,'stim',0,@isnumeric);
-            addParameter(parseObj,'part',1,@isnumeric); % 1 is for pre stimulations,% 2 is for stim
+            addParameter(parseObj,'part',1,@isnumeric); % 1 is for pre stimulations,% 2 is for stim 3 for post
             addParameter(parseObj,'tStartStim',0,@isnumeric); % 
             addParameter(parseObj,'tEndStim',0,@isnumeric); % 
             addParameter(parseObj,'percentage',1,@isnumeric); %
@@ -82,7 +82,7 @@ classdef sleepAnalysis < recAnalysis
             end
             TcycleOnset = TcycleOnset(pCyc);
             TcycleMid = TcycleMid(pCyc);
-            TcycleOffset = TcycleOffset (pCyc);
+            TcycleOffset = TcycleOffset(pCyc);
             
             %calculate phase in db
 
@@ -2262,7 +2262,7 @@ classdef sleepAnalysis < recAnalysis
             RolllDim = 1;
             hP(2) = polarplot(h(3),[angles(RolllDim,1) angles(RolllDim,1)],[0 1],'linewidth',2);
             h(3).RTick = [];
-            title(h(3),'<- Right |Roll| Left ->');
+            title(h(3),'<- Left |Roll| Right ->');
             h(3).ThetaZeroLocation = 'top';                                  % Change Angle Origin
             h(3).ThetaDir = 'clockwise'; 
 
@@ -2276,9 +2276,8 @@ classdef sleepAnalysis < recAnalysis
             ylim(h(4),[-1 1]);ylabel(h(4),'y');
             zlim(h(4),[-1 1]);zlabel(h(4),'z');
 
-            hQ2 = line(h(4),[pt(1),pt(2),-1], [dir(1),dir(2),0],'linewidth',2);
-            hQ2.Color=[0.5 0.9 0.9];
-
+            hL = line(h(4),[pt(1),dir(1)],[pt(2),dir(2)],[-1,-1],'linewidth',2);
+            hL.Color=[0.5 0.9 0.9];
 
             hWB=waitbar(0,'Genearating video for accelerometer head angle estimation...');
             for i=1:nFrames-1
@@ -2301,8 +2300,8 @@ classdef sleepAnalysis < recAnalysis
                     hQ.WData = dotProductsXYZ(3,p);                    
                     hQ.Color=[0 0.447 0.741];
                     
-                    %hQ2.UData = dotProductsXYZ(1,p);
-                    %hQ2.VData = dotProductsXYZ(2,p);
+                    hL.XData=[pt(1),dotProductsXYZ(1,p)];
+                    hL.YData=[pt(2),dotProductsXYZ(2,p)];
 
                     hP(1).ThetaData = [angles(pitchDim,p) angles(pitchDim,p)];
                     hP(2).ThetaData = [angles(RolllDim,p) angles(RolllDim,p)];
@@ -3809,6 +3808,8 @@ classdef sleepAnalysis < recAnalysis
             
             movWinSamples=round(chunksLength/timeBin);
             chunks=buffer(bufferedDelta2BetaRatio(pt),movWinSamples);
+            % chunks=buffer(bufferedBetaRatio(pt),movWinSamples);
+            
             tLong=t_ms(round(movWinSamples/2):movWinSamples:nSamples)/1000/60/60;
             
             sortedBetaRatio=sort(bufferedDelta2BetaRatio(~isnan(bufferedDelta2BetaRatio)));
@@ -3972,7 +3973,7 @@ classdef sleepAnalysis < recAnalysis
             xlim(tSlidingAC(pt([1 end]))/1000/60/60); %important for panel plots
             xl=xlim;
             set(h(1),'YDir','normal');
-            set(h(1),'XTickLabel',[]);
+            set(h(1),'XTickLabel',[]);    
             hold on;
             
             if stim ~=0 && stimCh ~=0
