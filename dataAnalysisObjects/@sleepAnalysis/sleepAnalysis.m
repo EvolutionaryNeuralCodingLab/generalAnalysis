@@ -2461,7 +2461,7 @@ classdef sleepAnalysis < recAnalysis
             updateTrackingVideoSkip=round(analyzedFrameRateHz/trackingVideoFrameRate);
             updatePointsSkip=round(analyzedFrameRateHz/updatePointsFrameRate);
             
-            pFrames=startFrame:skipFrames:endFrame;
+            pFrames=round(startFrame:skipFrames:endFrame);
             nFrames=numel(pFrames);
             delete(videoReader);
             parChestTracking.initialFrameSubregion=initialFrameSubregion;
@@ -4202,8 +4202,7 @@ classdef sleepAnalysis < recAnalysis
                 'pPeriod','period','acf','vallyPeriod','peak2VallyDiff','pSleepDBRatio','pSleepSlidingAC','acfPeakAll','acfVallyAll','peak2VallyDiffSliding','tSlidingAC','acfPeriodAll',...
                 'tStartSleep','tEndSleep','filteredSlidingPeriod','tFilteredSlidingPeriod','pSleepSlidingAC','pSleepDBRatioAC','bestSleepTime');
         end
-
-        
+      
         %% plotRespirationSlidingAC
         function h=plotRespirationSlidingAC(obj,varargin)
             %sleepAnalysis.plotDelta2BetaSlidingAC - input parameters: 
@@ -4211,6 +4210,7 @@ classdef sleepAnalysis < recAnalysis
             parseObj.FunctionName='sleepAnalysis\plotRespirationSlidingAC';
             addParameter(parseObj,'ch',obj.recTable.defaulLFPCh(obj.currentPRec),@isnumeric);
             addParameter(parseObj,'videoFile',regexp(obj.recTable.VideoFiles{obj.currentPRec},',','split'),@(x) all(isfile(x)));
+            addParameter(parseObj,'plotSleepDB',1,@isnumeric);
             addParameter(parseObj,'tStart',0,@isnumeric);
             addParameter(parseObj,'win',obj.currentDataObj.recordingDuration_ms,@isnumeric);
             addParameter(parseObj,'saveFigures',1,@isnumeric);
@@ -4232,14 +4232,6 @@ classdef sleepAnalysis < recAnalysis
             %make parameter structure
             parDbAutocorr=parseObj.Results;
 
-            dbAutocorrFile=[obj.currentAnalysisFolder filesep 'dbAutocorr_ch' num2str(ch) '.mat'];
-            obj.checkFileRecording(dbAutocorrFile,'Autocorr analysis missing, please first run getDelta2BetaAC');
-            DB=load(dbAutocorrFile);
-            
-            if win+tStart>obj.currentDataObj.recordingDuration_ms, win=obj.currentDataObj.recordingDuration_ms-tStart; end
-            pt=find(DB.tSlidingAC>=tStart & DB.tSlidingAC<=(tStart+win+DB.parDbAutocorr.movingAutoCorrWin/2));
-            DB.tSlidingAC=DB.tSlidingAC-DB.tSlidingAC(pt(1));
-            
             [~,videoFileName]=fileparts(videoFile);
             if iscell(videoFileName)
                 videoFileName=videoFileName{1};
@@ -4247,7 +4239,19 @@ classdef sleepAnalysis < recAnalysis
             respirationAutocorrFile=[obj.currentAnalysisFolder filesep 'respirationAC_' videoFileName '.mat'];
             obj.checkFileRecording(respirationAutocorrFile,'Autocorr analysis missing, please first run getRespirationAC');
             RAC=load(respirationAutocorrFile);
-            
+
+            if RAC.parRespirationAutocorr.sync2Triggers
+                dbAutocorrFile=[obj.currentAnalysisFolder filesep 'dbAutocorr_ch' num2str(ch) '.mat'];
+                obj.checkFileRecording(dbAutocorrFile,'Autocorr analysis missing, please first run getDelta2BetaAC');
+                DB=load(dbAutocorrFile);
+
+                if win+tStart>obj.currentDataObj.recordingDuration_ms, win=obj.currentDataObj.recordingDuration_ms-tStart; end
+                pt=find(DB.tSlidingAC>=tStart & DB.tSlidingAC<=(tStart+win+DB.parDbAutocorr.movingAutoCorrWin/2));
+                DB.tSlidingAC=DB.tSlidingAC-DB.tSlidingAC(pt(1));
+            else
+                pt=1:numel(RAC.tSlidingAC);
+            end
+
             if h(1)==0
                 fSAC=figure('position',[200 200 550 600]);
                 h(1)=subaxis(fSAC,2,1,1,'S',0.05,'M',0.1);
@@ -4267,16 +4271,20 @@ classdef sleepAnalysis < recAnalysis
             set(h(1),'XTickLabel',[]);
             hold on;
             
-            x=[(DB.tStartSleep-tStart)/1000/60/60 (DB.tEndSleep-tStart)/1000/60/60 (DB.tEndSleep-tStart)/1000/60/60 (DB.tStartSleep-tStart)/1000/60/60];
-            W=0.03;
-            y=yl(2)+W*[diff(yl) diff(yl) diff(yl)*3 diff(yl)*3];
-            h(4)=patch(x,y,[0.2 0.2 0.2],'Clipping','off','lineStyle','none','FaceAlpha',0.5); 
-            text((x(1)+x(2))/2,(y(1)+y(3))/2,'E-Sleep','HorizontalAlignment','center','VerticalAlignment','middle');
+            if parDbAutocorr.plotSleepDB
+                x=[(DB.tStartSleep-tStart)/1000/60/60 (DB.tEndSleep-tStart)/1000/60/60 (DB.tEndSleep-tStart)/1000/60/60 (DB.tStartSleep-tStart)/1000/60/60];
+                W=0.03;
+                y=yl(2)+W*[diff(yl) diff(yl) diff(yl)*3 diff(yl)*3];
+                h(4)=patch(x,y,[0.2 0.2 0.2],'Clipping','off','lineStyle','none','FaceAlpha',0.5);
+                text((x(1)+x(2))/2,(y(1)+y(3))/2,'E-Sleep','HorizontalAlignment','center','VerticalAlignment','middle');
+            end
             h(7)=line(xlim,[RAC.period RAC.period],'color',[1 0.8 0.8]);
 
             axes(h(2));
             h(5)=scatter(RAC.tSlidingAC/1000/60/60,RAC.acfPeriodAll,10,[0.8 0.8 1],'filled');hold on;
-            h(6)=plot((RAC.tFilteredSlidingPeriod)/1000/60/60,RAC.filteredSlidingPeriod,'-','lineWidth',3);
+            if ~isempty(RAC.filteredSlidingPeriod)
+                h(6)=plot((RAC.tFilteredSlidingPeriod)/1000/60/60,RAC.filteredSlidingPeriod,'-','lineWidth',3);
+            end
             ylabel('Respiration period [s]');
             xlabel('Time [h]');
             set(h(2),'Box','on');
@@ -4316,7 +4324,8 @@ classdef sleepAnalysis < recAnalysis
             addParameter(parseObj,'smoothingDuration',5*60*1000,@isnumeric);
             addParameter(parseObj,'respirationMedianFilterDuration',2*1000,@isnumeric);
             addParameter(parseObj,'pixelMoveThresh',10,@isnumeric);
-            addParameter(parseObj,'timeRemoveAfterROIShift',3,@isnumeric); %sec            
+            addParameter(parseObj,'timeRemoveAfterROIShift',3,@isnumeric); %sec
+            addParameter(parseObj,'sync2Triggers',1,@isnumeric);
             addParameter(parseObj,'overwrite',0,@isnumeric);
             
             addParameter(parseObj,'inputParams',false,@isnumeric);
@@ -4357,28 +4366,34 @@ classdef sleepAnalysis < recAnalysis
             chestTrackingFile=[obj.currentAnalysisFolder filesep 'chestTracking_' videoFileName '.mat'];
             obj.checkFileRecording(chestTrackingFile,'Chest tracking analysis missing, please first run getRespirationMovement');
             load(chestTrackingFile,'parChestTracking','bboxCenterAll','nFramesVideo','pFrames','pbboxUpdate','pointsUpdate','nFoundPoints','avgPointMovement'); %load data
-            
-            digiTrigFile=[obj.currentAnalysisFolder filesep 'getDigitalTriggers.mat'];
-            obj.checkFileRecording(digiTrigFile,'digital trigger file missing, please first run getDigitalTriggers');
-            load(digiTrigFile); %load data
 
+            if parRespirationAutocorr.sync2Triggers
+                %load digital triggers
+                digiTrigFile=[obj.currentAnalysisFolder filesep 'getDigitalTriggers.mat'];
+                obj.checkFileRecording(digiTrigFile,'digital trigger file missing, please first run getDigitalTriggers');
+                load(digiTrigFile); %load data
 
-            if isempty(digitalVideoSyncCh)
-                [~,digitalVideoSyncCh]=min(abs(nFramesVideo-cellfun(@(x) numel(x),tTrig)));
-                fprintf('Trigger channel %d was selected\n',digitalVideoSyncCh);
-            end
+                if isempty(digitalVideoSyncCh)
+                    [~,digitalVideoSyncCh]=min(abs(nFramesVideo-cellfun(@(x) numel(x),tTrig)));
+                    fprintf('Trigger channel %d was selected\n',digitalVideoSyncCh);
+                end
 
-            tFrames=tTrig{digitalVideoSyncCh};
-            diffFrames=abs(numel(tFrames)-round(nFramesVideo));
-            if diffFrames==0
-                disp('Number of frames in video and in triggers is equal, proceeding with analysis');
-            elseif diffFrames<110
-                fprintf('\n\nNumber of frames in video and in triggers differs by %d, \nproceeding with analysis assuming uniform distribution of lost frames in video\n',diffFrames);
-                tFrames(round((1:diffFrames)/diffFrames*numel(tFrames)))=[];
+                %check if video frames are synced to ephys
+                tFrames=tTrig{digitalVideoSyncCh};
+                diffFrames=abs(numel(tFrames)-round(nFramesVideo));
+                if diffFrames==0
+                    disp('Number of frames in video and in triggers is equal, proceeding with analysis');
+                elseif diffFrames<110
+                    fprintf('\n\nNumber of frames in video and in triggers differs by %d, \nproceeding with analysis assuming uniform distribution of lost frames in video\n',diffFrames);
+                    tFrames(round((1:diffFrames)/diffFrames*numel(tFrames)))=[];
+                else
+                    error(['Number of frames in video and in trigger (' num2str(digitalVideoSyncCh) ') differs by ' num2str(diffFrames) ', check recording!!!']);
+                end
             else
-                error(['Number of frames in video and in trigger (' num2str(digitalVideoSyncCh) ') differs by ' num2str(diffFrames) ', check recording!!!']);
+                tFrames=(1:nFramesVideo)*1000/parChestTracking.analyzedFrameRateHz;
+                diffFrames=[];
             end
-            
+
             %remove frames that are close to a ROI shift and frames with large shifts
             nFramesRemoveAfterROIShift=timeRemoveAfterROIShift*parChestTracking.analyzedFrameRateHz;
             updatedFrames=find(pbboxUpdate);
@@ -4408,7 +4423,6 @@ classdef sleepAnalysis < recAnalysis
             
             %cross correlation analysis
             %timeBin=mean(diff(tRespFrames));
-            respResampleRate=5; %Hz
             timeBin=1/respResampleRate*1000;
             respirationMedianFilterBin=ceil(respirationMedianFilterDuration/timeBin);
             respirationSignal=medfilt1(score,respirationMedianFilterBin)';
@@ -4458,7 +4472,9 @@ classdef sleepAnalysis < recAnalysis
             
             acfSamples=floor(movingAutoCorrWinSamples/2);
             if (pPeak(1)+maxPeriodBandSamples)>acfSamples
-                error('maxPeriodBand can not be longer than acf samples! reduce maxPeriodBand and run again');
+                pPeak=1;
+                fprintf('maxPeriodBand can not be longer than acf samples! reduce maxPeriodBand and run again.\nUsing an artificial value at Peak/2!!!')
+                %error('maxPeriodBand can not be longer than acf samples! reduce maxPeriodBand and run again');
             end
             
             acf=zeros(size(respirationForSlidingAutocorr,1)+1,size(respirationForSlidingAutocorr,2));

@@ -145,6 +145,7 @@ band2=cell2mat(band2All);band2=band2(:);
 t_ms=cell2mat(t_ms);
 
 save(obj.files.multiBand,'t_ms','band2to1Ratio','par','band2','band1','allFreqProfiles');
-if nargout==1
+
+if nargout==1 && overwrite
     data=load(obj.files.multiBand);
 end
