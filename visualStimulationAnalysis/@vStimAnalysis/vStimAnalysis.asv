@@ -1,28 +1,32 @@
 classdef vStimAnalysis
 
     properties
-        vStimClass(1,1) string {mustBeMember(vStimClass,...
-            {"rectGrid","linearlyMovingBall","linearlyMovingBarWidth","linearlyMovingDotsWrapped","rectNoiseGrid"})} = "";
+        vStimClass(1,1) string {mustBeMember(vStimClass,{'','rectGrid','linearlyMovingBall','linearlyMovingBarWidth','linearlyMovingDotsWrapped','rectNoiseGrid'})}='';
+    end
+
+    methods (Hidden)
+
+        %class constructor
+        function obj=vStimAnalysis(vStimClassValue)
+            if isempty(vStimClassValue)
+                disp('No visual class was entered, please def the vStimClass property')
+            obj.vStimClass=vStimClassValue;
+        end
     end
 
     methods
 
-        function obj=vStimAnalysis(vStimClassValue)
-            obj.vStimClass=vStimClassValue;
-        end
-
-        function T=getDiodeTriggers(obj,analogDataObj,extractionMethod)
+        function [upCross,downCross]=getDiodeTriggers(dataObj,analogDataCh,extractionMethod)
             arguments
-                obj
-                analogDataObj 
+                dataObj
+                analogDataCh
                 extractionMethod (1,:) string {mustBeMember(extractionMethod,...
-                    {"diodeThreshold","digitalTriggerDiode"})} = "diodeThreshold";
+                    {'diodeThreshold','digitalTriggerDiode'})} = 'diodeThreshold';
             end
 
             switch extractionMethod
                 case "diodeThreshold"
-                    [A,t_ms]=analogDataObj.getAnalogData(1,0,NP.recordingDuration_ms);
-                    t_ms=(1:numel(A))/NP.samplingFrequencyNI*1000;
+                    [A,t_ms]=dataObj.getAnalogData(analogDataCh,0,analogDataObj.recordingDuration_ms);
 
                     Th=mean(A(1:100:end));
                     upCross=t_ms(A(1:end-1)<Th & A(2:end)>=Th);
