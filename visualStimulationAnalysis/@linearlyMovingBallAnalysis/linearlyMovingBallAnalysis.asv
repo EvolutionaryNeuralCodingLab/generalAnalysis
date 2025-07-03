@@ -1,26 +1,22 @@
-classdef vStimAnalysis
+classdef linearlyMovingBallAnalysis < VStimAnalysis
 
     properties
-        vStimClass(1,1) string {mustBeMember(vStimClass,{'','rectGrid','linearlyMovingBall','linearlyMovingBarWidth','linearlyMovingDotsWrapped','rectNoiseGrid'})}='';
-        diodeUpCross
-        diodeDownCross
+
     end
 
     methods (Hidden)
 
-        %class constructor
-        function obj=vStimAnalysis(vStimClassValue)
-            if isempty(vStimClassValue)
-                disp('No visual class was entered, please define the vStimClass property.');
-            else
-                obj.vStimClass=vStimClassValue;
-            end
-        end
     end
 
     methods
 
-        function [upCross,downCross]=getDiodeTriggers(obj,dataObj,analogDataCh,extractionMethod)
+        %class constructor
+        function obj=linearlyMovingBallAnalysis(dataObj)
+            obj = obj@VStimAnalysis(dataObj); %calling superclass constructor
+        end
+
+        %Extract the frame flips from the diode signal
+        function [obj]=getDiodeTriggers(obj,dataObj,analogDataCh,extractionMethod)
             arguments (Input)
                 obj
                 dataObj
