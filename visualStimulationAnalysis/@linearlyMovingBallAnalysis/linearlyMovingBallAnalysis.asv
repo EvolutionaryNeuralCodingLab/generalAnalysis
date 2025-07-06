@@ -5,42 +5,16 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
     end
 
     methods (Hidden)
-
+        %class constructor - name of class should be identical to the visual stimulation with the addition of Analysis
+        function [obj] = linearlyMovingBallAnalysis(dataObj)
+            obj = obj.initialize(dataObj);
+        end
     end
 
     methods
 
-        %class constructor
-        function obj=linearlyMovingBallAnalysis(dataObj)
-            obj = obj@VStimAnalysis(dataObj); %calling superclass constructor
-        end
-
-        %Extract the frame flips from the diode signal
-        function [obj]=getDiodeTriggers(obj,dataObj,analogDataCh,extractionMethod)
-            arguments (Input)
-                obj
-                dataObj
-                analogDataCh
-                extractionMethod (1,:) string {mustBeMember(extractionMethod,...
-                    {'diodeThreshold','digitalTriggerDiode'})} = 'diodeThreshold';
-            end
-
-            switch extractionMethod
-                case "diodeThreshold"
-                    [A,t_ms]=dataObj.getAnalogData(analogDataCh,0,dataObj.recordingDuration_ms); %extract diode data for entire recording 
-
-                    Th=mean(A(1:100:end));
-                    obj.diodeUpCross=t_ms(A(1:end-1)<Th & A(2:end)>=Th);
-                    obj.diodeDownCross=t_ms(A(1:end-1)>Th & A(2:end)<=Th);
-
-                case "digitalTriggerDiode"
 
 
-            end
-
-
-
-        end
 
     end
 end
