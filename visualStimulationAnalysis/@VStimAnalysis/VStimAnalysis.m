@@ -1,16 +1,17 @@
 classdef (Abstract) VStimAnalysis < handle
 
     properties
-        diodeUpCross % times [ms] of diode up crossing
-        diodeDownCross % times [ms] of diode down crossing
+        %diodeUpCross % times [ms] of diode up crossing
+        %diodeDownCross % times [ms] of diode down crossing
         startSessionTrigger = [1 2] % Trigger number for start and end of visual stimulation session
         sessionOrderInRecording = [] % the sequential position of the relevant session in case a few sessions exist in the same recording
         sessionStartTime % the start time [ms] of the stimulation session
         sessionEndTime % the end time [ms] of the stimulation session
-        visualStimFolder
-        visualStimAnalysisFolder
-        visualStimulationFile
+        visualStimFolder %the folder with visual stimulation files
+        visualStimAnalysisFolder %the folder with results of visual stimulation analysis (under visualStimFolder)
+        visualStimulationFile %the name of the visual stimulation mat file
         stimName %the name of the visual stimulation - extracted by removing analysis from the class name
+        VST %all visual stimulation properties and values
     end
 
     properties (SetObservable, AbortSet = true, SetAccess=public)
@@ -32,14 +33,13 @@ classdef (Abstract) VStimAnalysis < handle
             else
                 obj.dataObj=dataObj;
             end
+            obj=getStimParams(obj);
         end
 
         %extract visual stimulation parameters from the file saved by VStim classes when running visualStimGUI
         function obj = getStimParams(obj)
            
-            % Future implementaion - if finding name strategy does not work try to find the correct file according to its save date which should correspond to recording dates
-            %find(dateNumber>obj.currentDataObj.startDate & dateNumber<obj.currentDataObj.endDate);
-
+            VSFile=[obj.visualStimFolder filesep obj.visualStimulationFile];
             disp(['Extracting information from: ' VSFile]);
             VS=load(VSFile);
 
@@ -64,8 +64,21 @@ classdef (Abstract) VStimAnalysis < handle
             analysisFile=[obj.visualStimAnalysisFolder,filesep,filesep,currentMethod{2},'.mat'];
         end
 
-        function obj = syncDiodeTriggers(obj)
+        function obj = syncDiodeTriggers(obj,params)
+            arguments
+                obj
+                params
+            end
+            diode=obj.getDiodeTriggers;
 
+            expectedFlips=numel(obj.VST.flip);
+            measuredFlips=numel(diode.diodeDownCross)+numel(diode.diodeUpCross);
+            fprintf('%d flips expected, %d found. Linking existing flip times with stimuli\n',expectedFlips,measuredFlips);
+
+            obj.diodeUpCross
+            obj.diodeDownCross
+
+            obj.VST.nTotTrials
         end
 
         %set the visual stimulation folder as soon as a data recording object is populated
@@ -158,7 +171,7 @@ classdef (Abstract) VStimAnalysis < handle
                 obj.startSessionTrigger=startEndChannel;
             end
             T=obj.dataObj.getTrigger;
-            if numel(T{obj.startSessionTrigger(1)})==1 && numel(T{obj.startSessionTrigger(2)})==1
+            if isscalar(T{obj.startSessionTrigger(1)}) && isscalar(T{obj.startSessionTrigger(2)})
                 obj.sessionStartTime=T{obj.startSessionTrigger(1)};
                 obj.sessionEndTime=T{obj.startSessionTrigger(2)};
             else
@@ -166,18 +179,24 @@ classdef (Abstract) VStimAnalysis < handle
                 obj.sessionStartTime=T{obj.startSessionTrigger(1)}(obj.sessionOrderInRecording);
                 obj.sessionEndTime=T{obj.startSessionTrigger(2)}(obj.sessionOrderInRecording);
             end
-            
+
+            sessionStartTime=obj.sessionStartTime;
+            sessionEndTime=obj.sessionEndTime;
+            startSessionTrigger=obj.startSessionTrigger;
+
+            %save results in the right file
+            db=dbstack;currentMethod=strsplit(db(end).name,'.');savedFileName=[obj.visualStimAnalysisFolder,filesep,currentMethod{2},'.mat'];
+            save(savedFileName,'sessionStartTime','sessionEndTime','startSessionTrigger');
         end
 
         %Extract the frame flips from the diode signal
-        function results=getDiodeTriggers(obj,dataObj,analogDataCh,params)
+        function results=getDiodeTriggers(obj,params)
             arguments (Input)
                 obj
-                dataObj
-                analogDataCh
                 %extractionMethod (1,1) string {mustBeMember(extractionMethod,{'diodeThreshold','digitalTriggerDiode'})} = 'diodeThreshold';
                 params.extractionMethod string = 'diodeThreshold'
                 params.overwrite logical = false
+                params.analogDataCh = 1
             end
 
             if isfile(obj.getAnalysisFileName) && ~params.overwrite
@@ -188,11 +207,12 @@ classdef (Abstract) VStimAnalysis < handle
                 return;
             end
 
+            fprintf('Extracting diode signal from analog channel #%d\n',params.analogDataCh);
             switch params.extractionMethod
                 case "diodeThreshold"
 
                     if ~any(isempty([obj.sessionStartTime,obj.sessionEndTime]))
-                        [A,t_ms]=dataObj.getAnalogData(analogDataCh,obj.sessionStartTime,obj.sessionEndTime-obj.sessionStartTime); %extract diode data for entire recording
+                        [A,t_ms]=obj.dataObj.getAnalogData(params.analogDataCh,obj.sessionStartTime,obj.sessionEndTime-obj.sessionStartTime); %extract diode data for entire recording
 
                         Th=mean(A(1:100:end));
                         diodeUpCross=t_ms(A(1:end-1)<Th & A(2:end)>=Th)+obj.sessionStartTime;
@@ -206,20 +226,30 @@ classdef (Abstract) VStimAnalysis < handle
             end
             %save results in the right file
             db=dbstack;currentMethod=strsplit(db(end).name,'.');savedFileName=[obj.visualStimAnalysisFolder,filesep,currentMethod{2},'.mat'];
-            save(savedFileName,'analogDataCh','params','diodeUpCross','diodeDownCross','Th');
+            save(savedFileName,'params','diodeUpCross','diodeDownCross','Th');
         end
 
-
         function f=plotDiodeTriggers(obj)
-            if ~any(isempty([obj.diodeUpCross,obj.diodeDownCross,obj.sessionStartTime]))
+            if isfile([obj.visualStimAnalysisFolder filesep 'getDiodeTriggers.mat'])
+                D=load([obj.visualStimAnalysisFolder filesep 'getDiodeTriggers.mat']);
+            else
+                fprintf('Missing analysis: Running getDiodeTriggers is required!');return;
+            end
+            if isfile([obj.visualStimAnalysisFolder filesep 'getSessionTime.mat'])
+                S=load([obj.visualStimAnalysisFolder filesep 'getSessionTime.mat']);
+            else
+                fprintf('Missing analysis: Running getSessionTime is required!');return;
+            end
+
+            if ~any(isempty([D.diodeUpCross,D.diodeDownCross,obj.sessionStartTime]))
                 f=figure('Position',[100,100,1200,300]);
-                h1=plot(obj.diodeUpCross,ones(1,numel(obj.diodeUpCross)),'^k');hold on;
-                h2=plot(obj.diodeDownCross,ones(1,numel(obj.diodeDownCross)),'vk');
-                h3=line([obj.sessionStartTime;obj.sessionEndTime]',[1.01;1.01]','linewidth',3);hold on;
+                h1=plot(D.diodeUpCross,ones(1,numel(D.diodeUpCross)),'^k');hold on;
+                h2=plot(D.diodeDownCross,ones(1,numel(D.diodeDownCross)),'vk');
+                h3=line([S.sessionStartTime;S.sessionEndTime]',[1.01;1.01]','linewidth',3);hold on;
                 ylim([0.99 1.02]);
                 l=legend([h1, h2, h3],{'diode up crossings','diode down crossings','stimulation session duration'});
             else
-                disp('plotting triggers requires running the methods: getDiodeTriggers, getSessionStartTime');
+                disp('plotting triggers requires missing variables: run getDiodeTriggers, getSessionStartTime again');
             end
         end
 
