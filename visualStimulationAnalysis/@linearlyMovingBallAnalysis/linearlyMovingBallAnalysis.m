@@ -13,8 +13,5 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
 
     methods
 
-
-
-
     end
 end
