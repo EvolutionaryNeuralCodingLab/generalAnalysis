@@ -106,7 +106,32 @@ classdef (Abstract) VStimAnalysis < handle
                     fileSepTransitions(end)=[];
                 end
                 if ~folderFound
-                    error('Visual stimulation folder was not found!!! Notice the the name of the folder should be visualStimulation');
+                    % Get list of .mat files in one folder down (old
+                    % location of .mat stim files)
+                    [OldStimDir, ~, ~] = fileparts(obj.dataObj.recordingDir); % remove filename  
+                    matFiles=dir([OldStimDir filesep '*.mat']);
+                    %matFiles = dir('*.mat');
+
+                    % Check if any .mat files exist
+                    if ~isempty(matFiles)
+                        % Create the new folder if it doesn't already exist
+                        newFolder = 'visualStimulation';
+                        if ~exist(newFolder, 'dir')
+                            mkdir(newFolder);
+                        end
+
+                        % Move each .mat file into the new folder
+                        for k = 1:length(matFiles)
+                            oldPath = fullfile(OldStimDir, matFiles(k).name);
+                            newPath = fullfile(OldStimDir, newFolder, matFiles(k).name);
+                            movefile(oldPath, newPath);
+                        end
+
+                        tmpDir=dir([tmpCurrentFolder filesep 'visualStimulation*']);
+                        VSFileLocation=[tmpCurrentFolder filesep tmpDir.name];         
+                    else
+                        error('Visual stimulation folder was not found!!! Notice the the name of the folder should be visualStimulation');
+                    end
                 end
             else
                 VSFileLocation=[obj.dataObj.recordingDir filesep tmpDir.name];
@@ -191,7 +216,7 @@ classdef (Abstract) VStimAnalysis < handle
 
         %Extract the frame flips from the diode signal
         function results=getDiodeTriggers(obj,params)
-            arguments (Input)
+            arguments %(Input)
                 obj
                 %extractionMethod (1,1) string {mustBeMember(extractionMethod,{'diodeThreshold','digitalTriggerDiode'})} = 'diodeThreshold';
                 params.extractionMethod string = 'diodeThreshold'
