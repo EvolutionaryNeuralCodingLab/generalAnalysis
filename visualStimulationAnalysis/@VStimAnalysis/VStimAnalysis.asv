@@ -99,12 +99,13 @@ classdef (Abstract) VStimAnalysis < handle
                     tmpCurrentFolder=obj.dataObj.recordingDir(1:fileSepTransitions(end));
                     %check parent folder for visual stimulation folder
                     tmpDir=dir([tmpCurrentFolder filesep 'visualStimulation*']);
-                    if ~isempty(tmpDir)
+                    if ~isempty(tmpDir) 
                         VSFileLocation=[tmpCurrentFolder filesep tmpDir.name];
                         folderFound=true;
                     end
                     fileSepTransitions(end)=[];
                 end
+                
                 if ~folderFound
                     % Get list of .mat files in one folder down (old
                     % location of .mat stim files)
@@ -116,6 +117,7 @@ classdef (Abstract) VStimAnalysis < handle
                     if ~isempty(matFiles)
                         % Create the new folder if it doesn't already exist
                         newFolder = 'visualStimulation';
+                        cd(OldStimDir)
                         if ~exist(newFolder, 'dir')
                             mkdir(newFolder);
                         end
@@ -123,7 +125,7 @@ classdef (Abstract) VStimAnalysis < handle
                         % Move each .mat file into the new folder
                         for k = 1:length(matFiles)
                             oldPath = fullfile(OldStimDir, matFiles(k).name);
-                            newPath = fullfile(pwd, newFolder, matFiles(k).name);
+                            newPath = fullfile(OldStimDir, newFolder, matFiles(k).name);
                             movefile(oldPath, newPath);
                         end
 

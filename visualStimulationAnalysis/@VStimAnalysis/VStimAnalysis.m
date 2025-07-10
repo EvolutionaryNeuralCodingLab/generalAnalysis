@@ -99,12 +99,12 @@ classdef (Abstract) VStimAnalysis < handle
                     tmpCurrentFolder=obj.dataObj.recordingDir(1:fileSepTransitions(end));
                     %check parent folder for visual stimulation folder
                     tmpDir=dir([tmpCurrentFolder filesep 'visualStimulation*']);
-                    if ~isempty(tmpDir)
+                    if ~isempty(tmpDir) 
                         VSFileLocation=[tmpCurrentFolder filesep tmpDir.name];
                         folderFound=true;
                     end
                     fileSepTransitions(end)=[];
-                end
+                end           
                 if ~folderFound
                     % Get list of .mat files in one folder down (old
                     % location of .mat stim files)
@@ -116,6 +116,7 @@ classdef (Abstract) VStimAnalysis < handle
                     if ~isempty(matFiles)
                         % Create the new folder if it doesn't already exist
                         newFolder = 'visualStimulation';
+                        cd(OldStimDir)
                         if ~exist(newFolder, 'dir')
                             mkdir(newFolder);
                         end
@@ -153,7 +154,11 @@ classdef (Abstract) VStimAnalysis < handle
             %find visual stimulation file according to recording file names and the name of the visual stimulation analysis class
             if nargin==1
                 VSFiles=dir([obj.visualStimFolder filesep '*.mat']);
-                dateTime=datetime({VSFiles.date},'InputFormat','dd-MMM-yyyy HH:mm:ss');
+                try
+                    dateTime=datetime({VSFiles.date},'InputFormat','dd-MMM-yyyy HH:mm:ss');
+                catch %In case pc regional setting is Israel and hebrew
+                    dateTime=datetime({VSFiles.date},'InputFormat','dd-MMM-yyyy HH:mm:ss','Locale', 'he_IL'); 
+                end
                 [~,pDate]=sort(dateTime);
                 VSFiles={VSFiles.name}; %do not switch with line above
                 recordingsFound=0;
