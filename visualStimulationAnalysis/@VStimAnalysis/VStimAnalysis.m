@@ -60,12 +60,12 @@ classdef (Abstract) VStimAnalysis < handle
         end
 
         function analysisFile = getAnalysisFileName(obj)
-            db=dbstack;currentMethod=strsplit(db(end).name,'.');
+            db=dbstack;currentMethod=strsplit(db(1).name,'.');
             analysisFile=[obj.visualStimAnalysisFolder,filesep,filesep,currentMethod{2},'.mat'];
         end
 
         function obj = syncDiodeTriggers(obj,params)
-            arguments
+            arguments (Input)
                 obj
                 params
             end
@@ -156,8 +156,9 @@ classdef (Abstract) VStimAnalysis < handle
                 VSFiles=dir([obj.visualStimFolder filesep '*.mat']);
                 try
                     dateTime=datetime({VSFiles.date},'InputFormat','dd-MMM-yyyy HH:mm:ss');
-                catch %In case pc regional setting is Israel and hebrew
-                    dateTime=datetime({VSFiles.date},'InputFormat','dd-MMM-yyyy HH:mm:ss','Locale', 'he_IL'); 
+                catch
+                    %In case pc regional setting is Israel and hebrew
+                    dateTime=datetime({VSFiles.date},'InputFormat','dd-MMM-yyyy HH:mm:ss','Locale', 'he_IL');
                 end
                 [~,pDate]=sort(dateTime);
                 VSFiles={VSFiles.name}; %do not switch with line above
@@ -180,8 +181,10 @@ classdef (Abstract) VStimAnalysis < handle
                     return;
                 else
                     obj.visualStimulationFile=VSFiles{pSession};
-                    [~,order]=sort(tmpDateTime);
-                    obj.sessionOrderInRecording=order(pSession);
+                    [Sdt,order]=sort(tmpDateTime);
+                    find(Sdt==tmpDateTime(pSession))
+                    %obj.sessionOrderInRecording=order(pSession);
+                    obj.sessionOrderInRecording = find(Sdt==tmpDateTime(pSession)); %This works, not sure why the previous line doesn't
                 end
             else
                 obj.visualStimulationFile=visualStimulationfile;
@@ -215,13 +218,13 @@ classdef (Abstract) VStimAnalysis < handle
             startSessionTrigger=obj.startSessionTrigger;
 
             %save results in the right file
-            db=dbstack;currentMethod=strsplit(db(end).name,'.');savedFileName=[obj.visualStimAnalysisFolder,filesep,currentMethod{2},'.mat'];
+            db=dbstack;currentMethod=strsplit(db(1).name,'.');savedFileName=[obj.visualStimAnalysisFolder,filesep,currentMethod{2},'.mat'];
             save(savedFileName,'sessionStartTime','sessionEndTime','startSessionTrigger');
         end
 
         %Extract the frame flips from the diode signal
         function results=getDiodeTriggers(obj,params)
-            arguments %(Input)
+            arguments (Input)
                 obj
                 %extractionMethod (1,1) string {mustBeMember(extractionMethod,{'diodeThreshold','digitalTriggerDiode'})} = 'diodeThreshold';
                 params.extractionMethod string = 'diodeThreshold'
@@ -250,12 +253,14 @@ classdef (Abstract) VStimAnalysis < handle
                     else
                         disp('Missing start and end times!!! Please run getSessionTime before extracting triggers');
                     end
-
                 case "digitalTriggerDiode"
-
+                     disp('Yet to fill in');
             end
+            results.diodeUpCross = diodeUpCross;
+            results.diodeDownCross = diodeDownCross;
+
             %save results in the right file
-            db=dbstack;currentMethod=strsplit(db(end).name,'.');savedFileName=[obj.visualStimAnalysisFolder,filesep,currentMethod{2},'.mat'];
+            db=dbstack;currentMethod=strsplit(db(1).name,'.');savedFileName=[obj.visualStimAnalysisFolder,filesep,currentMethod{2},'.mat'];
             save(savedFileName,'params','diodeUpCross','diodeDownCross','Th');
         end
 

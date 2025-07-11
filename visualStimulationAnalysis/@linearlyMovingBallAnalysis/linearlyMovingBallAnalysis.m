@@ -9,6 +9,9 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
         function [obj] = linearlyMovingBallAnalysis(dataObj)
             obj = obj.initialize(dataObj);
         end
+
+        %Get diode 
+        
     end
 
     methods

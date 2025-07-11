@@ -60,12 +60,12 @@ classdef (Abstract) VStimAnalysis < handle
         end
 
         function analysisFile = getAnalysisFileName(obj)
-            db=dbstack;currentMethod=strsplit(db(end).name,'.');
+            db=dbstack;currentMethod=strsplit(db(1).name,'.');
             analysisFile=[obj.visualStimAnalysisFolder,filesep,filesep,currentMethod{2},'.mat'];
         end
 
         function obj = syncDiodeTriggers(obj,params)
-            arguments
+            arguments (Input)
                 obj
                 params
             end
@@ -104,8 +104,7 @@ classdef (Abstract) VStimAnalysis < handle
                         folderFound=true;
                     end
                     fileSepTransitions(end)=[];
-                end
-                
+                end           
                 if ~folderFound
                     % Get list of .mat files in one folder down (old
                     % location of .mat stim files)
@@ -155,7 +154,12 @@ classdef (Abstract) VStimAnalysis < handle
             %find visual stimulation file according to recording file names and the name of the visual stimulation analysis class
             if nargin==1
                 VSFiles=dir([obj.visualStimFolder filesep '*.mat']);
-                dateTime=datetime({VSFiles.date},'InputFormat','dd-MMM-yyyy HH:mm:ss');
+                try
+                    dateTime=datetime({VSFiles.date},'InputFormat','dd-MMM-yyyy HH:mm:ss');
+                catch
+                    %In case pc regional setting is Israel and hebrew
+                    dateTime=datetime({VSFiles.date},'InputFormat','dd-MMM-yyyy HH:mm:ss','Locale', 'he_IL');
+                end
                 [~,pDate]=sort(dateTime);
                 VSFiles={VSFiles.name}; %do not switch with line above
                 recordingsFound=0;
@@ -212,13 +216,13 @@ classdef (Abstract) VStimAnalysis < handle
             startSessionTrigger=obj.startSessionTrigger;
 
             %save results in the right file
-            db=dbstack;currentMethod=strsplit(db(end).name,'.');savedFileName=[obj.visualStimAnalysisFolder,filesep,currentMethod{2},'.mat'];
+            db=dbstack;currentMethod=strsplit(db(1).name,'.');savedFileName=[obj.visualStimAnalysisFolder,filesep,currentMethod{2},'.mat'];
             save(savedFileName,'sessionStartTime','sessionEndTime','startSessionTrigger');
         end
 
         %Extract the frame flips from the diode signal
         function results=getDiodeTriggers(obj,params)
-            arguments %(Input)
+            arguments (Input)
                 obj
                 %extractionMethod (1,1) string {mustBeMember(extractionMethod,{'diodeThreshold','digitalTriggerDiode'})} = 'diodeThreshold';
                 params.extractionMethod string = 'diodeThreshold'
@@ -247,12 +251,14 @@ classdef (Abstract) VStimAnalysis < handle
                     else
                         disp('Missing start and end times!!! Please run getSessionTime before extracting triggers');
                     end
-
                 case "digitalTriggerDiode"
-
+                     disp('Yet to fill in');
             end
+            results.diodeUpCross = diodeUpCross;
+            results.diodeDownCross = diodeDownCross;
+
             %save results in the right file
-            db=dbstack;currentMethod=strsplit(db(end).name,'.');savedFileName=[obj.visualStimAnalysisFolder,filesep,currentMethod{2},'.mat'];
+            db=dbstack;currentMethod=strsplit(db(1).name,'.');savedFileName=[obj.visualStimAnalysisFolder,filesep,currentMethod{2},'.mat'];
             save(savedFileName,'params','diodeUpCross','diodeDownCross','Th');
         end
 
