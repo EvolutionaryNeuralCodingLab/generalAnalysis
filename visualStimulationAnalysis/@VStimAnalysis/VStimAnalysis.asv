@@ -67,18 +67,22 @@ classdef (Abstract) VStimAnalysis < handle
         function obj = syncDiodeTriggers(obj,params)
             arguments
                 obj
-                params
+                params.analysisTime = datetime('now')
             end
             diode=obj.getDiodeTriggers;
 
+            allFlips=obj.VST.flip';allFlips=allFlips(:)*1000;
+            allDiodeFlips=sort([diode.diodeUpCross,diode.diodeDownCross]);
             expectedFlips=numel(obj.VST.flip);
             measuredFlips=numel(diode.diodeDownCross)+numel(diode.diodeUpCross);
-            fprintf('%d flips expected, %d found. Linking existing flip times with stimuli\n',expectedFlips,measuredFlips);
+            fprintf('%d flips expected, %d found. Linking existing flip times with stimuli...\n',expectedFlips,measuredFlips);
 
-            obj.diodeUpCross
-            obj.diodeDownCross
+            for i=1:7
+                pMiss{i}=find(diff(allDiodeFlips)>obj.VST.ifi*1000*(i+0.5) & diff(allDiodeFlips)<=obj.VST.ifi*1000*(i+1.5));
+            end
 
-            obj.VST.nTotTrials
+            plot(allFlips-allFlips(1),ones(1,numel(allFlips)),'or');hold on;plot(allDiodeFlips-allDiodeFlips(1),ones(1,numel(allDiodeFlips)),'.k');
+
         end
 
         %set the visual stimulation folder as soon as a data recording object is populated
@@ -197,11 +201,13 @@ classdef (Abstract) VStimAnalysis < handle
                 params.extractionMethod string = 'diodeThreshold'
                 params.overwrite logical = false
                 params.analogDataCh = 1
+                params.analysisTime = datetime('now')
             end
 
             if isfile(obj.getAnalysisFileName) && ~params.overwrite
-                disp('Analysis already exists, use overwrite option to recalculate');
+                fprintf('Analysis already exists (use overwrite option to recalculate).\n');
                 if nargout==1
+                    fprintf('Loading saved results from file.\n');
                     results=load(obj.getAnalysisFileName);
                 end
                 return;
