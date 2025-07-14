@@ -397,7 +397,16 @@ classdef (Abstract) VStimAnalysis < handle
                         disp('Missing start and end times!!! Please run getSessionTime before extracting triggers');
                     end
                 case "digitalTriggerDiode"
-                     disp('Yet to fill in');
+                     if ~any(isempty([obj.sessionStartTime,obj.sessionEndTime]))
+                        [A,t_ms]=obj.dataObj.getAnalogData(params.analogDataCh,obj.sessionStartTime,obj.sessionEndTime-obj.sessionStartTime); %extract diode data for entire recording               
+                        
+                        
+                        
+                        diodeUpCross=;
+                        diodeDownCross=;
+                    else
+                        disp('Missing start and end times!!! Please run getSessionTime before extracting triggers');
+                    end
             end
             results.diodeUpCross = diodeUpCross;
             results.diodeDownCross = diodeDownCross;
