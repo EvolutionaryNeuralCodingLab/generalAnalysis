@@ -40,11 +40,12 @@ classdef (Abstract) VStimAnalysis < handle
             obj=getStimParams(obj);
         end
 
-        function obj = getStimLFP(obj,params)
+        function results = getStimLFP(obj,params)
 
             arguments (Input)
                 obj
-                params.win = 'stimDuratio'; %window in ms for LFP analysis - this parameter is determined automatically according to stim duration +500ms
+                params.win = [500,500] % duration [1,2] [ms] (for on and off) for LFP analysis
+                params.channelSkip = 5 %includes every 5th channel
                 params.overwrite logical = false
                 params.analysisTime = datetime('now')
             end
@@ -60,10 +61,7 @@ classdef (Abstract) VStimAnalysis < handle
                 return;
             end
 
-            stimTimes=vs.getSyncedDiodeTriggers;
-            vs=vs.getStimParams;
-            if isempty(params.win)
-            end
+            stimTimes=obj.getSyncedDiodeTriggers;
 
             %Design decimation Filter
             F=filterData(vs.dataObj.samplingFrequencyAP(1));
@@ -73,14 +71,14 @@ classdef (Abstract) VStimAnalysis < handle
             samplingFreqLFP=F.filteredSamplingFrequency;
 
             %To add: for cases of low memory use a loop for calculating over groups of 10 trials and merge 
-            [FLP_on,t_ms]=vs.dataObj.getData(1:384,stimTimes.diodeOnFlipTimes,round(vs.VST.stimDuration*1000));
-            FLP_on=F.getFilteredData(FLP_on);
+            [LFP_on,t_ms]=vs.dataObj.getData(1:params.channelSkip:end,stimTimes.diodeOnFlipTimes,params.win(1));
+            LFP_on=F.getFilteredData(LFP_on);
 
-            [FLP_off,t_ms]=vs.dataObj.getData(1:384,stimTimes.diodeOffFlipTimes,round(vs.VST.stimDuration*1000));
-            FLP_off=F.getFilteredData(FLP_off);
+            [LFP_off,t_ms]=vs.dataObj.getData(1:params.channelSkip:end,stimTimes.diodeOffFlipTimes,params.win(2));
+            LFP_off=F.getFilteredData(LFP_off);
 
             fprintf('Saving results to file.\n');
-            save(obj.getAnalysisFileName,'params');
+            save(obj.getAnalysisFileName,'params','LFP_on','LFP_off','samplingFreqLFP');
         end
 
         %extract visual stimulation parameters from the file saved by VStim classes when running visualStimGUI
@@ -206,7 +204,7 @@ classdef (Abstract) VStimAnalysis < handle
 
         %set the visual stimulation folder as soon as a data recording object is populated
         function obj=setVisualStimFolder(obj) %the events need to be here otherwise the code does not work
-            %extract the visual stimulation parameters from parameter file
+             %extract the visual stimulation parameters from parameter file
             nParentFolders2Check=2;
             folderFound=false;
 
@@ -222,40 +220,14 @@ classdef (Abstract) VStimAnalysis < handle
                     tmpCurrentFolder=obj.dataObj.recordingDir(1:fileSepTransitions(end));
                     %check parent folder for visual stimulation folder
                     tmpDir=dir([tmpCurrentFolder filesep 'visualStimulation*']);
-                    if ~isempty(tmpDir) 
+                    if ~isempty(tmpDir)
                         VSFileLocation=[tmpCurrentFolder filesep tmpDir.name];
                         folderFound=true;
                     end
                     fileSepTransitions(end)=[];
-                end           
+                end
                 if ~folderFound
-                    % Get list of .mat files in one folder down (old
-                    % location of .mat stim files)
-                    [OldStimDir, ~, ~] = fileparts(obj.dataObj.recordingDir); % remove filename  
-                    matFiles=dir([OldStimDir filesep '*.mat']);
-                    %matFiles = dir('*.mat');
-
-                    % Check if any .mat files exist
-                    if ~isempty(matFiles)
-                        % Create the new folder if it doesn't already exist
-                        newFolder = 'visualStimulation';
-                        cd(OldStimDir)
-                        if ~exist(newFolder, 'dir')
-                            mkdir(newFolder);
-                        end
-
-                        % Move each .mat file into the new folder
-                        for k = 1:length(matFiles)
-                            oldPath = fullfile(OldStimDir, matFiles(k).name);
-                            newPath = fullfile(OldStimDir, newFolder, matFiles(k).name);
-                            movefile(oldPath, newPath);
-                        end
-
-                        tmpDir=dir([tmpCurrentFolder filesep 'visualStimulation*']);
-                        VSFileLocation=[tmpCurrentFolder filesep tmpDir.name];         
-                    else
-                        error('Visual stimulation folder was not found!!! Notice the the name of the folder should be visualStimulation');
-                    end
+                    error('Visual stimulation folder was not found!!! Notice the the name of the folder should be visualStimulation');
                 end
             else
                 VSFileLocation=[obj.dataObj.recordingDir filesep tmpDir.name];
@@ -273,10 +245,43 @@ classdef (Abstract) VStimAnalysis < handle
 
         end
 
+        function copyFilesFromRecordingFolder(obj)
+            filesFound=false;
+            numberOfParentFolders=2;
+            tmpFolder=obj.dataObj.recordingDir;
+            for f=1:numberOfParentFolders
+                matFiles=dir([tmpFolder filesep '*.mat']);
+                if ~isempty(matFiles)
+                    for i=1:numel(matFiles)
+                        tmpVars=whos('-file',[obj.dataObj.recordingDir filesep matFiles(i).name]);
+                        if strcmp(tmpVars.name,'VSMetaData')
+                            copyfile([obj.dataObj.recordingDir filesep matFiles(i).name], obj.visualStimFolder);
+                            filesFound=true;
+                        end
+                    end
+                end
+                if ~filesFound
+                    if tmpFolder(end)==filesep
+                        [tmpFolder, ~, ~] = fileparts(tmpFolder(1:end-1));
+                    else
+                        [tmpFolder, ~, ~] = fileparts(tmpFolder(1:end));
+                    end
+                end
+            end
+
+            if ~filesFound
+                error('No visual stimulation mat files found!!! Please copy stimulation files to the visual stimulation folder')
+            end
+        end
+
         function obj=setVisualStimulationFile(obj,visualStimulationfile)
             %find visual stimulation file according to recording file names and the name of the visual stimulation analysis class
             if nargin==1
                 VSFiles=dir([obj.visualStimFolder filesep '*.mat']);
+                if isempty(VSFiles)
+                    obj.copyFilesFromRecordingFolder;
+                end
+
                 try
                     dateTime=datetime({VSFiles.date},'InputFormat','dd-MMM-yyyy HH:mm:ss');
                 catch
