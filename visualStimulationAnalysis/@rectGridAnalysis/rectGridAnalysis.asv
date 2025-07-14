@@ -17,7 +17,6 @@ classdef rectGridAnalysis < VStimAnalysis
     end
 
     methods
-
         function obj = plotSpatialTuning(obj,params)
             arguments (Input)
                 obj
@@ -25,15 +24,15 @@ classdef rectGridAnalysis < VStimAnalysis
                 params.analysisTime = datetime('now')
             end
             
-            stimTimes=vs.syncDiodeTriggers;
-            vs.dataObj.getData(1:384)
+            t
+            vs.dataObj.getData(1:384,)
             %{
-                f=figure;h=axes;
-                [hPlot]=activityMultiTracePhysicalSpacePlot(h,(1:32)',squeeze(M_Int),En,'DrawElectrodeNumbers',0,'traceColor',[0.8 0.2 0.2]);
-                [hScaleBar]=addScaleBar(h,'scaleFac',1.4);
+            f=figure;h=axes;
+[hPlot]=activityMultiTracePhysicalSpacePlot(h,(1:32)',squeeze(M_Int),En,'DrawElectrodeNumbers',0,'traceColor',[0.8 0.2 0.2]);
+[hScaleBar]=addScaleBar(h,'scaleFac',1.4);
 
-                f=figure;h=axes;
-                activityTracePhysicalSpacePlot(h,IntanData.channelNumbers(:),squeeze(mean(M_Intan(:,pOrdered(1),:),2)),IntanData.chLayoutNumbers,'traceColor',[0.8 0.2 0.2],'DrawElectrodeNumbers',0);
+f=figure;h=axes;
+activityTracePhysicalSpacePlot(h,IntanData.channelNumbers(:),squeeze(mean(M_Intan(:,pOrdered(1),:),2)),IntanData.chLayoutNumbers,'traceColor',[0.8 0.2 0.2],'DrawElectrodeNumbers',0);
             %}
         end
     end
