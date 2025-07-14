@@ -40,9 +40,52 @@ classdef (Abstract) VStimAnalysis < handle
             obj=getStimParams(obj);
         end
 
+        function obj = getStimLFP(obj,params)
+
+            arguments (Input)
+                obj
+                params.win = 'stimDuratio'; %window in ms for LFP analysis - this parameter is determined automatically according to stim duration +500ms
+                params.overwrite logical = false
+                params.analysisTime = datetime('now')
+            end
+
+            %load previous results if analysis was previuosly performed and there is no need to overwrite
+            results=[];
+            if isfile(obj.getAnalysisFileName) && ~params.overwrite
+                fprintf('Analysis already exists (use overwrite option to recalculate).\n');
+                if nargout==1
+                    fprintf('Loading saved results from file.\n');
+                    results=load(obj.getAnalysisFileName);
+                end
+                return;
+            end
+
+            stimTimes=vs.getSyncedDiodeTriggers;
+            vs=vs.getStimParams;
+            if isempty(params.win)
+            end
+
+            %Design decimation Filter
+            F=filterData(vs.dataObj.samplingFrequencyAP(1));
+            F.downSamplingFactor=vs.dataObj.samplingFrequencyAP(1)/250;
+            F=F.designDownSample;
+            F.padding=true;
+            samplingFreqLFP=F.filteredSamplingFrequency;
+
+            %To add: for cases of low memory use a loop for calculating over groups of 10 trials and merge 
+            [FLP_on,t_ms]=vs.dataObj.getData(1:384,stimTimes.diodeOnFlipTimes,round(vs.VST.stimDuration*1000));
+            FLP_on=F.getFilteredData(FLP_on);
+
+            [FLP_off,t_ms]=vs.dataObj.getData(1:384,stimTimes.diodeOffFlipTimes,round(vs.VST.stimDuration*1000));
+            FLP_off=F.getFilteredData(FLP_off);
+
+            fprintf('Saving results to file.\n');
+            save(obj.getAnalysisFileName,'params');
+        end
+
         %extract visual stimulation parameters from the file saved by VStim classes when running visualStimGUI
         function obj = getStimParams(obj)
-           
+
             VSFile=[obj.visualStimFolder filesep obj.visualStimulationFile];
             disp(['Extracting information from: ' VSFile]);
             VS=load(VSFile);
@@ -68,7 +111,7 @@ classdef (Abstract) VStimAnalysis < handle
             analysisFile=[obj.visualStimAnalysisFolder,filesep,currentMethod{2},'.mat'];
         end
 
-        function results = syncDiodeTriggers(obj,params)
+        function results = getSyncedDiodeTriggers(obj,params)
             arguments
                 obj
                 params.overwrite logical = false
@@ -106,13 +149,15 @@ classdef (Abstract) VStimAnalysis < handle
                 case 'videoTrials'
                     pTrialEnds=[find(diff(allDiodeFlips)>obj.VST.interTrialDelay*0.9*1000) numel(allDiodeFlips)];
                     pTrialStarts=[1 1+find(diff(allDiodeFlips)>obj.VST.interTrialDelay*0.9*1000)];
+                    stimOnFlipTimes=allDiodeFlips(pTrialStarts);
+                    stimOffFlipTimes=allDiodeFlips(pTrialEnds);
 
                     if numel(pTrialEnds)~=obj.VST.nTotTrials || numel(pTrialStarts)~=obj.VST.nTotTrials
                         disp('The total number of trials does not equal the number of inter trial delay gaps! Could not perform trial association');
                     end
 
                     trialDiodeFlips=cell(1,obj.VST.nTotTrials);
-                    diodeFlipTimes=nan(size(obj.VST.flip));
+                    diodeFrameFlipTimes=nan(size(obj.VST.flip));
                     for i=1:obj.VST.nTotTrials
                         pFlips=~isnan(obj.VST.flip(i,:)); %not all trials have the same number of flips
                         currentDiodeFlipTimes=allDiodeFlips(pTrialStarts(i):pTrialEnds(i));
@@ -137,7 +182,7 @@ classdef (Abstract) VStimAnalysis < handle
                         else
                             error('The case which there are more diode flips than stimulated frames was not addressed in the algorithm! Please add to code.')
                         end
-                        diodeFlipTimes(i,in)=currentDiodeFlipTimes(p(p~=0));
+                        diodeFrameFlipTimes(i,in)=currentDiodeFlipTimes(p(p~=0));
 
                         %{
                     plot(currentPCFlipTimes-currentPCFlipTimes(1),ones(1,numel(currentPCFlipTimes)),'.k');hold on;
@@ -145,17 +190,17 @@ classdef (Abstract) VStimAnalysis < handle
                         %}
                     end
                     fprintf('Saving results to file.\n');
-                    save(obj.getAnalysisFileName,'params','diodeFlipTimes','pTrialStarts','pTrialEnds');
+                    save(obj.getAnalysisFileName,'params','diodeFrameFlipTimes','stimOnFlipTimes','stimOffFlipTimes');
                 case 'imageTrials'
                     if expectedFlips==measuredFlips
-                        diodeOnFlipTimes=allDiodeFlips(1:2:end);
-                        diodeOffFlipTimes=allDiodeFlips(2:2:end);
+                        stimOnFlipTimes=allDiodeFlips(1:2:end);
+                        stimOffFlipTimes=allDiodeFlips(2:2:end);
                     else
                         error('This case of unequal triggers for image type trials was not addressed in the code!');
                         return;
                     end
                     fprintf('Saving results to file.\n');
-                    save(obj.getAnalysisFileName,'params','diodeOnFlipTimes','diodeOffFlipTimes');
+                    save(obj.getAnalysisFileName,'params','stimOnFlipTimes','stimOffFlipTimes');
             end
         end
 
@@ -244,20 +289,27 @@ classdef (Abstract) VStimAnalysis < handle
             end
         end
 
-        function obj=getSessionTime(obj,startEndChannel)
+        function obj=getSessionTime(obj,params)
+            arguments (Input)
+                obj
+                params.startEndChannel = []
+                params.overwrite logical = false
+                params.analysisTime = datetime('now')
+            end
+
 
             %load previous results if analysis was previuosly performed and there is no need to overwrite
             if isfile(obj.getAnalysisFileName) && ~params.overwrite
                 fprintf('Analysis already exists (use overwrite option to recalculate).\n');
                 results=load(obj.getAnalysisFileName);
-                obj.sessionStartTime=sessionStartTime;
-                obj.sessionEndTime=sessionEndTime;
-                obj.startSessionTrigger=startSessionTrigger;
+                obj.sessionStartTime=results.sessionStartTime;
+                obj.sessionEndTime=results.sessionEndTime;
+                obj.startSessionTrigger=results.startSessionTrigger;
                 return;
             end
 
             if nargin == 2
-                obj.startSessionTrigger=startEndChannel;
+                obj.startSessionTrigger=params.startEndChannel;
             end
             T=obj.dataObj.getTrigger;
             if isscalar(T{obj.startSessionTrigger(1)}) && isscalar(T{obj.startSessionTrigger(2)}) %only 1 visual stimulation session in the recording
