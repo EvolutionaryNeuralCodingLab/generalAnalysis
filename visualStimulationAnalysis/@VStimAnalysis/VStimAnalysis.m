@@ -40,11 +40,12 @@ classdef (Abstract) VStimAnalysis < handle
             obj=getStimParams(obj);
         end
 
-        function obj = getStimLFP(obj,params)
+        function results = getStimLFP(obj,params)
 
             arguments (Input)
                 obj
-                params.win = [500,500]; % duration [1,2] [ms] (for on and off) for LFP analysis
+                params.win = [500,500] % duration [1,2] [ms] (for on and off) for LFP analysis
+                params.channelSkip = 5 %includes every 5th channel
                 params.overwrite logical = false
                 params.analysisTime = datetime('now')
             end
@@ -60,10 +61,7 @@ classdef (Abstract) VStimAnalysis < handle
                 return;
             end
 
-            stimTimes=vs.getSyncedDiodeTriggers;
-            vs=vs.getStimParams;
-            if isempty(params.win)
-            end
+            stimTimes=obj.getSyncedDiodeTriggers;
 
             %Design decimation Filter
             F=filterData(vs.dataObj.samplingFrequencyAP(1));
@@ -73,14 +71,14 @@ classdef (Abstract) VStimAnalysis < handle
             samplingFreqLFP=F.filteredSamplingFrequency;
 
             %To add: for cases of low memory use a loop for calculating over groups of 10 trials and merge 
-            [FLP_on,t_ms]=vs.dataObj.getData(1:384,stimTimes.diodeOnFlipTimes,round(vs.VST.stimDuration*1000));
-            FLP_on=F.getFilteredData(FLP_on);
+            [LFP_on,t_ms]=vs.dataObj.getData(1:params.channelSkip:end,stimTimes.diodeOnFlipTimes,params.win(1));
+            LFP_on=F.getFilteredData(LFP_on);
 
-            [FLP_off,t_ms]=vs.dataObj.getData(1:384,stimTimes.diodeOffFlipTimes,round(vs.VST.stimDuration*1000));
-            FLP_off=F.getFilteredData(FLP_off);
+            [LFP_off,t_ms]=vs.dataObj.getData(1:params.channelSkip:end,stimTimes.diodeOffFlipTimes,params.win(2));
+            LFP_off=F.getFilteredData(LFP_off);
 
             fprintf('Saving results to file.\n');
-            save(obj.getAnalysisFileName,'params');
+            save(obj.getAnalysisFileName,'params','LFP_on','LFP_off','samplingFreqLFP');
         end
 
         %extract visual stimulation parameters from the file saved by VStim classes when running visualStimGUI
@@ -227,7 +225,8 @@ classdef (Abstract) VStimAnalysis < handle
                         folderFound=true;
                     end
                     fileSepTransitions(end)=[];
-                end           
+                end   
+                
                 if ~folderFound
                     % Get list of .mat files in one folder down (old
                     % location of .mat stim files)
