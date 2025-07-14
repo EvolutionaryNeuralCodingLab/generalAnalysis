@@ -18,6 +18,10 @@ classdef (Abstract) VStimAnalysis < handle
         dataObj %data recording object
     end
 
+    properties (Constant, Abstract)
+        trialType % The type of trials in terms of flips 'imageTrials' have on flip per trial and 'videoTrials' have many flips per trial 
+    end
+
     methods (Hidden)
 
     end
@@ -60,25 +64,99 @@ classdef (Abstract) VStimAnalysis < handle
         end
 
         function analysisFile = getAnalysisFileName(obj)
-            db=dbstack;currentMethod=strsplit(db(1).name,'.');
-            analysisFile=[obj.visualStimAnalysisFolder,filesep,filesep,currentMethod{2},'.mat'];
+            db=dbstack;currentMethod=strsplit(db(2).name,'.');
+            analysisFile=[obj.visualStimAnalysisFolder,filesep,currentMethod{2},'.mat'];
         end
 
-        function obj = syncDiodeTriggers(obj,params)
-            arguments (Input)
+        function results = syncDiodeTriggers(obj,params)
+            arguments
                 obj
-                params
+                params.overwrite logical = false
+                params.analysisTime = datetime('now')
+            end
+
+            %load previous results if analysis was previuosly performed and there is no need to overwrite
+            results=[];
+            if isfile(obj.getAnalysisFileName) && ~params.overwrite
+                fprintf('Analysis already exists (use overwrite option to recalculate).\n');
+                if nargout==1
+                    fprintf('Loading saved results from file.\n');
+                    results=load(obj.getAnalysisFileName);
+                end
+                return;
             end
             diode=obj.getDiodeTriggers;
 
-            expectedFlips=numel(obj.VST.flip);
+            allDiodeFlips=sort([diode.diodeUpCross,diode.diodeDownCross]);
+            allDiodeFlips(1+find(diff(allDiodeFlips)<obj.VST.ifi*1000/2))=[]; %remove double diode flip detections assuming intervals can not be faster than frame rate
             measuredFlips=numel(diode.diodeDownCross)+numel(diode.diodeUpCross);
-            fprintf('%d flips expected, %d found. Linking existing flip times with stimuli\n',expectedFlips,measuredFlips);
 
-            obj.diodeUpCross
-            obj.diodeDownCross
+            if isfield(obj.VST,'on_Flip')
+                allFlips=[obj.VST.on_Flip;obj.VST.off_Flip];allFlips=allFlips(:);
+            elseif isfield(obj.VST,'flip')
+                allFlips=obj.VST.flip';allFlips=allFlips(:)*1000;
+            end
+            expectedFlips=numel(allFlips);
+            fprintf('%d flips expected, %d found (diff=%d). Linking existing flip times with stimuli...\n',expectedFlips,measuredFlips,expectedFlips-measuredFlips);
+            if (expectedFlips-measuredFlips)>0.1*expectedFlips
+                fprintf('There are more than 10% mismatch in the number of diode and vStim expected flips. Cant continue!!! Please check diode extration!');
+                return;
+            end
+            switch obj.trialType
+                case 'videoTrials'
+                    pTrialEnds=[find(diff(allDiodeFlips)>obj.VST.interTrialDelay*0.9*1000) numel(allDiodeFlips)];
+                    pTrialStarts=[1 1+find(diff(allDiodeFlips)>obj.VST.interTrialDelay*0.9*1000)];
 
-            obj.VST.nTotTrials
+                    if numel(pTrialEnds)~=obj.VST.nTotTrials || numel(pTrialStarts)~=obj.VST.nTotTrials
+                        disp('The total number of trials does not equal the number of inter trial delay gaps! Could not perform trial association');
+                    end
+
+                    trialDiodeFlips=cell(1,obj.VST.nTotTrials);
+                    diodeFlipTimes=nan(size(obj.VST.flip));
+                    for i=1:obj.VST.nTotTrials
+                        pFlips=~isnan(obj.VST.flip(i,:)); %not all trials have the same number of flips
+                        currentDiodeFlipTimes=allDiodeFlips(pTrialStarts(i):pTrialEnds(i));
+                        currentPCFlipTimes=obj.VST.flip(i,pFlips)*1000;
+                        %plot(allFlips-allFlips(1),ones(1,numel(allFlips)),'or');hold on;plot(allDiodeFlips-allDiodeFlips(1),ones(1,numel(allDiodeFlips)),'.k');
+                        %check for cases in which there was a missed frame in diode signal - this could be from a missed frame or a delayed frame
+                        pDelayed=diff(currentDiodeFlipTimes)>obj.VST.ifi*1000*1.5;
+                        frameMatch=numel(currentPCFlipTimes)-(numel(currentDiodeFlipTimes)+sum(pDelayed));
+                        if frameMatch>=0 %all frames that were not present were missed
+                            [in,p]=ismembertol(currentPCFlipTimes-currentPCFlipTimes(1),currentDiodeFlipTimes-currentDiodeFlipTimes(1),obj.VST.ifi*1000/2,'DataScale',1);
+                        elseif (frameMatch+sum(pDelayed))==0 %at least some of the frames were delayed in presentation and not just missed
+                            %look for a delay in diode flips which may explain a consistent delay
+                            tmpDiode=currentDiodeFlipTimes+cumsum([zeros(1,-frameMatch) pDelayed])*(-obj.VST.ifi*1000);
+                            [in,p]=ismembertol(currentPCFlipTimes-currentPCFlipTimes(1),tmpDiode-tmpDiode(1),obj.VST.ifi*1000/2,'DataScale',1);
+                        elseif frameMatch<0 && (numel(currentPCFlipTimes)-numel(currentDiodeFlipTimes))>=0 %identifies irregularities in timing
+                            in=ones(1,numel(currentDiodeFlipTimes));
+                            p=1:numel(currentDiodeFlipTimes);
+                        elseif frameMatch<0 %the match is negative and there was no compensation due the previous condition
+                            currentDiodeFlipTimes=currentDiodeFlipTimes(1:numel(currentPCFlipTimes)); %remove excess frames at end and match one to one
+                            in=ones(1,numel(currentPCFlipTimes));
+                            p=1:numel(currentPCFlipTimes);
+                        else
+                            error('The case which there are more diode flips than stimulated frames was not addressed in the algorithm! Please add to code.')
+                        end
+                        diodeFlipTimes(i,in)=currentDiodeFlipTimes(p(p~=0));
+
+                        %{
+                    plot(currentPCFlipTimes-currentPCFlipTimes(1),ones(1,numel(currentPCFlipTimes)),'.k');hold on;
+                    plot(currentDiodeFlipTimes-currentDiodeFlipTimes(1),ones(1,numel(currentDiodeFlipTimes)),'or');legend({'trig','diode'})
+                        %}
+                    end
+                    fprintf('Saving results to file.\n');
+                    save(obj.getAnalysisFileName,'params','diodeFlipTimes','pTrialStarts','pTrialEnds');
+                case 'imageTrials'
+                    if expectedFlips==measuredFlips
+                        diodeOnFlipTimes=allDiodeFlips(1:2:end);
+                        diodeOffFlipTimes=allDiodeFlips(2:2:end);
+                    else
+                        error('This case of unequal triggers for image type trials was not addressed in the code!');
+                        return;
+                    end
+                    fprintf('Saving results to file.\n');
+                    save(obj.getAnalysisFileName,'params','diodeOnFlipTimes','diodeOffFlipTimes');
+            end
         end
 
         %set the visual stimulation folder as soon as a data recording object is populated
@@ -177,12 +255,12 @@ classdef (Abstract) VStimAnalysis < handle
                 end
 
                 if recordingsFound~=1
-                    fprintf('%d matchings visual stimulation files found.\n Please check the names of visual stimulation files or run setVisualStimulationFile(file) with the filename as input.\n');
+                    fprintf('No matchings visual stimulation files found!!!\n Please check the names of visual stimulation files or run setVisualStimulationFile(file) with the filename as input.\n');
                     return;
                 else
                     obj.visualStimulationFile=VSFiles{pSession};
                     [~,order]=sort(tmpDateTime);
-                    obj.sessionOrderInRecording=order(pSession);
+                    obj.sessionOrderInRecording=find(order==pSession);
                 end
             else
                 obj.visualStimulationFile=visualStimulationfile;
@@ -198,11 +276,22 @@ classdef (Abstract) VStimAnalysis < handle
         end
 
         function obj=getSessionTime(obj,startEndChannel)
+
+            %load previous results if analysis was previuosly performed and there is no need to overwrite
+            if isfile(obj.getAnalysisFileName) && ~params.overwrite
+                fprintf('Analysis already exists (use overwrite option to recalculate).\n');
+                results=load(obj.getAnalysisFileName);
+                obj.sessionStartTime=sessionStartTime;
+                obj.sessionEndTime=sessionEndTime;
+                obj.startSessionTrigger=startSessionTrigger;
+                return;
+            end
+
             if nargin == 2
                 obj.startSessionTrigger=startEndChannel;
             end
             T=obj.dataObj.getTrigger;
-            if isscalar(T{obj.startSessionTrigger(1)}) && isscalar(T{obj.startSessionTrigger(2)})
+            if isscalar(T{obj.startSessionTrigger(1)}) && isscalar(T{obj.startSessionTrigger(2)}) %only 1 visual stimulation session in the recording
                 obj.sessionStartTime=T{obj.startSessionTrigger(1)};
                 obj.sessionEndTime=T{obj.startSessionTrigger(2)};
             else
@@ -216,8 +305,8 @@ classdef (Abstract) VStimAnalysis < handle
             startSessionTrigger=obj.startSessionTrigger;
 
             %save results in the right file
-            db=dbstack;currentMethod=strsplit(db(1).name,'.');savedFileName=[obj.visualStimAnalysisFolder,filesep,currentMethod{2},'.mat'];
-            save(savedFileName,'sessionStartTime','sessionEndTime','startSessionTrigger');
+            fprintf('Saving results to file.\n');
+            save(obj.getAnalysisFileName,'sessionStartTime','sessionEndTime','startSessionTrigger');
         end
 
         %Extract the frame flips from the diode signal
@@ -228,11 +317,15 @@ classdef (Abstract) VStimAnalysis < handle
                 params.extractionMethod string = 'diodeThreshold'
                 params.overwrite logical = false
                 params.analogDataCh = 1
+                params.analysisTime = datetime('now')
             end
 
+            %load previous results if analysis was previuosly performed and there is no need to overwrite
+            results=[];
             if isfile(obj.getAnalysisFileName) && ~params.overwrite
-                disp('Analysis already exists, use overwrite option to recalculate');
+                fprintf('Analysis already exists (use overwrite option to recalculate).\n');
                 if nargout==1
+                    fprintf('Loading saved results from file.\n');
                     results=load(obj.getAnalysisFileName);
                 end
                 return;
@@ -258,8 +351,8 @@ classdef (Abstract) VStimAnalysis < handle
             results.diodeDownCross = diodeDownCross;
 
             %save results in the right file
-            db=dbstack;currentMethod=strsplit(db(1).name,'.');savedFileName=[obj.visualStimAnalysisFolder,filesep,currentMethod{2},'.mat'];
-            save(savedFileName,'params','diodeUpCross','diodeDownCross','Th');
+            fprintf('Saving results to file.\n');
+            save(obj.getAnalysisFileName,'params','diodeUpCross','diodeDownCross','Th');
         end
 
         function f=plotDiodeTriggers(obj)
