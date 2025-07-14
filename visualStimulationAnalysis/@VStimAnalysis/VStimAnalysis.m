@@ -204,6 +204,57 @@ classdef (Abstract) VStimAnalysis < handle
 
         %set the visual stimulation folder as soon as a data recording object is populated
         function obj=setVisualStimFolder(obj) %the events need to be here otherwise the code does not work
+             %extract the visual stimulation parameters from parameter file
+            nParentFolders2Check=2;
+            folderFound=false;
+
+            %find visual stimulation folder
+            tmpDir=dir([obj.dataObj.recordingDir filesep 'visualStimulation*']);
+            if isempty(tmpDir) %check if not in the current data folder
+                %go one folder back and look for visualStimulation folder
+                fileSepTransitions=regexp(obj.dataObj.recordingDir,filesep); %look for file separation transitions
+                if fileSepTransitions(end)==numel(obj.dataObj.recordingDir) %if last transition appears in the end of the folder remove this transition
+                    fileSepTransitions(end)=[];
+                end
+                for i=1:nParentFolders2Check %repeat folder search nParentFolders2Check folders up
+                    tmpCurrentFolder=obj.dataObj.recordingDir(1:fileSepTransitions(end));
+                    %check parent folder for visual stimulation folder
+                    tmpDir=dir([tmpCurrentFolder filesep 'visualStimulation*']);
+                    if ~isempty(tmpDir)
+                        VSFileLocation=[tmpCurrentFolder filesep tmpDir.name];
+                        folderFound=true;
+                    end
+                    fileSepTransitions(end)=[];
+                end
+                if ~folderFound
+                    error('Visual stimulation folder was not found!!! Notice the the name of the folder should be visualStimulation');
+                end
+            else
+                VSFileLocation=[obj.dataObj.recordingDir filesep tmpDir.name];
+            end
+
+            if isfolder(VSFileLocation)
+                fprintf('Visual stimulation folder found:\n%s\n',VSFileLocation);
+                obj.visualStimFolder = VSFileLocation;
+            else
+                fprintf('Visual stimulation folder not found!!!\nPlease place visual stimulations in a folder that starts with visualStimulation and is located in the same folder as the data folder and run again');
+                return;
+            end
+
+            obj=setVisualStimulationFile(obj);
+
+            if isfolder(VSFileLocation)
+                fprintf('Visual stimulation folder found:\n%s\n',VSFileLocation);
+                obj.visualStimFolder = VSFileLocation;
+            else
+                fprintf('Visual stimulation folder not found!!!\nPlease place visual stimulations in a folder that starts with visualStimulation and is located in the same folder as the data folder and run again');
+                return;
+            end
+
+            obj=setVisualStimulationFile(obj);
+            %simon's code
+            %{
+
             %extract the visual stimulation parameters from parameter file
             nParentFolders2Check=2;
             folderFound=false;
@@ -259,16 +310,7 @@ classdef (Abstract) VStimAnalysis < handle
             else
                 VSFileLocation=[obj.dataObj.recordingDir filesep tmpDir.name];
             end
-
-            if isfolder(VSFileLocation)
-                fprintf('Visual stimulation folder found:\n%s\n',VSFileLocation);
-                obj.visualStimFolder = VSFileLocation;
-            else
-                fprintf('Visual stimulation folder not found!!!\nPlease place visual stimulations in a folder that starts with visualStimulation and is located in the same folder as the data folder and run again');
-                return;
-            end
-
-            obj=setVisualStimulationFile(obj);
+            %}
 
         end
 
