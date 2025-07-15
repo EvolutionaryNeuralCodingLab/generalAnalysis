@@ -9,6 +9,7 @@ classdef (Abstract) VStimAnalysis < handle
         sessionEndTime % the end time [ms] of the stimulation session
         visualStimFolder %the folder with visual stimulation files
         visualStimAnalysisFolder %the folder with results of visual stimulation analysis (under visualStimFolder)
+        visualStimPlotsFolder %the folder with results of visual stimulation analysis plots (under visualStimFolder)
         visualStimulationFile %the name of the visual stimulation mat file
         stimName %the name of the visual stimulation - extracted by removing analysis from the class name
         VST %all visual stimulation properties and values
@@ -48,15 +49,18 @@ classdef (Abstract) VStimAnalysis < handle
                 params.channelSkip = 5 %includes every 5th channel
                 params.overwrite logical = false
                 params.analysisTime = datetime('now')
+                params.inputParams = false
             end
+            if params.inputParams,disp(params),return,end
 
             %load previous results if analysis was previuosly performed and there is no need to overwrite
             results=[];
             if isfile(obj.getAnalysisFileName) && ~params.overwrite
-                fprintf('Analysis already exists (use overwrite option to recalculate).\n');
                 if nargout==1
                     fprintf('Loading saved results from file.\n');
                     results=load(obj.getAnalysisFileName);
+                else
+                    fprintf('Analysis already exists (use overwrite option to recalculate).\n');
                 end
                 return;
             end
@@ -114,15 +118,18 @@ classdef (Abstract) VStimAnalysis < handle
                 obj
                 params.overwrite logical = false
                 params.analysisTime = datetime('now')
+                params.inputParams = false
             end
+            if params.inputParams,disp(params),return,end
 
             %load previous results if analysis was previuosly performed and there is no need to overwrite
             results=[];
             if isfile(obj.getAnalysisFileName) && ~params.overwrite
-                fprintf('Analysis already exists (use overwrite option to recalculate).\n');
                 if nargout==1
                     fprintf('Loading saved results from file.\n');
                     results=load(obj.getAnalysisFileName);
+                else
+                    fprintf('Analysis already exists (use overwrite option to recalculate).\n');
                 end
                 return;
             end
@@ -139,8 +146,8 @@ classdef (Abstract) VStimAnalysis < handle
             end
             expectedFlips=numel(allFlips);
             fprintf('%d flips expected, %d found (diff=%d). Linking existing flip times with stimuli...\n',expectedFlips,measuredFlips,expectedFlips-measuredFlips);
-            if (expectedFlips-measuredFlips)>0.15*expectedFlips
-                fprintf('There are more than 10% mismatch in the number of diode and vStim expected flips. Cant continue!!! Please check diode extraction!');
+            if (expectedFlips-measuredFlips)>0.1*expectedFlips
+                fprintf('There are more than 10 percent mismatch in the number of diode and vStim expected flips. Cant continue!!! Please check diode extration!\n');
                 return;
             end
             switch obj.trialType
@@ -321,9 +328,11 @@ classdef (Abstract) VStimAnalysis < handle
             %populate properties and create folders for analysis if needed
             [~,fileWithoutExtension]=fileparts(obj.visualStimulationFile);
             obj.visualStimAnalysisFolder=[obj.visualStimFolder filesep fileWithoutExtension '_Analysis'];
+            obj.visualStimPlotsFolder=[obj.visualStimFolder filesep fileWithoutExtension '_Plots'];
             if ~isfolder(obj.visualStimAnalysisFolder)
                 mkdir(obj.visualStimAnalysisFolder);
-                fprintf('Visual stimulation Analysis folder created:\n%s\n',obj.visualStimAnalysisFolder);
+                mkdir(obj.visualStimPlotsFolder);
+                fprintf('Visual stimulation Analysis/Plot folders created:\n%s\n',obj.visualStimAnalysisFolder);
             end
         end
 
@@ -333,7 +342,9 @@ classdef (Abstract) VStimAnalysis < handle
                 params.startEndChannel = []
                 params.overwrite logical = false
                 params.analysisTime = datetime('now')
+                params.inputParams = false
             end
+            if params.inputParams,disp(params),return,end
 
 
             %load previous results if analysis was previuosly performed and there is no need to overwrite
@@ -377,15 +388,18 @@ classdef (Abstract) VStimAnalysis < handle
                 params.overwrite logical = false
                 params.analogDataCh = 1
                 params.analysisTime = datetime('now')
+                params.inputParams = false
             end
+            if params.inputParams,disp(params),return,end
 
             %load previous results if analysis was previuosly performed and there is no need to overwrite
             results=[];
             if isfile(obj.getAnalysisFileName) && ~params.overwrite
-                fprintf('Analysis already exists (use overwrite option to recalculate).\n');
                 if nargout==1
                     fprintf('Loading saved results from file.\n');
                     results=load(obj.getAnalysisFileName);
+                else
+                    fprintf('Analysis already exists (use overwrite option to recalculate).\n');
                 end
                 return;
             end
