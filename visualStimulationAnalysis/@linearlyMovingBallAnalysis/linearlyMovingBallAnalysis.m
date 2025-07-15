@@ -5,7 +5,7 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
     end
 
     properties (Constant)
-        trialType = 'imageTrials'
+        trialType = 'videoTrials';
     end
 
     methods (Hidden)
@@ -15,6 +15,7 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
         end
 
         %Get diode 
+        
         
     end
 

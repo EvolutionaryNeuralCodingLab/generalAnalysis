@@ -19,7 +19,7 @@ classdef (Abstract) VStimAnalysis < handle
     end
 
     properties (Constant, Abstract)
-        trialType % The type of trials in terms of flips 'imageTrials' have on flip per trial and 'videoTrials' have many flips per trial 
+        trialType % The type of trials in terms of flips 'imageTrials' have one flip per trial and 'videoTrials' have many flips per trial 
     end
 
     methods (Hidden)
@@ -139,8 +139,8 @@ classdef (Abstract) VStimAnalysis < handle
             end
             expectedFlips=numel(allFlips);
             fprintf('%d flips expected, %d found (diff=%d). Linking existing flip times with stimuli...\n',expectedFlips,measuredFlips,expectedFlips-measuredFlips);
-            if (expectedFlips-measuredFlips)>0.1*expectedFlips
-                fprintf('There are more than 10% mismatch in the number of diode and vStim expected flips. Cant continue!!! Please check diode extration!');
+            if (expectedFlips-measuredFlips)>0.15*expectedFlips
+                fprintf('There are more than 10% mismatch in the number of diode and vStim expected flips. Cant continue!!! Please check diode extraction!');
                 return;
             end
             switch obj.trialType
@@ -250,12 +250,13 @@ classdef (Abstract) VStimAnalysis < handle
             numberOfParentFolders=2;
             tmpFolder=obj.dataObj.recordingDir;
             for f=1:numberOfParentFolders
-                matFiles=dir([tmpFolder filesep '*.mat']);
+                matFiles=dir([tmpFolder,filesep,'*.mat']);
                 if ~isempty(matFiles)
                     for i=1:numel(matFiles)
-                        tmpVars=whos('-file',[obj.dataObj.recordingDir filesep matFiles(i).name]);
+                        tmpVars=whos('-file',[tmpFolder filesep matFiles(i).name]);
                         if strcmp(tmpVars.name,'VSMetaData')
-                            copyfile([obj.dataObj.recordingDir filesep matFiles(i).name], obj.visualStimFolder);
+                            copyfile([tmpFolder filesep matFiles(i).name], obj.visualStimFolder);
+                            fprintf('%s was copied to the visual stimulation folder: %s\n',matFiles(i).name,obj.visualStimFolder);
                             filesFound=true;
                         end
                     end
@@ -280,6 +281,7 @@ classdef (Abstract) VStimAnalysis < handle
                 VSFiles=dir([obj.visualStimFolder filesep '*.mat']);
                 if isempty(VSFiles)
                     obj.copyFilesFromRecordingFolder;
+                    VSFiles=dir([obj.visualStimFolder filesep '*.mat']);
                 end
 
                 try
@@ -403,6 +405,18 @@ classdef (Abstract) VStimAnalysis < handle
                     end
                 case "digitalTriggerDiode"
                     if ~any(isempty([obj.sessionStartTime,obj.sessionEndTime]))
+                        
+                        if all(obj.trialType == 'videoTrials')
+                            expectedFlipsperTrial = unique(obj.VST.nFrames);
+                            speeds = obj.VST.speeds;
+                            framesNspeed = zeros(2,length(speeds));
+                            framesNspeed(1,:) =  speeds;
+                            %Works for two speeds
+                            framesNspeed(2,speeds == min(speeds)) = max(expectedFlipsperTrial);
+                            framesNspeed(2,speeds ==  max(speeds)) = min(expectedFlipsperTrial);
+                        else
+                            expectedFlipsperTrial =1;
+                        end
 
                         t = obj.dataObj.getTrigger;
                         trialOn = t{3}(t{3} > obj.sessionStartTime & t{3} < obj.sessionEndTime);
@@ -427,6 +441,14 @@ classdef (Abstract) VStimAnalysis < handle
                             DiodeCrosses{1,i}=t_ms(signal(1:end-1)<Th & signal(2:end)>=Th)+trialOn(1)+interDelayMs/2;
                             DiodeCrosses{2,i}=t_ms(signal(1:end-1)>Th & signal(2:end)<=Th)+trialOn(1)+interDelayMs/2;
 
+                            if (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i}))*1.1 < framesNspeed(2,i) 
+                                %if the number of calculated frames is less than 10%
+                                %then perform an interpolation with the
+                                %first and last cross
+                                2+2
+                            
+                            end
+
                         end
                         
                         diodeUpCross=cell2mat(DiodeCrosses(1,:));
@@ -437,7 +459,6 @@ classdef (Abstract) VStimAnalysis < handle
                         hold on;xline((DiodeCrosses{1,i} - trialOn(1)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000))
                         xline((DiodeCrosses{2,i} - trialOn(1)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000),'r')
                         %xline((trialOff(i)-trialOn(1))*(obj.dataObj.samplingFrequencyNI/1000),'b')
-                        %check PV97_1, why am I getting no signal?
                     else
                         disp('Missing start and end times!!! Please run getSessionTime before extracting triggers');
                     end

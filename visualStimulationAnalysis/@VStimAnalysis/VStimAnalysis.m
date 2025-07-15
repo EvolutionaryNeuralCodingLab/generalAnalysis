@@ -19,7 +19,7 @@ classdef (Abstract) VStimAnalysis < handle
     end
 
     properties (Constant, Abstract)
-        trialType % The type of trials in terms of flips 'imageTrials' have on flip per trial and 'videoTrials' have many flips per trial 
+        trialType % The type of trials in terms of flips 'imageTrials' have one flip per trial and 'videoTrials' have many flips per trial 
     end
 
     methods (Hidden)
@@ -139,8 +139,8 @@ classdef (Abstract) VStimAnalysis < handle
             end
             expectedFlips=numel(allFlips);
             fprintf('%d flips expected, %d found (diff=%d). Linking existing flip times with stimuli...\n',expectedFlips,measuredFlips,expectedFlips-measuredFlips);
-            if (expectedFlips-measuredFlips)>0.1*expectedFlips
-                fprintf('There are more than 10% mismatch in the number of diode and vStim expected flips. Cant continue!!! Please check diode extration!');
+            if (expectedFlips-measuredFlips)>0.15*expectedFlips
+                fprintf('There are more than 10% mismatch in the number of diode and vStim expected flips. Cant continue!!! Please check diode extraction!');
                 return;
             end
             switch obj.trialType
@@ -405,6 +405,19 @@ classdef (Abstract) VStimAnalysis < handle
                     end
                 case "digitalTriggerDiode"
                     if ~any(isempty([obj.sessionStartTime,obj.sessionEndTime]))
+                        
+                        if all(obj.trialType == 'videoTrials')
+                            expectedFlipsperTrial = unique(obj.VST.nFrames);
+                            speeds = obj.VST.speeds;
+                            framesNspeed = zeros(2,length(speeds));
+                            framesNspeed(1,:) =  speeds;
+                            %Works for two speeds
+                            framesNspeed(2,speeds == min(speeds)) = max(expectedFlipsperTrial);
+                            framesNspeed(2,speeds ==  max(speeds)) = min(expectedFlipsperTrial);
+                        else
+                            expectedFlipsperTrial =1;
+                            framesNspeed = zeros(2,1);
+                        end
 
                         t = obj.dataObj.getTrigger;
                         trialOn = t{3}(t{3} > obj.sessionStartTime & t{3} < obj.sessionEndTime);
@@ -429,15 +442,23 @@ classdef (Abstract) VStimAnalysis < handle
                             DiodeCrosses{1,i}=t_ms(signal(1:end-1)<Th & signal(2:end)>=Th)+trialOn(1)+interDelayMs/2;
                             DiodeCrosses{2,i}=t_ms(signal(1:end-1)>Th & signal(2:end)<=Th)+trialOn(1)+interDelayMs/2;
 
+                            if (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i}))*1.1 < framesNspeed(2,i) 
+                                %if the number of calculated frames is less than 10%
+                                %then perform an interpolation with the
+                                %first and last cross
+                                2+2
+                            
+                            end
+
                         end
                         
                         diodeUpCross=cell2mat(DiodeCrosses(1,:));
                         diodeDownCross=cell2mat(DiodeCrosses(2,:));
 
                         %Test
-                        % figure;plot(squeeze(signal));
-                        % hold on;xline((DiodeCrosses{1,i} - trialOn(1)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000))
-                        % xline((DiodeCrosses{2,i} - trialOn(1)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000),'r')
+                        figure;plot(squeeze(signal));
+                        hold on;xline((DiodeCrosses{1,i} - trialOn(1)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000))
+                        xline((DiodeCrosses{2,i} - trialOn(1)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000),'r')
                         %xline((trialOff(i)-trialOn(1))*(obj.dataObj.samplingFrequencyNI/1000),'b')
                     else
                         disp('Missing start and end times!!! Please run getSessionTime before extracting triggers');
