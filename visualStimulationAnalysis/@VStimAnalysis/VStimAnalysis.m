@@ -143,7 +143,8 @@ classdef (Abstract) VStimAnalysis < handle
 
             allDiodeFlips=sort([diode.diodeUpCross,diode.diodeDownCross]);
             allDiodeFlips(1+find(diff(allDiodeFlips)<obj.VST.ifi*1000*params.minDiodeInterval))=[]; %remove double diode flip detections assuming intervals can not be faster than frame rate
-            measuredFlips=numel(diode.diodeDownCross)+numel(diode.diodeUpCross);
+            fprintf('%d Trigger removed due to adjuscent intervals.\n',numel(diode.diodeUpCross)+numel(diode.diodeDownCross)-numel(allDiodeFlips));
+            measuredFlips=numel(allDiodeFlips);
 
             if isfield(obj.VST,'on_Flip')
                 allFlips=[obj.VST.on_Flip;obj.VST.off_Flip];allFlips=allFlips(~isnan(allFlips))*1000;
