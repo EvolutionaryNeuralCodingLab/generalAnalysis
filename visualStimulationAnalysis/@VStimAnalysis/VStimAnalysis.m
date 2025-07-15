@@ -41,9 +41,10 @@ classdef (Abstract) VStimAnalysis < handle
             obj=getStimParams(obj);
         end
 
-        function printFig(obj,f)
-            if params.updatePlots,set(gcf,'PaperPositionMode','auto'); print('Spikes','-djpeg','-vector','-r3000');end
-
+        function printFig(obj,f,figName)
+            set(f,'PaperPositionMode','auto');
+            disp(['Printing fig: ',obj.visualStimPlotsFolder,filesep,figName]);
+            print([obj.visualStimPlotsFolder,filesep,figName],'-djpeg','-vector','-r300');
         end
 
         function results = getStimLFP(obj,params)
@@ -335,12 +336,16 @@ classdef (Abstract) VStimAnalysis < handle
             %populate properties and create folders for analysis if needed
             [~,fileWithoutExtension]=fileparts(obj.visualStimulationFile);
             obj.visualStimAnalysisFolder=[obj.visualStimFolder filesep fileWithoutExtension '_Analysis'];
-            obj.visualStimPlotsFolder=[obj.visualStimFolder filesep fileWithoutExtension '_Plots'];
             if ~isfolder(obj.visualStimAnalysisFolder)
                 mkdir(obj.visualStimAnalysisFolder);
-                mkdir(obj.visualStimPlotsFolder);
-                fprintf('Visual stimulation Analysis/Plot folders created:\n%s\n',obj.visualStimAnalysisFolder);
+                fprintf('Visual stimulation Analysis folders created:\n%s\n',obj.visualStimAnalysisFolder);
             end
+            obj.visualStimPlotsFolder=[obj.visualStimFolder filesep fileWithoutExtension '_Plots'];
+            if ~isfolder(obj.visualStimPlotsFolder)
+                mkdir(obj.visualStimPlotsFolder);
+                fprintf('Visual stimulation analysis Plots folders created:\n%s\n',obj.visualStimAnalysisFolder);
+            end
+            fprintf('Visual stimulation Analysis/Plot folders created:\n%s\n',obj.visualStimAnalysisFolder);
         end
 
         function obj=getSessionTime(obj,params)
