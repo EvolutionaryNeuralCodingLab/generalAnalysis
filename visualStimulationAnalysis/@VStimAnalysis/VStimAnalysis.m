@@ -451,10 +451,15 @@ classdef (Abstract) VStimAnalysis < handle
                             else
                                 signal =squeeze(A(startSnip:endSnip));
                             end
+                            fDat=medfilt1(signal,15);
+                            d = designfilt('lowpassiir', 'FilterOrder', 4, ...
+                                'HalfPowerFrequency', obj.VST.fps+5, 'SampleRate', obj.dataObj.samplingFrequencyNI);
+                            % Apply the filter using filtfilt to preserve phase
 
-                            Th=mean(signal(1:100:end));
-                            DiodeCrosses{1,i}=t_ms(signal(1:end-1)<Th & signal(2:end)>=Th)+trialOn(1)+interDelayMs/2;
-                            DiodeCrosses{2,i}=t_ms(signal(1:end-1)>Th & signal(2:end)<=Th)+trialOn(1)+interDelayMs/2;
+                            fDat = filtfilt(d, signal);
+                            Th=mean(fDat(1:100:end));
+                            DiodeCrosses{1,i}=t_ms(fDat(1:end-1)<Th & fDat(2:end)>=Th)+trialOn(1)+interDelayMs/2;
+                            DiodeCrosses{2,i}=t_ms(fDat(1:end-1)>Th & fDat(2:end)<=Th)+trialOn(1)+interDelayMs/2;
 
                             if (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i}))*1.1 < framesNspeed(2,i) 
                                 %if the number of calculated frames is less than 10%
@@ -462,6 +467,16 @@ classdef (Abstract) VStimAnalysis < handle
                                 %first and last cross
                                 2+2
                             
+                            end
+
+                            if (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i}))> framesNspeed(2,i) 
+                                %if the number of calculated frames is less than 10%
+                                %then perform an interpolation with the
+                                %first and last cross
+                                2+2
+                                samplesPframe = 1/obj.VST.fps*(obj.dataObj.samplingFrequencyNI);
+                                signal=medfilt1(signal,15);  
+                 
                             end
 
                         end
