@@ -41,6 +41,11 @@ classdef (Abstract) VStimAnalysis < handle
             obj=getStimParams(obj);
         end
 
+        function printFig(obj,f)
+            if params.updatePlots,set(gcf,'PaperPositionMode','auto'); print('Spikes','-djpeg','-vector','-r3000');end
+
+        end
+
         function results = getStimLFP(obj,params)
 
             arguments (Input)
@@ -119,6 +124,7 @@ classdef (Abstract) VStimAnalysis < handle
                 params.overwrite logical = false
                 params.analysisTime = datetime('now')
                 params.inputParams = false
+                params.minDiodeInterval = 0.5 %removes diode frames shorter than minDiodeInterval fraction of the inter frame interval
             end
             if params.inputParams,disp(params),return,end
 
@@ -136,13 +142,13 @@ classdef (Abstract) VStimAnalysis < handle
             diode=obj.getDiodeTriggers;
 
             allDiodeFlips=sort([diode.diodeUpCross,diode.diodeDownCross]);
-            allDiodeFlips(1+find(diff(allDiodeFlips)<obj.VST.ifi*1000/2))=[]; %remove double diode flip detections assuming intervals can not be faster than frame rate
+            allDiodeFlips(1+find(diff(allDiodeFlips)<obj.VST.ifi*1000*params.minDiodeInterval))=[]; %remove double diode flip detections assuming intervals can not be faster than frame rate
             measuredFlips=numel(diode.diodeDownCross)+numel(diode.diodeUpCross);
 
             if isfield(obj.VST,'on_Flip')
-                allFlips=[obj.VST.on_Flip;obj.VST.off_Flip];allFlips=allFlips(:);
+                allFlips=[obj.VST.on_Flip;obj.VST.off_Flip];allFlips=allFlips(~isnan(allFlips))*1000;
             elseif isfield(obj.VST,'flip')
-                allFlips=obj.VST.flip';allFlips=allFlips(:)*1000;
+                allFlips=obj.VST.flip';allFlips=allFlips(~isnan(allFlips))*1000;
             end
             expectedFlips=numel(allFlips);
             fprintf('%d flips expected, %d found (diff=%d). Linking existing flip times with stimuli...\n',expectedFlips,measuredFlips,expectedFlips-measuredFlips);

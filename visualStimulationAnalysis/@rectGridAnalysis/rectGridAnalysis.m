@@ -25,6 +25,7 @@ classdef rectGridAnalysis < VStimAnalysis
                 params.analysisTime = datetime('now')
                 params.inputParams = false
                 params.normTrace = true
+                params.updatePlots = true
             end
             if params.inputParams,disp(params),return,end
             
@@ -53,6 +54,7 @@ classdef rectGridAnalysis < VStimAnalysis
                 set(gca,'XTick',[],'YTick',[],'CLim',[-stdOn*2 stdOn*2]);
             end
             hL.Visible='on';
+            if params.updatePlots,obj.printFig(f1,'OnVsPosition'),end
 
             f2=figure('Name','Off responses vs position');hL=tiledlayout(obj.VST.rectGridSize,obj.VST.rectGridSize,'TileSpacing','tight','Padding','tight','Visible','off');
             for i=1:obj.VST.rectGridSize^2
@@ -73,8 +75,12 @@ classdef rectGridAnalysis < VStimAnalysis
             xlabel('Time [ms]');
 
             f5=figure('Name','On averaged across electrodes');
-            h=axis;
-            activityTracePhysicalSpacePlot(h,obj.dataObj.channelNumbers(1:nElecs),squeeze(mean(mFLP_on,1)),vStimGrid,'traceColor',[0.8 0.2 0.2],'DrawElectrodeNumbers',0);
+            h=axes;
+            activityTracePhysicalSpacePlot(h,1:numel(vStimGrid),squeeze(mean(mFLP_on,1)),vStimGrid,'traceColor',[0.8 0.2 0.2],'DrawElectrodeNumbers',0);
+
+            f6=figure('Name','Off averaged across electrodes');
+            h=axes;
+            activityTracePhysicalSpacePlot(h,1:numel(vStimGrid),squeeze(mean(mFLP_off,1)),vStimGrid,'traceColor',[0.8 0.2 0.2],'DrawElectrodeNumbers',0);
 
 
             %[hPlot]=activityMultiTracePhysicalSpacePlot(h,(1:32)',squeeze(M_Int),vStimGrid,'DrawElectrodeNumbers',0,'traceColor',[0.8 0.2 0.2]);
