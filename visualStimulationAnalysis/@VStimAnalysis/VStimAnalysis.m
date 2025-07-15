@@ -418,7 +418,44 @@ classdef (Abstract) VStimAnalysis < handle
                         disp('Missing start and end times!!! Please run getSessionTime before extracting triggers');
                     end
                 case "digitalTriggerDiode"
-                     disp('Yet to fill in');
+                    if ~any(isempty([obj.sessionStartTime,obj.sessionEndTime]))
+
+                        t = obj.dataObj.getTrigger;
+                        trialOn = t{3}(t{3} > obj.sessionStartTime & t{3} < obj.sessionEndTime);
+                        trialOff = t{4}(t{4} > obj.sessionStartTime & t{4} < obj.sessionEndTime); 
+                        interDelayMs = obj.VST.interTrialDelay*1000;
+
+                        [A,t_ms]=obj.dataObj.getAnalogData(params.analogDataCh,trialOn(1)-interDelayMs/2,trialOff(end)-trialOn(1)+interDelayMs); %extract diode data for entire recording
+                       
+                        DiodeCrosses = cell(2,numel(trialOn));
+                        for i =1:length(trialOff)
+
+                            startSnip  = round((trialOn(i)-trialOn(1))*(obj.dataObj.samplingFrequencyNI/1000))+1;
+                            endSnip  = round((trialOff(i)-trialOn(1)+interDelayMs)*(obj.dataObj.samplingFrequencyNI/1000));
+
+                            if endSnip>length(A)
+                                signal = squeeze(A(startSnip:end)); 
+                            else
+                                signal =squeeze(A(startSnip:endSnip));
+                            end
+
+                            Th=mean(signal(1:100:end));
+                            DiodeCrosses{1,i}=t_ms(signal(1:end-1)<Th & signal(2:end)>=Th)+trialOn(1)+interDelayMs/2;
+                            DiodeCrosses{2,i}=t_ms(signal(1:end-1)>Th & signal(2:end)<=Th)+trialOn(1)+interDelayMs/2;
+
+                        end
+                        
+                        diodeUpCross=cell2mat(DiodeCrosses(1,:));
+                        diodeDownCross=cell2mat(DiodeCrosses(2,:));
+
+                        %Test
+                        % figure;plot(squeeze(signal));
+                        % hold on;xline((DiodeCrosses{1,i} - trialOn(1)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000))
+                        % xline((DiodeCrosses{2,i} - trialOn(1)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000),'r')
+                        %xline((trialOff(i)-trialOn(1))*(obj.dataObj.samplingFrequencyNI/1000),'b')
+                    else
+                        disp('Missing start and end times!!! Please run getSessionTime before extracting triggers');
+                    end
             end
             results.diodeUpCross = diodeUpCross;
             results.diodeDownCross = diodeDownCross;
