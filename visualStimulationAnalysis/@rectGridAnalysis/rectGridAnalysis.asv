@@ -25,6 +25,7 @@ classdef rectGridAnalysis < VStimAnalysis
                 params.analysisTime = datetime('now')
                 params.inputParams = false
                 params.normTrace = true
+                params.updatePlots = true
             end
             if params.inputParams,disp(params),return,end
             
@@ -53,6 +54,7 @@ classdef rectGridAnalysis < VStimAnalysis
                 set(gca,'XTick',[],'YTick',[],'CLim',[-stdOn*2 stdOn*2]);
             end
             hL.Visible='on';
+            if params.updatePlots,obj.printFig(f1,'OnVsPosition'),end
 
             f2=figure('Name','Off responses vs position');hL=tiledlayout(obj.VST.rectGridSize,obj.VST.rectGridSize,'TileSpacing','tight','Padding','tight','Visible','off');
             for i=1:obj.VST.rectGridSize^2
@@ -61,11 +63,13 @@ classdef rectGridAnalysis < VStimAnalysis
                 set(gca,'XTick',[],'YTick',[],'CLim',[-stdOff*2 stdOff*2]);
             end
             hL.Visible='on';
+            if params.updatePlots,obj.printFig(f2,'OffVsPosition'),end
 
             f3=figure('Name','On averaged across positions');
             imagesc((1:nBins)/LFP.samplingFreqLFP*1000,1:nElecs,squeeze(mean(mFLP_on,2)));
             ylabel('Ch #');
             xlabel('Time [ms]');
+            if params.updatePlots,obj.printFig(f3,'OnAvgPosition'),end
 
             f4=figure('Name','Off averaged across positions');
             imagesc((1:nBins)/LFP.samplingFreqLFP*1000,1:nElecs,squeeze(mean(mFLP_off,2)));
