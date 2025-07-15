@@ -469,10 +469,11 @@ classdef (Abstract) VStimAnalysis < handle
                         diodeDownCross=cell2mat(DiodeCrosses(2,:));
 
                         %Test
-                        figure;plot(squeeze(A));
+                        figure;plot(squeeze(signal));
                         hold on;xline((DiodeCrosses{1,i} - trialOn(1)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000))
                         xline((DiodeCrosses{2,i} - trialOn(1)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000),'r')
                         %xline((trialOff(i)-trialOn(1))*(obj.dataObj.samplingFrequencyNI/1000),'b')
+                        %check PV97_1, why am I getting no signal?
                     else
                         disp('Missing start and end times!!! Please run getSessionTime before extracting triggers');
                     end
