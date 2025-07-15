@@ -72,6 +72,11 @@ classdef rectGridAnalysis < VStimAnalysis
             ylabel('Ch #');
             xlabel('Time [ms]');
 
+            f4=figure('Name','Off averaged across positions');
+            h=axis;
+            activityTracePhysicalSpacePlot(h,obj.dataObj.channelNumbers(1:nElecs),squeeze(mean(mFLP_on,1)),IntanData.chLayoutNumbers,'traceColor',[0.8 0.2 0.2],'DrawElectrodeNumbers',0);
+
+
             [hPlot]=activityMultiTracePhysicalSpacePlot(h,(1:32)',squeeze(M_Int),vStimGrid,'DrawElectrodeNumbers',0,'traceColor',[0.8 0.2 0.2]);
             [hScaleBar]=addScaleBar(h,'scaleFac',1.4);
             activityTracePhysicalSpacePlot(h,IntanData.channelNumbers(:),squeeze(mean(M_Intan(:,pOrdered(1),:),2)),IntanData.chLayoutNumbers,'traceColor',[0.8 0.2 0.2],'DrawElectrodeNumbers',0);
