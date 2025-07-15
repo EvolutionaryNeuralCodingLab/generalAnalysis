@@ -243,81 +243,47 @@ classdef (Abstract) VStimAnalysis < handle
 
             obj=setVisualStimulationFile(obj);
 
-            if isfolder(VSFileLocation)
-                fprintf('Visual stimulation folder found:\n%s\n',VSFileLocation);
-                obj.visualStimFolder = VSFileLocation;
-            else
-                fprintf('Visual stimulation folder not found!!!\nPlease place visual stimulations in a folder that starts with visualStimulation and is located in the same folder as the data folder and run again');
-                return;
-            end
+        end
 
-            obj=setVisualStimulationFile(obj);
-            %simon's code
-            %{
-
-            %extract the visual stimulation parameters from parameter file
-            nParentFolders2Check=2;
-            folderFound=false;
-
-            %find visual stimulation folder
-            tmpDir=dir([obj.dataObj.recordingDir filesep 'visualStimulation*']);
-            if isempty(tmpDir) %check if not in the current data folder
-                %go one folder back and look for visualStimulation folder
-                fileSepTransitions=regexp(obj.dataObj.recordingDir,filesep); %look for file separation transitions
-                if fileSepTransitions(end)==numel(obj.dataObj.recordingDir) %if last transition appears in the end of the folder remove this transition
-                    fileSepTransitions(end)=[];
-                end
-                for i=1:nParentFolders2Check %repeat folder search nParentFolders2Check folders up
-                    tmpCurrentFolder=obj.dataObj.recordingDir(1:fileSepTransitions(end));
-                    %check parent folder for visual stimulation folder
-                    tmpDir=dir([tmpCurrentFolder filesep 'visualStimulation*']);
-                    if ~isempty(tmpDir) 
-                        VSFileLocation=[tmpCurrentFolder filesep tmpDir.name];
-                        folderFound=true;
+        function copyFilesFromRecordingFolder(obj)
+            filesFound=false;
+            numberOfParentFolders=2;
+            tmpFolder=obj.dataObj.recordingDir;
+            for f=1:numberOfParentFolders
+                matFiles=dir([tmpFolder,filesep,'*.mat']);
+                if ~isempty(matFiles)
+                    for i=1:numel(matFiles)
+                        tmpVars=whos('-file',[tmpFolder filesep matFiles(i).name]);
+                        if strcmp(tmpVars.name,'VSMetaData')
+                            copyfile([tmpFolder filesep matFiles(i).name], obj.visualStimFolder);
+                            fprintf('%s was copied to the visual stimulation folder: %s\n',matFiles(i).name,obj.visualStimFolder);
+                            filesFound=true;
+                        end
                     end
-                    fileSepTransitions(end)=[];
-                end   
-                
-                if ~folderFound
-                    % Get list of .mat files in one folder down (old
-                    % location of .mat stim files)
-                    [OldStimDir, ~, ~] = fileparts(obj.dataObj.recordingDir); % remove filename  
-                    matFiles=dir([OldStimDir filesep '*.mat']);
-                    %matFiles = dir('*.mat');
-
-                    % Check if any .mat files exist
-                    if ~isempty(matFiles)
-                        % Create the new folder if it doesn't already exist
-                        newFolder = 'visualStimulation';
-                        cd(OldStimDir)
-                        if ~exist(newFolder, 'dir')
-                            mkdir(newFolder);
-                        end
-
-                        % Move each .mat file into the new folder
-                        for k = 1:length(matFiles)
-                            oldPath = fullfile(OldStimDir, matFiles(k).name);
-                            newPath = fullfile(OldStimDir, newFolder, matFiles(k).name);
-                            movefile(oldPath, newPath);
-                        end
-
-                        tmpDir=dir([tmpCurrentFolder filesep 'visualStimulation*']);
-                        VSFileLocation=[tmpCurrentFolder filesep tmpDir.name];         
+                end
+                if ~filesFound
+                    if tmpFolder(end)==filesep
+                        [tmpFolder, ~, ~] = fileparts(tmpFolder(1:end-1));
                     else
-                        error('Visual stimulation folder was not found!!! Notice the the name of the folder should be visualStimulation');
+                        [tmpFolder, ~, ~] = fileparts(tmpFolder(1:end));
                     end
                 end
-            else
-                VSFileLocation=[obj.dataObj.recordingDir filesep tmpDir.name];
             end
-            %}
 
+            if ~filesFound
+                error('No visual stimulation mat files found!!! Please copy stimulation files to the visual stimulation folder')
+            end
         end
 
         function obj=setVisualStimulationFile(obj,visualStimulationfile)
             %find visual stimulation file according to recording file names and the name of the visual stimulation analysis class
             if nargin==1
                 VSFiles=dir([obj.visualStimFolder filesep '*.mat']);
+                if isempty(VSFiles)
+                    obj.copyFilesFromRecordingFolder;
+                    VSFiles=dir([obj.visualStimFolder filesep '*.mat']);
+                end
+
                 try
                     dateTime=datetime({VSFiles.date},'InputFormat','dd-MMM-yyyy HH:mm:ss');
                 catch
