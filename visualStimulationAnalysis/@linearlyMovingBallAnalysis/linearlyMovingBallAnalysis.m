@@ -11,12 +11,12 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
     methods (Hidden)
         %class constructor - name of class should be identical to the visual stimulation with the addition of Analysis
         function [obj] = linearlyMovingBallAnalysis(dataObj)
-            obj = obj.initialize(dataObj);
+            if nargin==0
+                dataObj=[];
+            end
+            % Call superclass constructor
+            obj@VStimAnalysis(dataObj);
         end
-
-        %Get diode 
-        
-        
     end
 
     methods

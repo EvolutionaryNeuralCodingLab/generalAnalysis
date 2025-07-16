@@ -40,16 +40,6 @@ Mspk_off=BuildBurstMatrix(s.ic,round(s.t/params.bin),round(stimTimes.stimOffFlip
 mSpk_on=squeeze(mean(reshape(Mspk_on(pOrdered,:,:),[obj.VST.trialsPerCategory,nTrials/obj.VST.trialsPerCategory,nNeu,nBins]),1));
 mSpk_off=squeeze(mean(reshape(Mspk_off(pOrdered,:,:),[obj.VST.trialsPerCategory,nTrials/obj.VST.trialsPerCategory,nNeu,nBins]),1));
 
-f0=figure('Name','On trial spikes vs position');hL=tiledlayout(obj.VST.rectGridSize,obj.VST.rectGridSize,'TileSpacing','tight','Padding','tight','Visible','off');
-for i=1:obj.VST.rectGridSize^2
-    nexttile;
-    imagesc(squeeze(netOn(((i-1)*15+1):i*15,:)));colormap(flipud(gray(4)))
-    set(gca,'XTick',[],'YTick',[],'CLim',[0 0.5/params.bin]);
-end
-hL.Visible='on';
-if params.updatePlots,obj.printFig(f1,'On_SpkVsPosition'),end
-
-
 f1=figure('Name','On spike responses vs position');hL=tiledlayout(obj.VST.rectGridSize,obj.VST.rectGridSize,'TileSpacing','tight','Padding','tight','Visible','off');
 for i=1:obj.VST.rectGridSize^2
     nexttile;
@@ -69,13 +59,13 @@ hL.Visible='on';
 if params.updatePlots,obj.printFig(f2,'Off_SpkVsPosition'),end
 
 f3=figure('Name','On spike averaged across positions');
-imagesc((1:nBins)/LFP.samplingFreqLFP*1000,1:nElecs,squeeze(mean(mSpk_on,2)));
+imagesc((1:nBins)*params.bin,1:nElecs,squeeze(mean(mSpk_on,2)));
 ylabel('Ch #');
 xlabel('Time [ms]');
 if params.updatePlots,obj.printFig(f3,'On_SpkAvgOnPositions'),end
 
 f4=figure('Name','Off spike averaged across positions');
-imagesc((1:nBins)/LFP.samplingFreqLFP*1000,1:nElecs,squeeze(mean(mSpk_off,2)));
+imagesc((1:nBins)*params.bin,1:nElecs,squeeze(mean(mSpk_off,2)));
 ylabel('Ch #');
 xlabel('Time [ms]');
 if params.updatePlots,obj.printFig(f4,'Off_SpkAvgOnPositions'),end
