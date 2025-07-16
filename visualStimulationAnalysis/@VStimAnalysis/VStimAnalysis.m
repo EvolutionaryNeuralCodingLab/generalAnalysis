@@ -10,6 +10,7 @@ classdef (Abstract) VStimAnalysis < handle
         visualStimFolder %the folder with visual stimulation files
         visualStimAnalysisFolder %the folder with results of visual stimulation analysis (under visualStimFolder)
         visualStimPlotsFolder %the folder with results of visual stimulation analysis plots (under visualStimFolder)
+        spikeSortingFolder %the folder with spike sorting data
         visualStimulationFile %the name of the visual stimulation mat file
         stimName %the name of the visual stimulation - extracted by removing analysis from the class name
         VST %all visual stimulation properties and values
@@ -24,21 +25,26 @@ classdef (Abstract) VStimAnalysis < handle
     end
 
     methods (Hidden)
-
+        function obj=VStimAnalysis(dataObj)
+            obj.stimName=class(obj);obj.stimName=obj.stimName(1:end-8); %
+            addlistener(obj, 'dataObj', 'PostSet',@(src,evnt)obj.initialize);
+            if nargin==0 || isempty(dataObj)
+                fprintf('No dataRecording object entered as input!!! Most functions will not work!!!\n Please manually populate the dataObj property.\n');
+            else
+                obj.dataObj=dataObj;
+            end
+        end
     end
 
     methods
 
         %class constructor - subclass name should match the visual stimulation
-        function obj = initialize(obj,dataObj)
-            obj.stimName=class(obj);obj.stimName=obj.stimName(1:end-8); %
-            addlistener(obj, 'dataObj', 'PostSet',@(src,evnt)obj.setVisualStimFolder);
-            if nargin==0
-                fprintf('No recording class entered! Some functions may not work.\n Please manually populate the dataRecordingObj property');
-            else
-                obj.dataObj=dataObj;
-            end
+        function obj = initialize(obj)
+            %extract the visual stimulation parameters from parameter file
+            obj.visualStimFolder=obj.findFolderInExperiment(obj.dataObj.recordingDir,'visualStimulation');
+            obj=setVisualStimulationFile(obj);
             obj=getStimParams(obj);
+            obj.spikeSortingFolder=obj.findFolderInExperiment(obj.dataObj.recordingDir,'kilosort');
         end
 
         function printFig(obj,f,figName)
@@ -217,49 +223,6 @@ classdef (Abstract) VStimAnalysis < handle
             end
         end
 
-        %set the visual stimulation folder as soon as a data recording object is populated
-        function obj=setVisualStimFolder(obj) %the events need to be here otherwise the code does not work
-             %extract the visual stimulation parameters from parameter file
-            nParentFolders2Check=2;
-            folderFound=false;
-
-            %find visual stimulation folder
-            tmpDir=dir([obj.dataObj.recordingDir filesep 'visualStimulation*']);
-            if isempty(tmpDir) %check if not in the current data folder
-                %go one folder back and look for visualStimulation folder
-                fileSepTransitions=regexp(obj.dataObj.recordingDir,filesep); %look for file separation transitions
-                if fileSepTransitions(end)==numel(obj.dataObj.recordingDir) %if last transition appears in the end of the folder remove this transition
-                    fileSepTransitions(end)=[];
-                end
-                for i=1:nParentFolders2Check %repeat folder search nParentFolders2Check folders up
-                    tmpCurrentFolder=obj.dataObj.recordingDir(1:fileSepTransitions(end));
-                    %check parent folder for visual stimulation folder
-                    tmpDir=dir([tmpCurrentFolder filesep 'visualStimulation*']);
-                    if ~isempty(tmpDir)
-                        VSFileLocation=[tmpCurrentFolder filesep tmpDir.name];
-                        folderFound=true;
-                    end
-                    fileSepTransitions(end)=[];
-                end
-                if ~folderFound
-                    error('Visual stimulation folder was not found!!! Notice the the name of the folder should be visualStimulation');
-                end
-            else
-                VSFileLocation=[obj.dataObj.recordingDir filesep tmpDir.name];
-            end
-
-            if isfolder(VSFileLocation)
-                fprintf('Visual stimulation folder found:\n%s\n',VSFileLocation);
-                obj.visualStimFolder = VSFileLocation;
-            else
-                fprintf('Visual stimulation folder not found!!!\nPlease place visual stimulations in a folder that starts with visualStimulation and is located in the same folder as the data folder and run again');
-                return;
-            end
-
-            obj=setVisualStimulationFile(obj);
-
-        end
-
         function copyFilesFromRecordingFolder(obj)
             filesFound=false;
             numberOfParentFolders=2;
@@ -345,7 +308,6 @@ classdef (Abstract) VStimAnalysis < handle
                 mkdir(obj.visualStimPlotsFolder);
                 fprintf('Visual stimulation analysis Plots folders created:\n%s\n',obj.visualStimAnalysisFolder);
             end
-            fprintf('Visual stimulation Analysis/Plot folders created:\n%s\n',obj.visualStimAnalysisFolder);
         end
 
         function obj=getSessionTime(obj,params)
@@ -539,5 +501,9 @@ classdef (Abstract) VStimAnalysis < handle
             end
         end
 
+    end
+
+    methods (Static)
+        folderLocation=findFolderInExperiment()
     end
 end
