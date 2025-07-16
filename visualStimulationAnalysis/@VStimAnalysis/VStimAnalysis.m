@@ -269,7 +269,8 @@ classdef (Abstract) VStimAnalysis < handle
                     dateTime=datetime({VSFiles.date},'InputFormat','dd-MMM-yyyy HH:mm:ss','Locale', 'he_IL');
                 end
                 [~,pDate]=sort(dateTime);
-                VSFiles={VSFiles.name}; %do not switch with line above
+                VSFiles={VSFiles.name}; %do not switch with line above                
+                VSFiles = VSFiles(~contains(lower(VSFiles), 'metadata')); %exclude metadata
                 recordingsFound=0;
                 for i=1:numel(VSFiles)
                     if contains(VSFiles{i},obj.stimName,'IgnoreCase',true)
@@ -415,7 +416,10 @@ classdef (Abstract) VStimAnalysis < handle
                        
                         DiodeCrosses = cell(2,numel(trialOn));
                         moreCross =0;
-                        trialMostcross=0;
+                        trialMostcross=inf;
+                        intTrials =[];
+                        iMC =0;
+                        intrialsNum = 0;
                         for i =1:length(trialOff)
 
                             startSnip  = round((trialOn(i)-trialOn(1))*(obj.dataObj.samplingFrequencyNI/1000))+1;
@@ -444,10 +448,26 @@ classdef (Abstract) VStimAnalysis < handle
                                 %if the number of calculated frames is less than 10%
                                 %then perform an interpolation with the
                                 %first and last cross
-                                2+2
+                                [~, ind]=min([DiodeCrosses{1,i}(1)  DiodeCrosses{2,i}(1)]); %check if trial starts with up or down cross
+                                diodeAll = sort([DiodeCrosses{1,i} DiodeCrosses{2,i}]);
+                                DiodeInterp = linspace(diodeAll(1),diodeAll(end),framesNspeed(2,i));
+                                if ind == 2 %Trial starts with down cross
+                                    DiodeCrosses{2,i} = DiodeInterp(1:2:end);
+                                    DiodeCrosses{1,i} = DiodeInterp(2:2:end);                     
+                                else
+                                    DiodeCrosses{2,i} = DiodeInterp(2:2:end);
+                                    DiodeCrosses{1,i} = DiodeInterp(1:2:end);
+                                end
+
+                                intTrials = [intTrials i];
+
+                                intrialsNum = intrialsNum+1;
+                                
                             end
                             
-                            if (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i}))>framesNspeed(2,i) 
+                            if (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i}))>framesNspeed(2,i)
+                                %if there are more crosses than there
+                                %should be
                                 moreCross = moreCross+1;
                                 if trialMostcross>(length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i})) - framesNspeed(2,i)
                                     trialMostcross = (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i})) - framesNspeed(2,i);
@@ -458,8 +478,12 @@ classdef (Abstract) VStimAnalysis < handle
                         
                         diodeUpCross=cell2mat(DiodeCrosses(1,:));
                         diodeDownCross=cell2mat(DiodeCrosses(2,:));
-                        disp(moreCross,'trials out of',length(trialOff),': trial ',iMC,'has the most crosings: ',trialMostcross)
-
+                        
+                        fprintf('%d trials have excess crossings out of %d; trial %d has the most excess crossings: %d',moreCross,length(trialOff),iMC,trialMostcross)
+                        fprintf('\n');
+                        fprintf('%d Interpolated trials (out of %d) with more than 10%% of crosses missing: ',intrialsNum,length(trialOff));
+                        fprintf('%.0f ', intTrials);
+                        fprintf('\n');
                         %Test
                         % figure;plot(squeeze(fDat));
                         % hold on;xline((DiodeCrosses{1,i} - trialOn(1)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000))
