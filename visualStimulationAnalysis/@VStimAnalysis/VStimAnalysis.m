@@ -464,14 +464,16 @@ classdef (Abstract) VStimAnalysis < handle
                                 signal =squeeze(A(startSnip:endSnip));
                             end
                             fDat=medfilt1(signal,15);
-                            d = designfilt('lowpassiir', 'FilterOrder', 4, ...
-                                'HalfPowerFrequency', obj.VST.fps+5, 'SampleRate', obj.dataObj.samplingFrequencyNI);
-                            % Apply the filter using filtfilt to preserve phase
-
-                            fDat = filtfilt(d, signal);
+                            % d = designfilt('lowpassiir', 'FilterOrder', 4, ...
+                            %     'HalfPowerFrequency', obj.VST.fps+5, 'SampleRate', obj.dataObj.samplingFrequencyNI);
+                            % % Apply the filter using filtfilt to preserve phase
+                            % 
+                            % fDat = filtfilt(d, fDat);
                             Th=mean(fDat(1:100:end));
-                            DiodeCrosses{1,i}=t_ms(fDat(1:end-1)<Th & fDat(2:end)>=Th)+trialOn(1)+interDelayMs/2;
-                            DiodeCrosses{2,i}=t_ms(fDat(1:end-1)>Th & fDat(2:end)<=Th)+trialOn(1)+interDelayMs/2;
+                            sd = std(fDat(1:100:end));
+                            sdK = 0.01;
+                            DiodeCrosses{1,i}=t_ms(fDat(1:end-1)<Th-sdK*sd & fDat(2:end)>=Th+sdK*sd)+trialOn(1)+interDelayMs/2;
+                            DiodeCrosses{2,i}=t_ms(fDat(1:end-1)>Th+sdK*sd  & fDat(2:end)<=Th-sdK*sd )+trialOn(1)+interDelayMs/2;
 
                             if (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i}))*1.1 < framesNspeed(2,i) 
                                 %if the number of calculated frames is less than 10%
@@ -497,7 +499,7 @@ classdef (Abstract) VStimAnalysis < handle
                         diodeDownCross=cell2mat(DiodeCrosses(2,:));
 
                         %Test
-                        figure;plot(squeeze(signal));
+                        figure;plot(squeeze(fDat));
                         hold on;xline((DiodeCrosses{1,i} - trialOn(1)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000))
                         xline((DiodeCrosses{2,i} - trialOn(1)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000),'r')
                         %xline((trialOff(i)-trialOn(1))*(obj.dataObj.samplingFrequencyNI/1000),'b')
