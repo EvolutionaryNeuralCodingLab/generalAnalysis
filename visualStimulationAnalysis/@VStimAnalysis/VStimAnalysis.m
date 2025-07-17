@@ -21,7 +21,7 @@ classdef (Abstract) VStimAnalysis < handle
     end
 
     properties (Constant, Abstract)
-        trialType % The type of trials in terms of flips 'imageTrials' have on flip per trial and 'videoTrials' have many flips per trial 
+        trialType % The type of trials in terms of flips 'imageTrials' have one flip per trial and 'videoTrials' have many flips per trial 
     end
 
     methods (Hidden)
@@ -269,7 +269,8 @@ classdef (Abstract) VStimAnalysis < handle
                     dateTime=datetime({VSFiles.date},'InputFormat','dd-MMM-yyyy HH:mm:ss','Locale', 'he_IL');
                 end
                 [~,pDate]=sort(dateTime);
-                VSFiles={VSFiles.name}; %do not switch with line above
+                VSFiles={VSFiles.name}; %do not switch with line above                
+                VSFiles = VSFiles(~contains(lower(VSFiles), 'metadata')); %exclude metadata
                 recordingsFound=0;
                 for i=1:numel(VSFiles)
                     if contains(VSFiles{i},obj.stimName,'IgnoreCase',true)
@@ -393,6 +394,18 @@ classdef (Abstract) VStimAnalysis < handle
                     end
                 case "digitalTriggerDiode"
                     if ~any(isempty([obj.sessionStartTime,obj.sessionEndTime]))
+                        
+                        if all(obj.trialType == 'videoTrials')
+                            expectedFlipsperTrial = unique(obj.VST.nFrames);
+                            speeds = obj.VST.speeds;
+                            framesNspeed = zeros(2,length(speeds));
+                            framesNspeed(1,:) =  speeds;
+                            %Works for two speeds
+                            framesNspeed(2,speeds == min(speeds)) = max(expectedFlipsperTrial);
+                            framesNspeed(2,speeds ==  max(speeds)) = min(expectedFlipsperTrial);
+                        else
+                            framesNspeed = ones(2,1);
+                        end
 
                         t = obj.dataObj.getTrigger;
                         trialOn = t{3}(t{3} > obj.sessionStartTime & t{3} < obj.sessionEndTime);
@@ -402,6 +415,11 @@ classdef (Abstract) VStimAnalysis < handle
                         [A,t_ms]=obj.dataObj.getAnalogData(params.analogDataCh,trialOn(1)-interDelayMs/2,trialOff(end)-trialOn(1)+interDelayMs); %extract diode data for entire recording
                        
                         DiodeCrosses = cell(2,numel(trialOn));
+                        moreCross =0;
+                        trialMostcross=inf;
+                        intTrials =[];
+                        iMC =0;
+                        intrialsNum = 0;
                         for i =1:length(trialOff)
 
                             startSnip  = round((trialOn(i)-trialOn(1))*(obj.dataObj.samplingFrequencyNI/1000))+1;
@@ -412,21 +430,66 @@ classdef (Abstract) VStimAnalysis < handle
                             else
                                 signal =squeeze(A(startSnip:endSnip));
                             end
+                            fDat=medfilt1(signal,15);
+                            Th=mean(fDat(1:100:end));
+                            stdS = std(fDat(1:100:end));
+                            sdK = 0;
+                            upTimes=t_ms(fDat(1:end-1)<Th-sdK*stdS & fDat(2:end)>=Th+sdK*stdS)+trialOn(1)+interDelayMs/2;
+                            downTimes=t_ms(fDat(1:end-1)>Th+sdK*stdS  & fDat(2:end)<=Th-sdK*stdS )+trialOn(1)+interDelayMs/2;
 
-                            Th=mean(signal(1:100:end));
-                            DiodeCrosses{1,i}=t_ms(signal(1:end-1)<Th & signal(2:end)>=Th)+trialOn(1)+interDelayMs/2;
-                            DiodeCrosses{2,i}=t_ms(signal(1:end-1)>Th & signal(2:end)<=Th)+trialOn(1)+interDelayMs/2;
+                            % Filter crossings: Remove those too close together (e.g., < 50 ms)
+                            minISI = 2*floor(1000/obj.VST.fps);  % ms
+                            filterISI = @(x) x([true, diff(x) > minISI]);
 
+                            DiodeCrosses{1,i} = filterISI(upTimes);
+                            DiodeCrosses{2,i} = filterISI(downTimes);
+
+                            if (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i}))*1.1 < framesNspeed(2,i) 
+                                %if the number of calculated frames is less than 10%
+                                %then perform an interpolation with the
+                                %first and last cross
+                                [~, ind]=min([DiodeCrosses{1,i}(1)  DiodeCrosses{2,i}(1)]); %check if trial starts with up or down cross
+                                diodeAll = sort([DiodeCrosses{1,i} DiodeCrosses{2,i}]);
+                                DiodeInterp = linspace(diodeAll(1),diodeAll(end),framesNspeed(2,i));
+                                if ind == 2 %Trial starts with down cross
+                                    DiodeCrosses{2,i} = DiodeInterp(1:2:end);
+                                    DiodeCrosses{1,i} = DiodeInterp(2:2:end);                     
+                                else
+                                    DiodeCrosses{2,i} = DiodeInterp(2:2:end);
+                                    DiodeCrosses{1,i} = DiodeInterp(1:2:end);
+                                end
+
+                                intTrials = [intTrials i];
+
+                                intrialsNum = intrialsNum+1;
+                                
+                            end
+                            
+                            if (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i}))>framesNspeed(2,i)
+                                %if there are more crosses than there
+                                %should be
+                                moreCross = moreCross+1;
+                                if trialMostcross>(length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i})) - framesNspeed(2,i)
+                                    trialMostcross = (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i})) - framesNspeed(2,i);
+                                    iMC = i;
+                                end
+                            end
                         end
                         
                         diodeUpCross=cell2mat(DiodeCrosses(1,:));
                         diodeDownCross=cell2mat(DiodeCrosses(2,:));
-
+                        
+                        fprintf('%d trials have excess crossings out of %d; trial %d has the most excess crossings: %d',moreCross,length(trialOff),iMC,trialMostcross)
+                        fprintf('\n');
+                        fprintf('%d Interpolated trials (out of %d) with more than 10%% of crosses missing: ',intrialsNum,length(trialOff));
+                        fprintf('%.0f ', intTrials);
+                        fprintf('\n');
                         %Test
-                        % figure;plot(squeeze(signal));
+                        % figure;plot(squeeze(fDat));
                         % hold on;xline((DiodeCrosses{1,i} - trialOn(1)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000))
                         % xline((DiodeCrosses{2,i} - trialOn(1)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000),'r')
-                        %xline((trialOff(i)-trialOn(1))*(obj.dataObj.samplingFrequencyNI/1000),'b')
+                        % %xline((trialOff(i)-trialOn(1))*(obj.dataObj.samplingFrequencyNI/1000),'b')
+                        % figure;plot(1:length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i})-1,diff(sort([DiodeCrosses{1,i} DiodeCrosses{2,i}])))
                     else
                         disp('Missing start and end times!!! Please run getSessionTime before extracting triggers');
                     end
