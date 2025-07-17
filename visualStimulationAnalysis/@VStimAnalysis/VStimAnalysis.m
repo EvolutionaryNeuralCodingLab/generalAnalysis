@@ -460,7 +460,6 @@ classdef (Abstract) VStimAnalysis < handle
                                 end
 
                                 intTrials = [intTrials i];
-
                                 intrialsNum = intrialsNum+1;
                                 
                             end

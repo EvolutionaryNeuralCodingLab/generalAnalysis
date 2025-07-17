@@ -21,5 +21,10 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
 
     methods
 
+
     end
 end
+
+%%%1. Get Diode
+%%%2. Create A Matrix.
+%%%3. 
