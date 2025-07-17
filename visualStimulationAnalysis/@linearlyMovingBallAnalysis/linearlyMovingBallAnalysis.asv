@@ -34,21 +34,20 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
 
             obj.getSessionTime;
 
-            try
-                DiodeCrossings = obj.getSyncedDiodeTriggers;
-            catch
-                obj.getDiodeTriggers("extractionMethod",'digitalTriggerDiode','overwrite',true); 
-                DiodeCrossings = obj.getSyncedDiodeTriggers;
-            end
+            % try
+            %     DiodeCrossings = obj.getSyncedDiodeTriggers('overwrite',true);
+            % catch
+            %     obj.getDiodeTriggers("extractionMethod",'digitalTriggerDiode','overwrite',true); 
+            %     DiodeCrossings = obj.getSyncedDiodeTriggers();
+            % end
+            DiodeCrossings=obj.getDiodeTriggers("extractionMethod",'digitalTriggerDiode','overwrite',true); 
             allDiodeCross = sort([DiodeCrossings.diodeUpCross DiodeCrossings.diodeDownCross]);
             t = obj.dataObj.getTrigger;
             trialOn = t{3}(t{3} > obj.sessionStartTime & t{3} < obj.sessionEndTime);
             trialOff = t{4}(t{4} > obj.sessionStartTime & t{4} < obj.sessionEndTime);
 
-            stimOn = zeros(1, length(trialOn));
             for i=1:length(trialOn)
-                [mn,ind] = min(abs(allDiodeCross - trialOn(i)));
-                stimOn(i) = allDiodeCross(ind); 
+                stimOn(i) = 
             end
 
             % check start and end diode closest to digital trigger on and
