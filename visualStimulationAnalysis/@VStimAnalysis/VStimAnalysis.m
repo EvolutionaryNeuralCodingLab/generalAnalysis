@@ -215,6 +215,7 @@ classdef (Abstract) VStimAnalysis < handle
                     end
                     fprintf('Saving results to file.\n');
                     save(obj.getAnalysisFileName,'params','diodeFrameFlipTimes','stimOnFlipTimes','stimOffFlipTimes');
+                    results = load(obj.getAnalysisFileName);
                 case 'imageTrials'
                     if expectedFlips==measuredFlips
                         stimOnFlipTimes=allDiodeFlips(1:2:end);
@@ -225,6 +226,7 @@ classdef (Abstract) VStimAnalysis < handle
                     end
                     fprintf('Saving results to file.\n');
                     save(obj.getAnalysisFileName,'params','stimOnFlipTimes','stimOffFlipTimes');
+                    results=load(obj.getAnalysisFileName);
             end
         end
 
@@ -432,15 +434,17 @@ classdef (Abstract) VStimAnalysis < handle
 
                             if endSnip>length(A)
                                 signal = squeeze(A(startSnip:end)); 
+                                t_msS = t_ms(startSnip:end);
                             else
                                 signal =squeeze(A(startSnip:endSnip));
+                                t_msS = t_ms(startSnip:endSnip);
                             end
                             fDat=medfilt1(signal,15);
                             Th=mean(fDat(1:100:end));
                             stdS = std(fDat(1:100:end));
                             sdK = 0;
-                            upTimes=t_ms(fDat(1:end-1)<Th-sdK*stdS & fDat(2:end)>=Th+sdK*stdS)+trialOn(1)+interDelayMs/2;
-                            downTimes=t_ms(fDat(1:end-1)>Th+sdK*stdS  & fDat(2:end)<=Th-sdK*stdS )+trialOn(1)+interDelayMs/2;
+                            upTimes=t_msS(fDat(1:end-1)<Th-sdK*stdS & fDat(2:end)>=Th+sdK*stdS)+trialOn(1)+interDelayMs/2; %get real recording times
+                            downTimes=t_msS(fDat(1:end-1)>Th+sdK*stdS  & fDat(2:end)<=Th-sdK*stdS )+trialOn(1)+interDelayMs/2;
 
                             % Filter crossings: Remove those too close together (e.g., < 50 ms)
                             minISI = 2*floor(1000/obj.VST.fps);  % ms
@@ -465,7 +469,6 @@ classdef (Abstract) VStimAnalysis < handle
                                 end
 
                                 intTrials = [intTrials i];
-
                                 intrialsNum = intrialsNum+1;
                                 
                             end
@@ -490,9 +493,9 @@ classdef (Abstract) VStimAnalysis < handle
                         fprintf('%.0f ', intTrials);
                         fprintf('\n');
                         %Test
-                        % figure;plot(squeeze(fDat));
-                        % hold on;xline((DiodeCrosses{1,i} - trialOn(1)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000))
-                        % xline((DiodeCrosses{2,i} - trialOn(1)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000),'r')
+                        figure;plot(squeeze(signal));
+                        hold on;xline((DiodeCrosses{1,i} - trialOn(i)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000))
+                        xline((DiodeCrosses{2,i}  - trialOn(i)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000),'r')
                         % %xline((trialOff(i)-trialOn(1))*(obj.dataObj.samplingFrequencyNI/1000),'b')
                         % figure;plot(1:length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i})-1,diff(sort([DiodeCrosses{1,i} DiodeCrosses{2,i}])))
                     else
