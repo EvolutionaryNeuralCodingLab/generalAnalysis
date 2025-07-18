@@ -60,6 +60,7 @@ classdef (Abstract) VStimAnalysis < handle
                 params.win = [500,500] % duration [1,2] [ms] (for on and off) for LFP analysis
                 params.channelSkip = 5 %includes every 5th channel
                 params.overwrite logical = false
+                params.getWinFromStimDuration = false %if this option is used, only the on response is calculated
                 params.analysisTime = datetime('now')
                 params.inputParams = false
             end
@@ -80,17 +81,21 @@ classdef (Abstract) VStimAnalysis < handle
             stimTimes=obj.getSyncedDiodeTriggers;
 
             %Design decimation Filter
-            F=filterData(vs.dataObj.samplingFrequencyAP(1));
-            F.downSamplingFactor=vs.dataObj.samplingFrequencyAP(1)/250;
+            F=filterData(obj.dataObj.samplingFrequencyAP(1));
+            F.downSamplingFactor=obj.dataObj.samplingFrequencyAP(1)/250;
             F=F.designDownSample;
             F.padding=true;
             samplingFreqLFP=F.filteredSamplingFrequency;
 
-            %To add: for cases of low memory use a loop for calculating over groups of 10 trials and merge 
-            [LFP_on,t_ms]=vs.dataObj.getData(1:params.channelSkip:end,stimTimes.diodeOnFlipTimes,params.win(1));
+            %To add: for cases of low memory use a loop for calculating over groups of 10 trials and merge
+            if params.getWinFromStimDuration
+                params.win=[obj.VST.stimDuration*1000, 500];
+            end
+
+            [LFP_on,t_ms]=obj.dataObj.getData(1:params.channelSkip:obj.dataObj.channelNumbers(end),stimTimes.stimOnFlipTimes,params.win(1));
             LFP_on=F.getFilteredData(LFP_on);
 
-            [LFP_off,t_ms]=vs.dataObj.getData(1:params.channelSkip:end,stimTimes.diodeOffFlipTimes,params.win(2));
+            [LFP_off,t_ms]=obj.dataObj.getData(1:params.channelSkip:obj.dataObj.channelNumbers(end),stimTimes.stimOffFlipTimes,params.win(2));
             LFP_off=F.getFilteredData(LFP_off);
 
             fprintf('Saving results to file.\n');
