@@ -1,9 +1,10 @@
 function folderLocation=findFolderInExperiment(rootFolder,folderNamePart,params)
+%find a specific folder in the experiment based on its name and a root folder (searches also parent folders)
 arguments
-    rootFolder char
-    folderNamePart char
-    params.inputParams = false
-    params.nParentFolders2Check = 2
+    rootFolder char % the root folder for search
+    folderNamePart char %a string that must exist in the begining of the folder name
+    params.nParentFolders2Check = 2 % the number of parent folders to search for the folderNamePart folder relative to rootFolder
+    params.inputParams = false% if true - prints out the iput parameters so that it is clear what can be manipulated in the method
 end
 
 folderFound=false;

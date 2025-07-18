@@ -1,5 +1,5 @@
 function plotSpatialTuningSpikes(obj,params)
-
+%P
 arguments (Input)
     obj
     params.overwrite logical = false
@@ -91,19 +91,20 @@ f7=figure('Name','On spike all trials averaged across electrodes');hL=tiledlayou
 for i=1:obj.VST.rectGridSize^2
     nexttile;
     imagesc(squeeze(mM_on(:,i,:)));colormap(flipud(gray(16)))
-    set(gca,'XTick',[],'YTick',[],'CLim',[0 1/params.bin]);
+    set(gca,'XTick',[],'YTick',[],'CLim',[0 0.5/params.bin]);
 end
 hL.Visible='on';
-if params.updatePlots,obj.printFig(f1,'On_SpkVsPosition'),end
+if params.updatePlots,obj.printFig(f7,'On_SpkTrialsVsPosition'),end
 
+mM_off=squeeze(mean(Mspk_on,3));
 f8=figure('Name','Off spike all trials averaged across electrodes');hL=tiledlayout(obj.VST.rectGridSize,obj.VST.rectGridSize,'TileSpacing','tight','Padding','tight','Visible','off');
 for i=1:obj.VST.rectGridSize^2
     nexttile;
     imagesc(squeeze(mM_off(:,i,:)));colormap(flipud(gray(16)))
-    set(gca,'XTick',[],'YTick',[],'CLim',[0 1/params.bin]);
+    set(gca,'XTick',[],'YTick',[],'CLim',[0 0.5/params.bin]);
 end
 hL.Visible='on';
-if params.updatePlots,obj.printFig(f2,'Off_SpkVsPosition'),end
+if params.updatePlots,obj.printFig(f8,'Off_SpkTrialsVsPosition'),end
 
 f7=figure('Name','On spike all trials averaged across electrodes');
 h=axes;

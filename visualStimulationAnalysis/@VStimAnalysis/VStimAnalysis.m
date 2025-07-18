@@ -25,6 +25,7 @@ classdef (Abstract) VStimAnalysis < handle
     end
 
     methods (Hidden)
+        %class constructor - gets name and adds listener to update initialization every time the dataRecording object is changed
         function obj=VStimAnalysis(dataObj)
             obj.stimName=class(obj);obj.stimName=obj.stimName(1:end-8); %
             addlistener(obj, 'dataObj', 'PostSet',@(src,evnt)obj.initialize);
@@ -38,8 +39,8 @@ classdef (Abstract) VStimAnalysis < handle
 
     methods
 
-        %class constructor - subclass name should match the visual stimulation
         function obj = initialize(obj)
+            %Initialization - extraction of folders and visual parameters subclass name should match the visual stimulation
             %extract the visual stimulation parameters from parameter file
             obj.visualStimFolder=obj.findFolderInExperiment(obj.dataObj.recordingDir,'visualStimulation');
             obj=setVisualStimulationFile(obj);
@@ -48,21 +49,24 @@ classdef (Abstract) VStimAnalysis < handle
         end
 
         function printFig(obj,f,figName)
+            %Prints plots in the relevant folder
+            %f - figure handle
+            %figName - the name of the figure in the figure folder
             set(f,'PaperPositionMode','auto');
             disp(['Printing fig: ',obj.visualStimPlotsFolder,filesep,figName]);
             print([obj.visualStimPlotsFolder,filesep,figName],'-djpeg','-vector','-r300');
         end
 
         function results = getStimLFP(obj,params)
-
+        %Extracts the LFP for all visual stimulation times from the row data. 
             arguments (Input)
                 obj
                 params.win = [500,500] % duration [1,2] [ms] (for on and off) for LFP analysis
                 params.channelSkip = 5 %includes every 5th channel
-                params.overwrite logical = false
                 params.getWinFromStimDuration = false %if this option is used, only the on response is calculated
-                params.analysisTime = datetime('now')
-                params.inputParams = false
+                params.overwrite logical = false %if true overwrites results
+                params.analysisTime = datetime('now') %extract the time at which analysis was performed 
+                params.inputParams = false %if true - prints out the iput parameters so that it is clear what can be manipulated in the method
             end
             if params.inputParams,disp(params),return,end
 
@@ -102,9 +106,8 @@ classdef (Abstract) VStimAnalysis < handle
             save(obj.getAnalysisFileName,'params','LFP_on','LFP_off','samplingFreqLFP');
         end
 
-        %extract visual stimulation parameters from the file saved by VStim classes when running visualStimGUI
         function obj = getStimParams(obj)
-
+        %extract visual stimulation parameters from the file saved by VStim classes when running visualStimGUI
             VSFile=[obj.visualStimFolder filesep obj.visualStimulationFile];
             disp(['Extracting information from: ' VSFile]);
             VS=load(VSFile);
@@ -126,17 +129,19 @@ classdef (Abstract) VStimAnalysis < handle
         end
 
         function analysisFile = getAnalysisFileName(obj)
+        %extract currently running analysis method name and use it to create a unique file name for saving analysis results 
             db=dbstack;currentMethod=strsplit(db(2).name,'.');
             analysisFile=[obj.visualStimAnalysisFolder,filesep,currentMethod{2},'.mat'];
         end
 
         function results = getSyncedDiodeTriggers(obj,params)
+        %Sychronize the times for each stimulation onet or frame between the diode analog data and the time stamps saved by the visual stimulation class used for presenting the stimulations
             arguments
                 obj
-                params.overwrite logical = false
-                params.analysisTime = datetime('now')
-                params.inputParams = false
                 params.minDiodeInterval = 0.5 %removes diode frames shorter than minDiodeInterval fraction of the inter frame interval
+                params.overwrite logical = false %if true overwrites results
+                params.analysisTime = datetime('now') %extract the time at which analysis was performed   
+                params.inputParams = false %if true - prints out the iput parameters so that it is clear what can be manipulated in the method
             end
             if params.inputParams,disp(params),return,end
 
@@ -231,9 +236,11 @@ classdef (Abstract) VStimAnalysis < handle
         end
 
         function copyFilesFromRecordingFolder(obj)
-            filesFound=false;
-            numberOfParentFolders=2;
+        %searches visual stimulation files and copies them to a dedicated visual stimulation folder 
+            numberOfParentFolders=2; %How many parent folders to go in looking for the visual stimulation files 
+
             tmpFolder=obj.dataObj.recordingDir;
+            filesFound=false;
             for f=1:numberOfParentFolders
                 matFiles=dir([tmpFolder,filesep,'*.mat']);
                 if ~isempty(matFiles)
@@ -319,12 +326,13 @@ classdef (Abstract) VStimAnalysis < handle
         end
 
         function obj=getSessionTime(obj,params)
+        %obj=getSessionTime(obj,params) - Gets the start times of each visual stimulation session from digital triggers in the recoring
             arguments (Input)
                 obj
-                params.startEndChannel = []
-                params.overwrite logical = false
-                params.analysisTime = datetime('now')
-                params.inputParams = false
+                params.startEndChannel = [] %[1,2] - The digital triger channel for stim onset and offset
+                params.analysisTime = datetime('now') %extract the time at which analysis was performed 
+                params.inputParams = false %if true - prints out the iput parameters so that it is clear what can be manipulated in the method
+                params.overwrite logical = false %if true overwrites results %if true overwrites results
             end
             if params.inputParams,disp(params),return,end
 
@@ -366,11 +374,11 @@ classdef (Abstract) VStimAnalysis < handle
             arguments (Input)
                 obj
                 %extractionMethod (1,1) string {mustBeMember(extractionMethod,{'diodeThreshold','digitalTriggerDiode'})} = 'diodeThreshold';
-                params.extractionMethod string = 'diodeThreshold'
-                params.overwrite logical = false
+                params.extractionMethod string = 'diodeThreshold' %the method used to extract frame flipes-{'diodeThreshold','digitalTriggerDiode'}
                 params.analogDataCh = 1
-                params.analysisTime = datetime('now')
-                params.inputParams = false
+                params.overwrite logical = false %if true overwrites results
+                params.analysisTime = datetime('now') %extract the time at which analysis was performed 
+                params.inputParams = false %if true - prints out the iput parameters so that it is clear what can be manipulated in the method
             end
             if params.inputParams,disp(params),return,end
 
@@ -511,6 +519,7 @@ classdef (Abstract) VStimAnalysis < handle
         end
 
         function f=plotDiodeTriggers(obj)
+            %Plots the position of detected diode triggers
             if isfile([obj.visualStimAnalysisFolder filesep 'getDiodeTriggers.mat'])
                 D=load([obj.visualStimAnalysisFolder filesep 'getDiodeTriggers.mat']);
             else
@@ -537,6 +546,8 @@ classdef (Abstract) VStimAnalysis < handle
     end
 
     methods (Static)
+        %find a specific folder in the experiment
+        %folderLocation=findFolderInExperiment(rootFolder,folderNamePart,params)
         folderLocation=findFolderInExperiment()
     end
 end

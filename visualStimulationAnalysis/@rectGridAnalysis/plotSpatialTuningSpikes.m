@@ -1,17 +1,17 @@
 function plotSpatialTuningSpikes(obj,params)
-
+%Generates a few plots with the position spike tuning for the rectGrid stim
 arguments (Input)
     obj
-    params.overwrite logical = false
-    params.analysisTime = datetime('now')
-    params.inputParams = false
-    params.updatePlots = true
+    params.updatePlots = true %if true overwrites the existing plots. If false only generates the plots without saving
     params.bin = 10 %[ms] - bins size for the generated rasters
     params.win = [500,500] % duration [1,2] [ms] (for on and off) for LFP analysis
+    params.overwrite logical = false %if true overwrites results
+    params.analysisTime = datetime('now') %extract the time at which analysis was performed
+    params.inputParams = false %if true - prints out the iput parameters so that it is clear what can be manipulated in the method
 end
 if params.inputParams,disp(params),return,end
 
-%load diode 
+%load diode
 stimTimes=obj.getSyncedDiodeTriggers;
 
 %check that sorting exist
