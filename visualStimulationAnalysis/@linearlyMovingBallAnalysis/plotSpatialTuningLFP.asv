@@ -12,9 +12,28 @@ end
 if params.inputParams,disp(params),return,end
 
 LFP=obj.getStimLFP;
-vStimGrid=nan(obj.VST.rectGridSize,obj.VST.rectGridSize);
-vStimGrid(sub2ind([obj.VST.rectGridSize',obj.VST.rectGridSize],obj.VST.pos2Y,obj.VST.pos2X))=1:(obj.VST.rectGridSize^2);
-vStimGrid=flipud(vStimGrid);
+
+obj.VST.speed
+obj.VST.numberOfDirections
+obj.VST.parallelsOffset
+obj.VST.ballSize
+
+nSpeeds=numel(obj.VST.speed);
+nBallSizes=numel(obj.VST.ballSize);
+nOffsets=numel(obj.VST.parallelsOffset);
+nDirections=obj.VST.numberOfDirections;
+
+Ax1Trials=obj.VST.directions;
+Ax2Trials=obj.VST.offsets;
+Ax1Vals=unique(obj.VST.directions);
+Ax2Vals=unique(obj.VST.offsets);
+nAx1=numel(Ax1Vals);
+nAx2=numel(Ax2Vals);
+
+vGrid=nan(nAx2,nAx1);
+vGrid(:)=1:(nAx1*nAx2);
+vGrid=flipud(vGrid');
+[X,Y]=meshgrid()
 
 [~,pOrdered]=sort(obj.VST.pos);
 [nElecs,nTrials,nBins]=size(LFP.LFP_on);
@@ -61,15 +80,15 @@ if params.updatePlots,obj.printFig(f4,'Off_AvgOnPositions'),end
 
 f5=figure('Name','On averaged across electrodes');
 h=axes;
-activityTracePhysicalSpacePlot(h,1:numel(vStimGrid),squeeze(mean(mFLP_on,1)),vStimGrid,'traceColor',[0.8 0.2 0.2],'DrawElectrodeNumbers',0);
+activityTracePhysicalSpacePlot(h,1:numel(vGrid),squeeze(mean(mFLP_on,1)),vGrid,'traceColor',[0.8 0.2 0.2],'DrawElectrodeNumbers',0);
 if params.updatePlots,obj.printFig(f5,'On_AvgOnElectrodes'),end
 
 f6=figure('Name','Off averaged across electrodes');
 h=axes;
-vs.activityTracePhysicalSpacePlot(h,1:numel(vStimGrid),squeeze(mean(mFLP_off,1)),vStimGrid,'traceColor',[0.8 0.2 0.2],'DrawElectrodeNumbers',0);
+vs.activityTracePhysicalSpacePlot(h,1:numel(vGrid),squeeze(mean(mFLP_off,1)),vGrid,'traceColor',[0.8 0.2 0.2],'DrawElectrodeNumbers',0);
 if params.updatePlots,obj.printFig(f6,'Off_AvgOnElectrodes'),end
 
-%[hPlot]=activityMultiTracePhysicalSpacePlot(h,(1:32)',squeeze(M_Int),vStimGrid,'DrawElectrodeNumbers',0,'traceColor',[0.8 0.2 0.2]);
+%[hPlot]=activityMultiTracePhysicalSpacePlot(h,(1:32)',squeeze(M_Int),vGrid,'DrawElectrodeNumbers',0,'traceColor',[0.8 0.2 0.2]);
 %[hScaleBar]=addScaleBar(h,'scaleFac',1.4);
 %activityTracePhysicalSpacePlot(h,IntanData.channelNumbers(:),squeeze(mean(M_Intan(:,pOrdered(1),:),2)),IntanData.chLayoutNumbers,'traceColor',[0.8 0.2 0.2],'DrawElectrodeNumbers',0);
 

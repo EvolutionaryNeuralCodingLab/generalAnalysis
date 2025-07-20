@@ -21,6 +21,8 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
 
     methods
 
+        plotSpatialTuningLFP(obj,params)
+
         function results = setUpAnalysis(obj, params)
 
             arguments (Input)
@@ -53,11 +55,12 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
 
             % check start and end diode closest to digital trigger on and
             % off
-
-
         end
 
+    end
 
+    %static methods that are not directly related to the class are defined here
+    methods (Static)
     end
 end
 
