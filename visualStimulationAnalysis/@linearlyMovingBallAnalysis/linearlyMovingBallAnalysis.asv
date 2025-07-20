@@ -34,24 +34,45 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
 
             obj.getSessionTime;
 
-            % try
-            %     DiodeCrossings = obj.getSyncedDiodeTriggers('overwrite',true);
-            % catch
-            %     obj.getDiodeTriggers("extractionMethod",'digitalTriggerDiode','overwrite',true); 
-            %     DiodeCrossings = obj.getSyncedDiodeTriggers();
-            % end
-            DiodeCrossings=obj.getDiodeTriggers("extractionMethod",'digitalTriggerDiode','overwrite',true); 
-            allDiodeCross = sort([DiodeCrossings.diodeUpCross DiodeCrossings.diodeDownCross]);
-            t = obj.dataObj.getTrigger;
-            trialOn = t{3}(t{3} > obj.sessionStartTime & t{3} < obj.sessionEndTime);
-            trialOff = t{4}(t{4} > obj.sessionStartTime & t{4} < obj.sessionEndTime);
-
-            for i=1:length(trialOn)
-                stimOn(i) = 
+            try
+                DiodeCrossings = obj.getSyncedDiodeTriggers;
+            catch
+                obj.getDiodeTriggers("extractionMethod",'digitalTriggerDiode','overwrite',true); 
+                DiodeCrossings = obj.getSyncedDiodeTriggers;
             end
+            
+            stimOn = DiodeCrossings.stimOnFlipTimes;
+            stimOff = DiodeCrossings.stimOffFlipTimes;
+
+            if isfield(obj.VST, 'orientations') %Check if orientations are present (grid inside moving object).
+                orientations = [orientations cell2mat(ball.VSMetaData.allPropVal(find(strcmp(ball.VSMetaData.allPropName,'orientations'))))];
+            else %No orientations property exist
+                orientations = [orientations zeros(1,cell2mat(ball.VSMetaData.allPropVal(find(strcmp(ball.VSMetaData.allPropName,'nTotTrials')))))];
+            end
+            if isempty(orientations) %orientations property exists but is empty
+                orientations = [orientations zeros(1,cell2mat(ball.VSMetaData.allPropVal(find(strcmp(ball.VSMetaData.allPropName,'nTotTrials')))))];
+            end
+            
+
+            directions = [directions cell2mat(ball.VSMetaData.allPropVal(find(strcmp(ball.VSMetaData.allPropName,'directions'))))];
+
+            offsets = [offsets cell2mat(ball.VSMetaData.allPropVal(find(strcmp(ball.VSMetaData.allPropName,'offsets'))))];
+
+            sizes = [sizes cell2mat(ball.VSMetaData.allPropVal(find(strcmp(ball.VSMetaData.allPropName,'ballSizes'))))];
+
+            speeds = [speeds cell2mat(ball.VSMetaData.allPropVal(find(strcmp(ball.VSMetaData.allPropName,'speeds'))))];
+
+            interStimStats = cell2mat(ball.VSMetaData.allPropVal(find(strcmp(ball.VSMetaData.allPropName,'interTrialDelay'))))*1000;
+
 
             % check start and end diode closest to digital trigger on and
             % off
+
+            A = [stimOn directions' offsets' sizes' speeds' orientations'];
+            [C indexS] = sortrows(A,[2 3 4 5 6]);
+
+            B = [stimOff directions' offsets' sizes' speeds' orientations'];
+            [Coff indexSo] = sortrows(B,[2 3 4 5 6]);
 
 
         end
