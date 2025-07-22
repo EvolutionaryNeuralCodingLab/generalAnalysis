@@ -40,14 +40,29 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
                  return
              end
 
+
             obj.getSessionTime;
+
             try
                 DiodeCrossings = obj.getSyncedDiodeTriggers;
             catch
                 obj.getDiodeTriggers("extractionMethod",'digitalTriggerDiode','overwrite',true); 
                 DiodeCrossings = obj.getSyncedDiodeTriggers;
+
+            end
+            allDiodeCross = sort([DiodeCrossings.diodeUpCross DiodeCrossings.diodeDownCross]);
+            t = obj.dataObj.getTrigger;
+            trialOn = t{3}(t{3} > obj.sessionStartTime & t{3} < obj.sessionEndTime);
+            trialOff = t{4}(t{4} > obj.sessionStartTime & t{4} < obj.sessionEndTime);
+
+            stimOn = zeros(1, length(trialOn));
+            for i=1:length(trialOn)
+                [mn,ind] = min(abs(allDiodeCross - trialOn(i)));
+                stimOn(i) = allDiodeCross(ind); 
+
             end
             
+
 
             stimOn = DiodeCrossings.stimOnFlipTimes;
             stimOff = DiodeCrossings.stimOffFlipTimes;
@@ -191,6 +206,14 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
             save(obj.getAnalysisFileName,'params','NeuronVals','C','Coff','goodU');
         end
 
+            % check start and end diode closest to digital trigger on and
+            % off
+        end
+
+    end
+
+    %static methods that are not directly related to the class are defined here
+    methods (Static)
     end
 end
 

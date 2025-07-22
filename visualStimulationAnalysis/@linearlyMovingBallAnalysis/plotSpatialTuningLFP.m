@@ -12,14 +12,36 @@ end
 if params.inputParams,disp(params),return,end
 
 LFP=obj.getStimLFP;
-vStimGrid=nan(obj.VST.rectGridSize,obj.VST.rectGridSize);
-vStimGrid(sub2ind([obj.VST.rectGridSize',obj.VST.rectGridSize],obj.VST.pos2Y,obj.VST.pos2X))=1:(obj.VST.rectGridSize^2);
-vStimGrid=flipud(vStimGrid);
 
-[~,pOrdered]=sort(obj.VST.pos);
-[nElecs,nTrials,nBins]=size(LFP.LFP_on);
-mFLP_on=squeeze(mean(reshape(LFP.LFP_on(:,pOrdered,:),[nElecs,obj.VST.trialsPerCategory,nTrials/obj.VST.trialsPerCategory,nBins]),2));
-mFLP_off=squeeze(mean(reshape(LFP.LFP_off(:,pOrdered,:),[nElecs,obj.VST.trialsPerCategory,nTrials/obj.VST.trialsPerCategory,nBins]),2));
+%add code to create multiple plots in case that more than 1 ball size or velocity was used.
+nSpeeds=numel(obj.VST.speed);
+nBallSizes=numel(obj.VST.ballSize);
+nOffsets=numel(obj.VST.parallelsOffset);
+nDirections=obj.VST.numberOfDirections;
+
+Ax1Trials=obj.VST.directions;
+Ax2Trials=obj.VST.offsets;
+Ax1Vals=unique(obj.VST.directions);
+Ax2Vals=unique(obj.VST.offsets);
+nAx1=numel(Ax1Vals);
+nAx2=numel(Ax2Vals);
+
+vGrid=nan(nAx2,nAx1);
+vGrid(:)=1:(nAx1*nAx2);
+vGrid=flipud(vGrid');
+[Xgrid,Ygrid]=meshgrid(1:nAx2,1:nAx1);
+
+[~,pOrdered2]=sort(Ax2Trials);
+[originalOrder,pOrdered1]=sort(Ax1Trials(pOrdered2));
+pOrdered=pOrdered2(pOrdered1);
+
+%figure;plotyy(1:numel(pOrder),Ax2Trials(pOrder),1:numel(pOrder),Ax1Trials(pOrder));
+
+[nElecs,nTrials,nBins_on]=size(LFP.LFP_on);
+[~,~,nBins_off]=size(LFP.LFP_off);
+
+mFLP_on=squeeze(mean(reshape(LFP.LFP_on(:,pOrdered,:),[nElecs,obj.VST.trialsPerCategory,nTrials/obj.VST.trialsPerCategory,nBins_on]),2));
+mFLP_off=squeeze(mean(reshape(LFP.LFP_off(:,pOrdered,:),[nElecs,obj.VST.trialsPerCategory,nTrials/obj.VST.trialsPerCategory,nBins_off]),2));
 
 if params.normTrace
     mFLP_on=bsxfun(@minus,mFLP_on,mean(mFLP_on,3));
@@ -29,50 +51,60 @@ end
 stdOn=std(mFLP_on(:));
 stdOff=std(mFLP_off(:));
 
-f1=figure('Name','On responses vs position');hL=tiledlayout(obj.VST.rectGridSize,obj.VST.rectGridSize,'TileSpacing','tight','Padding','tight','Visible','off');
-for i=1:obj.VST.rectGridSize^2
+f1=figure('Name','On responses vs position','Position',[30 200 1800 600]);hL=tiledlayout(nAx1,nAx2,'TileSpacing','tight','Padding','compact','Visible','off');
+for i=1:(nAx1*nAx2)
     nexttile;
     imagesc(squeeze(mFLP_on(:,i,:)));
     set(gca,'XTick',[],'YTick',[],'CLim',[-stdOn*2 stdOn*2]);
+    if i<=nAx2
+        title(num2str(Ax2Vals(i)),'FontSize',16)
+    end
+    if mod(i,nAx2)==1
+        ylabel(Ax1Vals((i-1)/nAx2+1),'FontSize',16,'FontWeight','bold');
+    end
 end
 hL.Visible='on';
 if params.updatePlots,obj.printFig(f1,'On_VsPosition'),end
 
-f2=figure('Name','Off responses vs position');hL=tiledlayout(obj.VST.rectGridSize,obj.VST.rectGridSize,'TileSpacing','tight','Padding','tight','Visible','off');
-for i=1:obj.VST.rectGridSize^2
+f2=figure('Name','Off responses vs position','Position',[30 200 1800 600]);hL=tiledlayout(nAx1,nAx2,'TileSpacing','tight','Padding','compact','Visible','off');
+for i=1:(nAx1*nAx2)
     nexttile;
     imagesc(squeeze(mFLP_off(:,i,:)));
     set(gca,'XTick',[],'YTick',[],'CLim',[-stdOff*2 stdOff*2]);
+    if i<=nAx2
+        title(num2str(Ax2Vals(i)),'FontSize',16)
+    end
+    if mod(i,nAx2)==1
+        ylabel(Ax1Vals((i-1)/nAx2+1),'FontSize',16,'FontWeight','bold');
+    end
 end
 hL.Visible='on';
 if params.updatePlots,obj.printFig(f2,'Off_VsPosition'),end
 
-f3=figure('Name','On averaged across positions');
-imagesc((1:nBins)/LFP.samplingFreqLFP*1000,1:nElecs,squeeze(mean(mFLP_on,2)));
+f3=figure('Name','On averaged across positions','Position',[30 200 1000 300]);
+imagesc((1:nBins_on)/LFP.samplingFreqLFP*1000,1:nElecs,squeeze(mean(mFLP_on,2)));
 ylabel('Ch #');
 xlabel('Time [ms]');
 if params.updatePlots,obj.printFig(f3,'On_AvgOnPositions'),end
 
-f4=figure('Name','Off averaged across positions');
+f4=figure('Name','Off averaged across positions','Position',[30 200 1000 300]);
 imagesc((1:nBins)/LFP.samplingFreqLFP*1000,1:nElecs,squeeze(mean(mFLP_off,2)));
 ylabel('Ch #');
 xlabel('Time [ms]');
 if params.updatePlots,obj.printFig(f4,'Off_AvgOnPositions'),end
 
-f5=figure('Name','On averaged across electrodes');
+f5=figure('Name','On averaged across electrodes','Position',[30 200 1800 600]);
 h=axes;
-activityTracePhysicalSpacePlot(h,1:numel(vStimGrid),squeeze(mean(mFLP_on,1)),vStimGrid,'traceColor',[0.8 0.2 0.2],'DrawElectrodeNumbers',0);
+activityTracePhysicalSpacePlot(h,1:numel(vGrid),squeeze(mean(mFLP_on,1)),vGrid,'traceColor',[0.8 0.2 0.2],'DrawElectrodeNumbers',0);
 if params.updatePlots,obj.printFig(f5,'On_AvgOnElectrodes'),end
 
-f6=figure('Name','Off averaged across electrodes');
+f6=figure('Name','Off averaged across electrodes','Position',[30 200 1800 600]);
 h=axes;
-vs.activityTracePhysicalSpacePlot(h,1:numel(vStimGrid),squeeze(mean(mFLP_off,1)),vStimGrid,'traceColor',[0.8 0.2 0.2],'DrawElectrodeNumbers',0);
+activityTracePhysicalSpacePlot(h,1:numel(vGrid),squeeze(mean(mFLP_off,1)),vGrid,'traceColor',[0.8 0.2 0.2],'DrawElectrodeNumbers',0);
 if params.updatePlots,obj.printFig(f6,'Off_AvgOnElectrodes'),end
 
-%[hPlot]=activityMultiTracePhysicalSpacePlot(h,(1:32)',squeeze(M_Int),vStimGrid,'DrawElectrodeNumbers',0,'traceColor',[0.8 0.2 0.2]);
+%[hPlot]=activityMultiTracePhysicalSpacePlot(h,(1:32)',squeeze(M_Int),vGrid,'DrawElectrodeNumbers',0,'traceColor',[0.8 0.2 0.2]);
 %[hScaleBar]=addScaleBar(h,'scaleFac',1.4);
 %activityTracePhysicalSpacePlot(h,IntanData.channelNumbers(:),squeeze(mean(M_Intan(:,pOrdered(1),:),2)),IntanData.chLayoutNumbers,'traceColor',[0.8 0.2 0.2],'DrawElectrodeNumbers',0);
-
-
 
 end

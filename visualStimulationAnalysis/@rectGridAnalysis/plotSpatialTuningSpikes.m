@@ -15,17 +15,7 @@ if params.inputParams,disp(params),return,end
 stimTimes=obj.getSyncedDiodeTriggers;
 
 %check that sorting exist
-if isdir(obj.spikeSortingFolder)
-    if isfile([obj.spikeSortingFolder filesep 'sorting_tIc.mat'])
-        s=load([obj.spikeSortingFolder filesep 'sorting_tIc.mat']);
-    else
-        fprintf('Did not find <strong> sorting_tIc.mat </strong> (t,ic format) in spike sorting folder!\ntrying to convert from Phy format, please wait...\n');
-        obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
-        s=load([obj.spikeSortingFolder filesep 'sorting_tIc.mat']);
-    end
-else
-    fprintf('Did not find spike sorting folder, put phy results into a folder starting with <strong> kilosort </strong> and try again,\n');
-end
+s=obj.getSpikeTIcData;
 
 %determine visual stimulation grid
 vStimGrid=nan(obj.VST.rectGridSize,obj.VST.rectGridSize);
