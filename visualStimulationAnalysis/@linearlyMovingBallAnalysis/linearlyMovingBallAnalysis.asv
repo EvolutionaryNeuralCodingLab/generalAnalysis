@@ -21,6 +21,23 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
 
     methods
 
+        plotSpatialTuningLFP(obj,params)
+        plotSpatialTuningSpikes(obj,params)
+
+        function plotCorrSpikePattern(obj,varargin)
+            %Plots the correlation matrix between the responses of all pairs of stimlui
+            T = obj.getSyncedDiodeTriggers;
+
+            %order trials accoridng ot direction of movement and offset for each direction.
+            [~,pOrdered2]=sort(obj.VST.offsets);
+            [originalOrder,pOrdered1]=sort(obj.VST.directions(pOrdered2));
+            pOrdered=pOrdered2(pOrdered1);
+            trialCat="Dir="+ num2str(obj.VST.directions(pOrdered)',2)+",offset=" + num2str(obj.VST.offsets(pOrdered)',4);
+
+            plotCorrSpikePattern@VStimAnalysis(obj,T.stimOnFlipTimes(pOrdered),trialCat,'win',obj.VST.stimDuration*1000,varargin{:});
+
+        end
+
         function results = setUpAnalysis(obj, params)
 
             arguments (Input)
@@ -34,29 +51,31 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
 
             obj.getSessionTime;
 
-            % try
-            %     DiodeCrossings = obj.getSyncedDiodeTriggers('overwrite',true);
-            % catch
-            %     obj.getDiodeTriggers("extractionMethod",'digitalTriggerDiode','overwrite',true); 
-            %     DiodeCrossings = obj.getSyncedDiodeTriggers();
-            % end
-            DiodeCrossings=obj.getDiodeTriggers("extractionMethod",'digitalTriggerDiode','overwrite',true); 
+            try
+                DiodeCrossings = obj.getSyncedDiodeTriggers;
+            catch
+                obj.getDiodeTriggers("extractionMethod",'digitalTriggerDiode','overwrite',true); 
+                DiodeCrossings = obj.getSyncedDiodeTriggers;
+            end
             allDiodeCross = sort([DiodeCrossings.diodeUpCross DiodeCrossings.diodeDownCross]);
             t = obj.dataObj.getTrigger;
             trialOn = t{3}(t{3} > obj.sessionStartTime & t{3} < obj.sessionEndTime);
             trialOff = t{4}(t{4} > obj.sessionStartTime & t{4} < obj.sessionEndTime);
 
+            stimOn = zeros(1, length(trialOn));
             for i=1:length(trialOn)
-                stimOn(i) = 
+                [mn,ind] = min(abs(allDiodeCross - trialOn(i)));
+                stimOn(i) = allDiodeCross(ind); 
             end
 
             % check start and end diode closest to digital trigger on and
             % off
-
-
         end
 
+    end
 
+    %static methods that are not directly related to the class are defined here
+    methods (Static)
     end
 end
 
