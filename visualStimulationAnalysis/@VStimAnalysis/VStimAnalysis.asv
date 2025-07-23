@@ -180,7 +180,7 @@ classdef (Abstract) VStimAnalysis < handle
             s=obj.getSpikeTIcData;
 
             M=BuildBurstMatrix(s.ic,round(s.t/params.bin),round(T/params.bin),round(params.win/params.bin));
-            M=ConvBurstMatrix(M,fspecial('gaussian',[1 31],10),'same');
+            M=ConvBurstMatrix(M,fspecial('gaussian',[1 params.gaussConvSamples*3],params.gaussConvSamples),'same');
             [nTrials,nNeu,nBins]=size(M);
 
             [CI]=CalcCorrAlfaB_tmp2(M);
@@ -226,7 +226,7 @@ classdef (Abstract) VStimAnalysis < handle
             if params.overwrite,obj.printFig(f2,'timeInvariantTrialCorrMatrix'),end
 
             f3=figure;
-            [DC,order]=DendrogramMatrix(res.CI,'toPlotBinaryTree',1,'maxClusters',10,'figureHandle',f3);
+            [DC,order]=DendrogramMatrix(res.CI,'toPlotBinaryTree',1,'maxClusters',8,'figureHandle',f3);
             if params.overwrite,obj.printFig(f3,'timeInvariantDendrogramedTrialCorrMatrix'),end
 
             f4=figure;
@@ -235,7 +235,7 @@ classdef (Abstract) VStimAnalysis < handle
             if params.overwrite,obj.printFig(f4,'timeInvariantDendrogramedOrdering'),end
 
             f5=figure;
-            [DC,order]=DendrogramMatrix(res.C,'toPlotBinaryTree',1,'maxClusters',10,'figureHandle',f5);
+            [DC,order]=DendrogramMatrix(res.C,'toPlotBinaryTree',1,'maxClusters',8,'figureHandle',f5);
             if params.overwrite,obj.printFig(f5,'dendrogramedTrialCorrMatrix'),end
             
             f6=figure;
@@ -468,7 +468,10 @@ classdef (Abstract) VStimAnalysis < handle
             end
             if params.inputParams,disp(params),return,end
 
-
+            %load previous results if analysis was previuosly performed and there is no need to overwrite otherwise continue
+            results = obj.isOutputAnalysis(obj.getAnalysisFileName,params.overwrite,nargout==1);
+            if ~isempty(results), return, end
+        
             %load previous results if analysis was previuosly performed and there is no need to overwrite
             if isfile(obj.getAnalysisFileName) && ~params.overwrite
                 fprintf('Analysis already exists (use overwrite option to recalculate).\n');
@@ -681,5 +684,28 @@ classdef (Abstract) VStimAnalysis < handle
         %find a specific folder in the experiment
         %folderLocation=findFolderInExperiment(rootFolder,folderNamePart,params)
         folderLocation=findFolderInExperiment()
+
+        function results=isOutputAnalysis(analysisFileName,overwrite,isOutput)
+            %load previous results if analysis was previuosly performed and there is no need to overwrite
+            results=[];
+            if ~overwrite
+                if isOutput
+                    if isfile(analysisFileName)
+                        fprintf('Loading saved results from file.\n');
+                        results=load(analysisFileName);
+                    else
+                        fprintf('No results for this analyis!!! Please run without output argument first and then run again to load the results.\n');
+                        results=false;
+                    end
+                else
+                    fprintf('Analysis already exists (use overwrite option to recalculate).\n');
+                end
+            else
+                if isOutput
+                    fprintf('Cant not calculate and return results. Please run without output argument first and then run again to load the results.\n');')
+                end
+            end
+        end
+
     end
 end

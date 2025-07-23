@@ -70,17 +70,9 @@ classdef (Abstract) VStimAnalysis < handle
             end
             if params.inputParams,disp(params),return,end
 
-            %load previous results if analysis was previuosly performed and there is no need to overwrite
-            results=[];
-            if isfile(obj.getAnalysisFileName) && ~params.overwrite
-                if nargout==1
-                    fprintf('Loading saved results from file.\n');
-                    results=load(obj.getAnalysisFileName);
-                else
-                    fprintf('Analysis already exists (use overwrite option to recalculate).\n');
-                end
-                return;
-            end
+            %load previous results if analysis was previuosly performed and there is no need to overwrite otherwise continue
+            results = obj.isOutputAnalysis(obj.getAnalysisFileName,params.overwrite,nargout==1);
+            if ~isempty(results), return, end
 
             stimTimes=obj.getSyncedDiodeTriggers;
 
@@ -164,18 +156,9 @@ classdef (Abstract) VStimAnalysis < handle
             end
             if params.inputParams,disp(params),return,end
 
-
-            %load previous results if analysis was previuosly performed and there is no need to overwrite
-            results=[];
-            if isfile(obj.getAnalysisFileName) && ~params.overwrite
-                if nargout==1
-                    fprintf('Loading saved results from file.\n');
-                    results=load(obj.getAnalysisFileName);
-                else
-                    fprintf('Analysis already exists (use overwrite option to recalculate).\n');
-                end
-                return;
-            end
+            %load previous results if analysis was previuosly performed and there is no need to overwrite otherwise continue
+            results = obj.isOutputAnalysis(obj.getAnalysisFileName,params.overwrite,nargout==1);
+            if ~isempty(results), return, end
 
             s=obj.getSpikeTIcData;
 
@@ -257,17 +240,10 @@ classdef (Abstract) VStimAnalysis < handle
             end
             if params.inputParams,disp(params),return,end
 
-            %load previous results if analysis was previuosly performed and there is no need to overwrite
-            results=[];
-            if isfile(obj.getAnalysisFileName) && ~params.overwrite
-                if nargout==1
-                    fprintf('Loading saved results from file.\n');
-                    results=load(obj.getAnalysisFileName);
-                else
-                    fprintf('Analysis already exists (use overwrite option to recalculate).\n');
-                end
-                return;
-            end
+            %load previous results if analysis was previuosly performed and there is no need to overwrite otherwise continue
+            results = obj.isOutputAnalysis(obj.getAnalysisFileName,params.overwrite,nargout==1);
+            if ~isempty(results), return, end
+            
             diode=obj.getDiodeTriggers;
 
             allDiodeFlips=sort([diode.diodeUpCross,diode.diodeDownCross]);
@@ -468,7 +444,10 @@ classdef (Abstract) VStimAnalysis < handle
             end
             if params.inputParams,disp(params),return,end
 
-
+            %load previous results if analysis was previuosly performed and there is no need to overwrite otherwise continue
+            results = obj.isOutputAnalysis(obj.getAnalysisFileName,params.overwrite,nargout==1);
+            if ~isempty(results), return, end
+        
             %load previous results if analysis was previuosly performed and there is no need to overwrite
             if isfile(obj.getAnalysisFileName) && ~params.overwrite
                 fprintf('Analysis already exists (use overwrite option to recalculate).\n');
@@ -514,17 +493,9 @@ classdef (Abstract) VStimAnalysis < handle
             end
             if params.inputParams,disp(params),return,end
 
-            %load previous results if analysis was previuosly performed and there is no need to overwrite
-            results=[];
-            if isfile(obj.getAnalysisFileName) && ~params.overwrite
-                if nargout==1
-                    fprintf('Loading saved results from file.\n');
-                    results=load(obj.getAnalysisFileName);
-                else
-                    fprintf('Analysis already exists (use overwrite option to recalculate).\n');
-                end
-                return;
-            end
+            %load previous results if analysis was previuosly performed and there is no need to overwrite otherwise continue
+            results = obj.isOutputAnalysis(obj.getAnalysisFileName,params.overwrite,nargout==1);
+            if ~isempty(results), return, end
 
             fprintf('Extracting diode signal from analog channel #%d\n',params.analogDataCh);
             switch params.extractionMethod
@@ -681,5 +652,29 @@ classdef (Abstract) VStimAnalysis < handle
         %find a specific folder in the experiment
         %folderLocation=findFolderInExperiment(rootFolder,folderNamePart,params)
         folderLocation=findFolderInExperiment()
+
+        function results=isOutputAnalysis(analysisFileName,overwrite,isOutput)
+            %load previous results if analysis was previuosly performed and there is no need to overwrite
+            results=[];
+            if ~overwrite
+                if isOutput
+                    if isfile(analysisFileName)
+                        fprintf('Loading saved results from file.\n');
+                        results=load(analysisFileName);
+                    else
+                        fprintf('No results for this analyis!!! Please run without output argument first and then run again to load the results.\n');
+                        results=false;
+                    end
+                else
+                    fprintf('Analysis already exists (use overwrite option to recalculate).\n');
+                end
+            else
+                if isOutput
+                    fprintf('Cant not calculate and return results!\n <strong>Please run without output argument first and then run again to load the results.</strong>\n');
+                    results=false;
+                end
+            end
+        end
+
     end
 end
