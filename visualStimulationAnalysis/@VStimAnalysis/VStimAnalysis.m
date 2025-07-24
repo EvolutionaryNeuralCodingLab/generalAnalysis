@@ -243,7 +243,7 @@ classdef (Abstract) VStimAnalysis < handle
             %load previous results if analysis was previuosly performed and there is no need to overwrite otherwise continue
             results = obj.isOutputAnalysis(obj.getAnalysisFileName,params.overwrite,nargout==1);
             if ~isempty(results), return, end
-            
+
             diode=obj.getDiodeTriggers;
 
             allDiodeFlips=sort([diode.diodeUpCross,diode.diodeDownCross]);
@@ -444,10 +444,7 @@ classdef (Abstract) VStimAnalysis < handle
             end
             if params.inputParams,disp(params),return,end
 
-            %load previous results if analysis was previuosly performed and there is no need to overwrite otherwise continue
-            results = obj.isOutputAnalysis(obj.getAnalysisFileName,params.overwrite,nargout==1);
-            if ~isempty(results), return, end
-        
+            %In future versions remove these properties and dont use them for analysis results
             %load previous results if analysis was previuosly performed and there is no need to overwrite
             if isfile(obj.getAnalysisFileName) && ~params.overwrite
                 fprintf('Analysis already exists (use overwrite option to recalculate).\n');
@@ -457,6 +454,10 @@ classdef (Abstract) VStimAnalysis < handle
                 obj.startSessionTrigger=results.startSessionTrigger;
                 return;
             end
+
+            %load previous results if analysis was previuosly performed and there is no need to overwrite otherwise continue
+            results = obj.isOutputAnalysis(obj.getAnalysisFileName,params.overwrite,nargout==1);
+            if ~isempty(results), return, end
 
             if nargin == 2
                 obj.startSessionTrigger=params.startEndChannel;

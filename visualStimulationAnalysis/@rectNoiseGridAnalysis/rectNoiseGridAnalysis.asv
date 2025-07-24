@@ -33,6 +33,8 @@ classdef rectNoiseGridAnalysis < VStimAnalysis
                 obj
                 params.win = [100,500] %[1x2]-[ms] the time window [start,end] post image flip for analysis
                 params.bin = 10 %[ms] - bin size temporal resolution for analysis
+                params.corssCorrLag = 1000; %the lag in ms in the crosscorr function
+                params.minSpkRate = 0.1 %[spk/s] - minimum firing rate for calculating cross corr
                 params.overwrite logical = false %if true overwrites results
                 params.analysisTime = datetime('now') %extract the time at which analysis was performed   
                 params.inputParams = false %if true - prints out the iput parameters so that it is clear what can be manipulated in the method
@@ -56,27 +58,44 @@ classdef rectNoiseGridAnalysis < VStimAnalysis
             V=V-obj.VST.visualFieldBackgroundLuminance;
 
             delay=0;
-            M=squeeze(BuildBurstMatrix(s.ic,round((s.t-delay)/params.bin),round(T.sessionStartTime/params.bin),ceil((T.sessionEndTime-T.sessionStartTime+params.win(2))/params.bin)));
+            totWinBins=ceil((T.sessionEndTime-T.sessionStartTime+params.win(2))/params.bin);
+            M=squeeze(BuildBurstMatrix(s.ic,round((s.t-delay)/params.bin),round(T.sessionStartTime/params.bin),totWin));
             
             %plot activity with Stims
-            plot((1:size(M,2))*params.bin,mean(M,1),'k');hold on;line([SD.stimOnFlipTimes-T.sessionStartTime;SD.stimOnFlipTimes-T.sessionStartTime],ylim,'Color','r');
+            %plot((1:size(M,2))*params.bin,mean(M,1),'k');hold on;line([SD.stimOnFlipTimes-T.sessionStartTime;SD.stimOnFlipTimes-T.sessionStartTime],ylim,'Color','r');
             
-            t=((1:size(V,2))-size(V,2)/2)*params.bin;
-            for i=1:size(M,1)
-                if sum(M(i,:))>10
-                    C=convn(V',M(i,:)',"same")';
-                    plot(t,mean(C,1));
-                    %imagesc(C);
-                    pause;
-                end
+            t=((1:totWinBins)-totWinBins/2)*params.bin;
+            pRate=find(sum(M,2)>params.minSpkRate/1000*totWinBins*params.bin);
+            lag=round(params.corssCorrLag/params.bin);
+            mid=round(totWinBins/2+1);
+            C=nan(numel(pRate),size(V,1),2*lag+1);
+            for i=1:numel(pRate)
+                C_tmp=convn(V',M(pRate(i),:)',"same")';
+                C(i,:,:)=C_tmp(:,(mid-lag):(mid+lag));
+                %plot(t,mean(C,1));
+                %imagesc(C);
+                %pause;
             end
+            C=reshape(C,size(C,1),obj.VST.rectGridSize,obj.VST.rectGridSize,size(C,3));
+            RF=squeeze(max(C,[],4));
 
-            pos2X
-            pos2Y
-            obj.VST.rectData
+            
+            f=figure;Tl=tiledlayout(8,15,'TileSpacing','tight');hL.Visible='off';
+            for i=1:size(RF,1)
+                nexttile;imagesc(squeeze(RF(i,:,:)));
+                set(gca,'XTick',obj.VST.rectGridSize/2,'XTickLabel',num2str(pRate(i)),'YTickLabel',{});
+            end
+            hL.Visible='on';
+            params.updatePlots=1;
+            if params.updatePlots,obj.printFig(f,'RFs'),end
 
+            %obj.VST.pos2X
+            %pos2Y
+            %obj.VST.rectData
 
-
+            %save results in the right file
+            fprintf('Saving results to file.\n');
+            save(obj.getAnalysisFileName,'C','RF','pRate','lag','params');
         end
 
         %Methods in this m file
