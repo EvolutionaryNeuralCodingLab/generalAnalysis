@@ -96,10 +96,10 @@ classdef (Abstract) VStimAnalysis < handle
                 params.win=[obj.VST.stimDuration*1000, 500];
             end
 
-            [LFP_on,t_ms]=obj.dataObj.getData(1:params.channelSkip:obj.dataObj.channelNumbers(end),stimTimes.stimOnFlipTimes,params.win(1));
+            [LFP_on,~]=obj.dataObj.getData(1:params.channelSkip:obj.dataObj.channelNumbers(end),stimTimes.stimOnFlipTimes,params.win(1));
             LFP_on=F.getFilteredData(LFP_on);
 
-            [LFP_off,t_ms]=obj.dataObj.getData(1:params.channelSkip:obj.dataObj.channelNumbers(end),stimTimes.stimOffFlipTimes,params.win(2));
+            [LFP_off,~]=obj.dataObj.getData(1:params.channelSkip:obj.dataObj.channelNumbers(end),stimTimes.stimOffFlipTimes,params.win(2));
             LFP_off=F.getFilteredData(LFP_off);
 
             fprintf('Saving results to file.\n');
@@ -134,11 +134,123 @@ classdef (Abstract) VStimAnalysis < handle
             analysisFile=[obj.visualStimAnalysisFolder,filesep,currentMethod{2},'.mat'];
         end
 
+        %check if spike sorting data exists and converts to t,ic format if needed.
+        function [s]=getSpikeTIcData(obj)
+            %check that sorting exist
+            if isdir(obj.spikeSortingFolder)
+                if isfile([obj.spikeSortingFolder filesep 'sorting_tIc.mat'])
+                    s=load([obj.spikeSortingFolder filesep 'sorting_tIc.mat']);
+                else
+                    fprintf('Did not find <strong> sorting_tIc.mat </strong> (t,ic format) in spike sorting folder!\ntrying to convert from Phy format, please wait...\n');
+                    obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
+                    s=load([obj.spikeSortingFolder filesep 'sorting_tIc.mat']);
+                end
+            else
+                fprintf('Did not find spike sorting folder, put phy results into a folder starting with <strong> kilosort </strong> and try again,\n');
+            end
+        end
+
+        function [results] = getCorrSpikePattern(obj,T,trialCat,params)
+            arguments
+                obj
+                T = []%the start times of for the trials included in the analysis and its categories
+                trialCat = []% the category of each of the trials.
+                params.win = 1000 %the window post stimTimes times
+                params.bin = 10 %[ms] - bins size for the generated rasters 
+                params.gaussConvSamples = 5 % one standard deviation of the Gaussian for smoothing rasters in units of bin
+                params.overwrite logical = false %if true overwrites results
+                params.analysisTime = datetime('now') %extract the time at which analysis was performed
+                params.inputParams = false %if true - prints out the iput parameters so that it is clear what can be manipulated in the method
+            end
+            if params.inputParams,disp(params),return,end
+
+
+            %load previous results if analysis was previuosly performed and there is no need to overwrite
+            results=[];
+            if isfile(obj.getAnalysisFileName) && ~params.overwrite
+                if nargout==1
+                    fprintf('Loading saved results from file.\n');
+                    results=load(obj.getAnalysisFileName);
+                else
+                    fprintf('Analysis already exists (use overwrite option to recalculate).\n');
+                end
+                return;
+            end
+
+            s=obj.getSpikeTIcData;
+
+            M=BuildBurstMatrix(s.ic,round(s.t/params.bin),round(T/params.bin),round(params.win/params.bin));
+            M=ConvBurstMatrix(M,fspecial('gaussian',[1 params.gaussConvSamples*3],params.gaussConvSamples),'same');
+            [nTrials,nNeu,nBins]=size(M);
+
+            [CI]=CalcCorrAlfaB_tmp2(M);
+
+            M=reshape(M,[nTrials,nNeu*nBins])';
+            C=corrcoef(M);
+
+            fprintf('Saving results to file.\n');
+            save(obj.getAnalysisFileName,'params','C','CI','trialCat');
+        end
+
+        function plotCorrSpikePattern(obj,params)
+            arguments
+                obj
+                params.overwrite logical = true %if true overwrites the existing plots. If false only generates the plots without saving
+                params.analysisTime = datetime('now') %extract the time at which analysis was performed
+                params.inputParams = false %if true - prints out the iput parameters so that it is clear what can be manipulated in the method
+            end
+            if params.inputParams,disp(params),return,end
+
+            res=obj.getCorrSpikePattern;
+
+            nTrials=size(res.C,1);
+            uniqCat=unique(res.trialCat,'stable');
+            nCat=numel(uniqCat);
+            trialsPerCat=nTrials/nCat;
+            [x,y]=meshgrid(0:trialsPerCat:nTrials);
+
+            f1=figure;
+            imagesc(res.C);
+            hold on;
+            line(x,y,'Color','k');line(y,x,'Color','k');
+            axis(f1.Children,'square');
+            set(f1.Children,'XTick',trialsPerCat/2:trialsPerCat:nTrials,'YTick',trialsPerCat/2:trialsPerCat:nTrials,'XTickLabel',uniqCat,'YTickLabel',uniqCat)
+            if params.overwrite,obj.printFig(f1,'trialCorrMatrix'),end
+
+            f2=figure;
+            imagesc(res.CI);
+            hold on;
+            line(x,y,'Color','k');line(y,x,'Color','k');
+            axis(f2.Children,'square');
+            set(f2.Children,'XTick',trialsPerCat/2:trialsPerCat:nTrials,'YTick',trialsPerCat/2:trialsPerCat:nTrials,'XTickLabel',uniqCat,'YTickLabel',uniqCat)
+            if params.overwrite,obj.printFig(f2,'timeInvariantTrialCorrMatrix'),end
+
+            f3=figure;
+            [DC,order]=DendrogramMatrix(res.CI,'toPlotBinaryTree',1,'maxClusters',8,'figureHandle',f3);
+            if params.overwrite,obj.printFig(f3,'timeInvariantDendrogramedTrialCorrMatrix'),end
+
+            f4=figure;
+            text(1:numel(order),order,res.trialCat,'FontSize',8);hold on;plot(order,'.','MarkerSize',10);
+            xlabel('Trial');ylabel('Reordered trial');
+            if params.overwrite,obj.printFig(f4,'timeInvariantDendrogramedOrdering'),end
+
+            f5=figure;
+            [DC,order]=DendrogramMatrix(res.C,'toPlotBinaryTree',1,'maxClusters',8,'figureHandle',f5);
+            if params.overwrite,obj.printFig(f5,'dendrogramedTrialCorrMatrix'),end
+            
+            f6=figure;
+            text(1:numel(order),order,res.trialCat,'FontSize',8);hold on;plot(order,'.','MarkerSize',10);
+            xlabel('Trial');ylabel('Reordered trial');
+            if params.overwrite,obj.printFig(f6,'dendrogramedOrdering'),end
+        end
+
         function results = getSyncedDiodeTriggers(obj,params)
-        %Sychronize the times for each stimulation onet or frame between the diode analog data and the time stamps saved by the visual stimulation class used for presenting the stimulations
+            %Sychronize the times for each stimulation onet or frame between the diode analog data and the time stamps saved by the visual stimulation class used for presenting the stimulations
             arguments
                 obj
                 params.minDiodeInterval = 0.5 %removes diode frames shorter than minDiodeInterval fraction of the inter frame interval
+                params.analyzeOnlyOnFlips = false %in some stimuli - the off flips exist but not analyzed.
+                params.ignoreNLastFlips = 0 %some stimuli have residual flips that do not need to be analyzed.
                 params.overwrite logical = false %if true overwrites results
                 params.analysisTime = datetime('now') %extract the time at which analysis was performed   
                 params.inputParams = false %if true - prints out the iput parameters so that it is clear what can be manipulated in the method
@@ -164,10 +276,23 @@ classdef (Abstract) VStimAnalysis < handle
             measuredFlips=numel(allDiodeFlips);
 
             if isfield(obj.VST,'on_Flip')
-                allFlips=[obj.VST.on_Flip;obj.VST.off_Flip];allFlips=allFlips(~isnan(allFlips))*1000;
+                if ~params.analyzeOnlyOnFlips
+                    allFlips=[obj.VST.on_Flip;obj.VST.off_Flip];
+                else
+                    allFlips=[obj.VST.on_Flip];
+                end
             elseif isfield(obj.VST,'flip')
-                allFlips=obj.VST.flip';allFlips=allFlips(~isnan(allFlips))*1000;
+                allFlips=obj.VST.flip';
             end
+
+            %remove flips with NaN - which are just the result of fixed matrix size
+            allFlips=allFlips(~isnan(allFlips))*1000;
+
+            %ignore a few last flips - needed for some stimuli
+            if params.ignoreNLastFlips~=0
+                allFlips(end-params.ignoreNLastFlips+1:end)=[];
+            end
+
             expectedFlips=numel(allFlips);
             fprintf('%d flips expected, %d found (diff=%d). Linking existing flip times with stimuli...\n',expectedFlips,measuredFlips,expectedFlips-measuredFlips);
             if (expectedFlips-measuredFlips)>0.1*expectedFlips
@@ -223,12 +348,18 @@ classdef (Abstract) VStimAnalysis < handle
                     results = load(obj.getAnalysisFileName);
                 case 'imageTrials'
                     if expectedFlips==measuredFlips
-                        stimOnFlipTimes=allDiodeFlips(1:2:end);
-                        stimOffFlipTimes=allDiodeFlips(2:2:end);
+                        if params.analyzeOnlyOnFlips
+                            stimOnFlipTimes=allDiodeFlips;
+                            stimOffFlipTimes=[];
+                        else
+                            stimOnFlipTimes=allDiodeFlips(1:2:end);
+                            stimOffFlipTimes=allDiodeFlips(2:2:end);
+                        end
                     else
                         error('This case of unequal triggers for image type trials was not addressed in the code!');
                         return;
                     end
+
                     fprintf('Saving results to file.\n');
                     save(obj.getAnalysisFileName,'params','stimOnFlipTimes','stimOffFlipTimes');
                     results=load(obj.getAnalysisFileName);
@@ -286,6 +417,7 @@ classdef (Abstract) VStimAnalysis < handle
                 VSFiles={VSFiles.name}; %do not switch with line above                
                 VSFiles = VSFiles(~contains(lower(VSFiles), 'metadata')); %exclude metadata
                 recordingsFound=0;
+                tmpDateTime = datetime.empty(0,numel(VSFiles));
                 for i=1:numel(VSFiles)
                     if contains(VSFiles{i},obj.stimName,'IgnoreCase',true)
                         recordingsFound=recordingsFound+1;
@@ -325,7 +457,7 @@ classdef (Abstract) VStimAnalysis < handle
             end
         end
 
-        function obj=getSessionTime(obj,params)
+        function results=getSessionTime(obj,params)
         %obj=getSessionTime(obj,params) - Gets the start times of each visual stimulation session from digital triggers in the recoring
             arguments (Input)
                 obj
@@ -336,7 +468,10 @@ classdef (Abstract) VStimAnalysis < handle
             end
             if params.inputParams,disp(params),return,end
 
-
+            %load previous results if analysis was previuosly performed and there is no need to overwrite otherwise continue
+            results = obj.isOutputAnalysis(obj.getAnalysisFileName,params.overwrite,nargout==1);
+            if ~isempty(results), return, end
+        
             %load previous results if analysis was previuosly performed and there is no need to overwrite
             if isfile(obj.getAnalysisFileName) && ~params.overwrite
                 fprintf('Analysis already exists (use overwrite option to recalculate).\n');
@@ -427,8 +562,7 @@ classdef (Abstract) VStimAnalysis < handle
                         trialOff = t{4}(t{4} > obj.sessionStartTime & t{4} < obj.sessionEndTime); 
                         interDelayMs = obj.VST.interTrialDelay*1000;
 
-                        %[A,t_ms]=obj.dataObj.getAnalogData(params.analogDataCh,trialOn(1)-interDelayMs/2,trialOff(end)-trialOn(1)+interDelayMs); %extract diode data for entire recording
-                        [A,t_ms]=obj.dataObj.getAnalogData(params.analogDataCh,trialOn(1),trialOff(end)-trialOn(1)+interDelayMs); %extract diode data for entire recording
+                        [A,t_ms]=obj.dataObj.getAnalogData(params.analogDataCh,trialOn(1)-interDelayMs/2,trialOff(end)-trialOn(1)+interDelayMs); %extract diode data for entire recording
                        
                         DiodeCrosses = cell(2,numel(trialOn));
                         moreCross =0;
@@ -436,8 +570,6 @@ classdef (Abstract) VStimAnalysis < handle
                         intTrials =[];
                         iMC =0;
                         intrialsNum = 0;
-                        trialFail =0;
-                        failedTrials =[];
                         for i =1:length(trialOff)
 
                             startSnip  = round((trialOn(i)-trialOn(1))*(obj.dataObj.samplingFrequencyNI/1000))+1;
@@ -454,45 +586,26 @@ classdef (Abstract) VStimAnalysis < handle
                             Th=mean(fDat(1:100:end));
                             stdS = std(fDat(1:100:end));
                             sdK = 0;
-                            upTimes=t_msS(fDat(1:end-1)<Th-sdK*stdS & fDat(2:end)>=Th+sdK*stdS)+trialOn(1);%+interDelayMs/2; %get real recording times
-                            downTimes=t_msS(fDat(1:end-1)>Th+sdK*stdS  & fDat(2:end)<=Th-sdK*stdS )+trialOn(1);%+interDelayMs/2;
+                            upTimes=t_msS(fDat(1:end-1)<Th-sdK*stdS & fDat(2:end)>=Th+sdK*stdS)+trialOn(1)+interDelayMs/2; %get real recording times
+                            downTimes=t_msS(fDat(1:end-1)>Th+sdK*stdS  & fDat(2:end)<=Th-sdK*stdS )+trialOn(1)+interDelayMs/2;
 
                             % Filter crossings: Remove those too close together (e.g., < 50 ms)
                             minISI = 2*floor(1000/obj.VST.fps);  % ms
                             filterISI = @(x) x([true, diff(x) > minISI]);
 
-                            try
-                                DiodeCrosses{1,i} = filterISI(upTimes);
-                                DiodeCrosses{2,i} = filterISI(downTimes);
-                            catch
-                                DiodeCrosses{1,i} = upTimes;
-                                DiodeCrosses{2,i} = downTimes;
-                            end
+                            DiodeCrosses{1,i} = filterISI(upTimes);
+                            DiodeCrosses{2,i} = filterISI(downTimes);
 
-                            if (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i}))*1.1 < framesNspeed(2,i)
+                            if (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i}))*1.1 < framesNspeed(2,i) 
                                 %if the number of calculated frames is less than 10%
                                 %then perform an interpolation with the
                                 %first and last cross
-
-                                if (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i})) < framesNspeed(2,i)*0.5
-                                    %%Diode failure. Use digital triggers
-                                    %%and interpolate.
-                                    diodeAll = zeros(1,2);
-                                    diodeAll(1) = trialOn(i);
-                                    diodeAll(2) = trialOff(i);
-                                    ind = 2;
-                                    trialFail = trialFail +1;
-                                    failedTrials = [failedTrials i];
-                                else
-                                    [~, ind]=min([DiodeCrosses{1,i}(1)  DiodeCrosses{2,i}(1)]); %check if trial starts with up or down cross
-                                    diodeAll = sort([DiodeCrosses{1,i} DiodeCrosses{2,i}]);
-                                end
-                                   
-                                %DiodeInterp = linspace(diodeAll(1),diodeAll(end),framesNspeed(2,i));
-                                DiodeInterp = diodeAll(1):1000/obj.VST.fps: diodeAll(1) + (framesNspeed(2,i)-1)*(1000/obj.VST.fps);
+                                [~, ind]=min([DiodeCrosses{1,i}(1)  DiodeCrosses{2,i}(1)]); %check if trial starts with up or down cross
+                                diodeAll = sort([DiodeCrosses{1,i} DiodeCrosses{2,i}]);
+                                DiodeInterp = linspace(diodeAll(1),diodeAll(end),framesNspeed(2,i));
                                 if ind == 2 %Trial starts with down cross
                                     DiodeCrosses{2,i} = DiodeInterp(1:2:end);
-                                    DiodeCrosses{1,i} = DiodeInterp(2:2:end);
+                                    DiodeCrosses{1,i} = DiodeInterp(2:2:end);                     
                                 else
                                     DiodeCrosses{2,i} = DiodeInterp(2:2:end);
                                     DiodeCrosses{1,i} = DiodeInterp(1:2:end);
@@ -500,9 +613,9 @@ classdef (Abstract) VStimAnalysis < handle
 
                                 intTrials = [intTrials i];
                                 intrialsNum = intrialsNum+1;
-
+                                
                             end
-
+                            
                             if (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i}))>framesNspeed(2,i)
                                 %if there are more crosses than there
                                 %should be
@@ -516,19 +629,16 @@ classdef (Abstract) VStimAnalysis < handle
                         
                         diodeUpCross=cell2mat(DiodeCrosses(1,:));
                         diodeDownCross=cell2mat(DiodeCrosses(2,:));
-
-                        fprintf('%d trials out of %d have little or no diode signal, assuming diode failure but correct fliping in trials:',trialFail,length(trialOff))
-                        fprintf('%.0f ', failedTrials);
-                        fprintf('\n');
+                        
                         fprintf('%d trials have excess crossings out of %d; trial %d has the most excess crossings: %d',moreCross,length(trialOff),iMC,trialMostcross)
                         fprintf('\n');
                         fprintf('%d Interpolated trials (out of %d) with more than 10%% of crosses missing: ',intrialsNum,length(trialOff));
                         fprintf('%.0f ', intTrials);
                         fprintf('\n');
                         %Test
-                        figure;plot(squeeze(fDat));
-                        hold on;xline((DiodeCrosses{1,i} - trialOn(i))*(obj.dataObj.samplingFrequencyNI/1000))
-                        xline((DiodeCrosses{2,i}  - trialOn(i))*(obj.dataObj.samplingFrequencyNI/1000),'r')
+                        figure;plot(squeeze(signal));
+                        hold on;xline((DiodeCrosses{1,i} - trialOn(i)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000))
+                        xline((DiodeCrosses{2,i}  - trialOn(i)-interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000),'r')
                         % %xline((trialOff(i)-trialOn(1))*(obj.dataObj.samplingFrequencyNI/1000),'b')
                         % figure;plot(1:length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i})-1,diff(sort([DiodeCrosses{1,i} DiodeCrosses{2,i}])))
                     else
@@ -574,5 +684,28 @@ classdef (Abstract) VStimAnalysis < handle
         %find a specific folder in the experiment
         %folderLocation=findFolderInExperiment(rootFolder,folderNamePart,params)
         folderLocation=findFolderInExperiment()
+
+        function results=isOutputAnalysis(analysisFileName,overwrite,isOutput)
+            %load previous results if analysis was previuosly performed and there is no need to overwrite
+            results=[];
+            if ~overwrite
+                if isOutput
+                    if isfile(analysisFileName)
+                        fprintf('Loading saved results from file.\n');
+                        results=load(analysisFileName);
+                    else
+                        fprintf('No results for this analyis!!! Please run without output argument first and then run again to load the results.\n');
+                        results=false;
+                    end
+                else
+                    fprintf('Analysis already exists (use overwrite option to recalculate).\n');
+                end
+            else
+                if isOutput
+                    fprintf('Cant not calculate and return results. Please run without output argument first and then run again to load the results.\n');')
+                end
+            end
+        end
+
     end
 end

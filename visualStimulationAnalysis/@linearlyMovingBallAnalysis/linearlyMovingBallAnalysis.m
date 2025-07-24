@@ -20,8 +20,8 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
     end
 
     methods
-    
-    plotSpatialTuningLFP(obj,params)
+
+        plotSpatialTuningLFP(obj,params)
         plotSpatialTuningSpikes(obj,params)
 
         function result = getCorrSpikePattern(obj,varargin)
@@ -38,8 +38,8 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
 
         end
 
-% function results = setUpAnalysis(obj, params)
-function results = ResponseWindow(obj, params)
+        % function results = setUpAnalysis(obj, params)
+        function results = ResponseWindow(obj, params)
             arguments (Input)
                 obj
                 params.oneSpeed logical = true
@@ -52,25 +52,25 @@ function results = ResponseWindow(obj, params)
             end
             if params.inputParams,disp(params),return,end
 
-             if isfile(obj.getAnalysisFileName) && ~params.overwrite
-                 if nargout==1
+            if isfile(obj.getAnalysisFileName) && ~params.overwrite
+                if nargout==1
                     fprintf('Loading saved results from file.\n');
                     results=load(obj.getAnalysisFileName);
                 else
                     fprintf('Analysis already exists (use overwrite option to recalculate).\n');
-                 end
+                end
 
-                 return
-             end
+                return
+            end
 
             ST = obj.getSessionTime;
             try
                 DiodeCrossings = obj.getSyncedDiodeTriggers;
             catch
-                obj.getDiodeTriggers("extractionMethod",'digitalTriggerDiode','overwrite',true); 
+                obj.getDiodeTriggers("extractionMethod",'digitalTriggerDiode','overwrite',true);
                 DiodeCrossings = obj.getSyncedDiodeTriggers;
             end
-            
+
 
             stimOn = DiodeCrossings.stimOnFlipTimes;
             stimOff = DiodeCrossings.stimOffFlipTimes;
@@ -208,7 +208,7 @@ function results = ResponseWindow(obj, params)
                 %figure;imagesc(uM);xline(max_position_Trial(i,2));xline(max_position_Trial(i,2)+window_size(2))
                 NeuronVals(u,:,:) = NeuronRespProfile;
             end
-             %save results in the right file
+            %save results in the right file
             fprintf('Saving results to file.\n');
             save(obj.getAnalysisFileName,'params','NeuronVals','C','Coff','goodU');
         end
