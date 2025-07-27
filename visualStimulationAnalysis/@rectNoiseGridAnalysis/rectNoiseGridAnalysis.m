@@ -33,6 +33,9 @@ classdef rectNoiseGridAnalysis < VStimAnalysis
                 obj
                 params.win = [100,500] %[1x2]-[ms] the time window [start,end] post image flip for analysis
                 params.bin = 10 %[ms] - bin size temporal resolution for analysis
+                params.corssCorrLag = 2000; %the lag in ms in the crosscorr function
+                params.delay = 0 %all visual responses are shifted by this value if propagation delay is assumed
+                params.minSpkRate = 0.1 %[spk/s] - minimum firing rate for calculating cross corr
                 params.overwrite logical = false %if true overwrites results
                 params.analysisTime = datetime('now') %extract the time at which analysis was performed   
                 params.inputParams = false %if true - prints out the iput parameters so that it is clear what can be manipulated in the method
@@ -55,28 +58,74 @@ classdef rectNoiseGridAnalysis < VStimAnalysis
             V(:,p(end)+1:p(end)+binsInFrame)=obj.VST.stimSequence(:,end)*ones(1,binsInFrame); %add last frames based on the duration of each noise stim
             V=V-obj.VST.visualFieldBackgroundLuminance;
 
-            delay=0;
-            M=squeeze(BuildBurstMatrix(s.ic,round((s.t-delay)/params.bin),round(T.sessionStartTime/params.bin),ceil((T.sessionEndTime-T.sessionStartTime+params.win(2))/params.bin)));
+            totWinBins=ceil((T.sessionEndTime-T.sessionStartTime+params.win(2))/params.bin);
+            M=squeeze(BuildBurstMatrix(s.ic,round((s.t-params.delay)/params.bin),round(T.sessionStartTime/params.bin),totWinBins));
             
             %plot activity with Stims
-            plot((1:size(M,2))*params.bin,mean(M,1),'k');hold on;line([SD.stimOnFlipTimes-T.sessionStartTime;SD.stimOnFlipTimes-T.sessionStartTime],ylim,'Color','r');
+            %plot((1:size(M,2))*params.bin,mean(M,1),'k');hold on;line([SD.stimOnFlipTimes-T.sessionStartTime;SD.stimOnFlipTimes-T.sessionStartTime],ylim,'Color','r');
             
-            t=((1:size(V,2))-size(V,2)/2)*params.bin;
-            for i=1:size(M,1)
-                if sum(M(i,:))>10
-                    C=convn(V',M(i,:)',"same")';
-                    plot(t,mean(C,1));
-                    %imagesc(C);
-                    pause;
-                end
+            t=((1:totWinBins)-totWinBins/2)*params.bin;
+            pRate=find(sum(M,2)>params.minSpkRate/1000*totWinBins*params.bin);
+            lag=round(params.corssCorrLag/params.bin);
+            mid=round(totWinBins/2+1);
+            C=nan(numel(pRate),size(V,1),2*lag+1);
+            for i=1:numel(pRate)
+                C_tmp=convn(V',M(pRate(i),:)',"same")';
+                C(i,:,:)=C_tmp(:,(mid-lag):(mid+lag));
+                %plot(t,mean(C,1));
+                %imagesc(C);
+                %pause;
             end
+            C=reshape(C,size(C,1),obj.VST.rectGridSize,obj.VST.rectGridSize,size(C,3));
+            RF=squeeze(max(C,[],4));
+            RFT=squeeze(mean(mean(C,2),3));
+            tRF=t((mid-lag):(mid+lag));
 
-            pos2X
-            pos2Y
-            obj.VST.rectData
+            %{
+            plot(tRF,mean(RFT,1))
+            imagesc(squeeze(mean(RF,1)))
+            
+            f=figure;Tl=tiledlayout(8,15,'TileSpacing','tight');
+                for i=1:size(RF,1)
+                nexttile;imagesc(squeeze(RF(i,:,:)));
+                set(gca,'XTick',obj.VST.rectGridSize/2,'XTickLabel',num2str(pRate(i)),'YTickLabel',{});
+            end
+            %}
+            %save results in the right file
+            fprintf('Saving results to file.\n');
+            save(obj.getAnalysisFileName,'C','RF','tRF','RFT','pRate','lag','params');
+        end
 
+        function plotReceptiveFields(obj,params)
+            %Generates a few plots with the position spike tuning for the rectGrid stim
+            arguments (Input)
+                obj
+                params.overwrite logical = false %if true overwrites results
+                params.analysisTime = datetime('now') %extract the time at which analysis was performed
+                params.inputParams = false %if true - prints out the iput parameters so that it is clear what can be manipulated in the method
+            end
+            if params.inputParams,disp(params),return,end
 
+            C=obj.getReceptiveFields;
+            f=figure;Tl=tiledlayout(8,15,'TileSpacing','tight');hL.Visible='off';
+            for i=1:size(C.RF,1)
+                nexttile;imagesc(squeeze(C.RF(i,:,:)));
+                set(gca,'XTick',obj.VST.rectGridSize/2,'XTickLabel',num2str(C.pRate(i)),'YTickLabel',{});
+            end
+            hL.Visible='on';
+            if params.overwrite,obj.printFig(f,'RFs'),end
 
+            f2=figure;
+            plot(C.tRF,mean(C.RFT,1));
+            if params.overwrite,obj.printFig(f2,'temporal RFs'),end
+
+            f3=figure;
+            imagesc(C.tRF,1:size(C.RF,1),C.RFT);
+            if params.overwrite,obj.printFig(f3,'all temporal RFs'),end
+
+            %obj.VST.pos2X
+            %pos2Y
+            %obj.VST.rectData
         end
 
         %Methods in this m file

@@ -33,7 +33,8 @@ classdef rectNoiseGridAnalysis < VStimAnalysis
                 obj
                 params.win = [100,500] %[1x2]-[ms] the time window [start,end] post image flip for analysis
                 params.bin = 10 %[ms] - bin size temporal resolution for analysis
-                params.corssCorrLag = 1000; %the lag in ms in the crosscorr function
+                params.corssCorrLag = 2000; %the lag in ms in the crosscorr function
+                params.delay = 0 %all visual responses are shifted by this value if propagation delay is assumed
                 params.minSpkRate = 0.1 %[spk/s] - minimum firing rate for calculating cross corr
                 params.overwrite logical = false %if true overwrites results
                 params.analysisTime = datetime('now') %extract the time at which analysis was performed   
@@ -57,9 +58,8 @@ classdef rectNoiseGridAnalysis < VStimAnalysis
             V(:,p(end)+1:p(end)+binsInFrame)=obj.VST.stimSequence(:,end)*ones(1,binsInFrame); %add last frames based on the duration of each noise stim
             V=V-obj.VST.visualFieldBackgroundLuminance;
 
-            delay=0;
             totWinBins=ceil((T.sessionEndTime-T.sessionStartTime+params.win(2))/params.bin);
-            M=squeeze(BuildBurstMatrix(s.ic,round((s.t-delay)/params.bin),round(T.sessionStartTime/params.bin),totWin));
+            M=squeeze(BuildBurstMatrix(s.ic,round((s.t-params.delay)/params.bin),round(T.sessionStartTime/params.bin),totWin));
             
             %plot activity with Stims
             %plot((1:size(M,2))*params.bin,mean(M,1),'k');hold on;line([SD.stimOnFlipTimes-T.sessionStartTime;SD.stimOnFlipTimes-T.sessionStartTime],ylim,'Color','r');
@@ -78,26 +78,53 @@ classdef rectNoiseGridAnalysis < VStimAnalysis
             end
             C=reshape(C,size(C,1),obj.VST.rectGridSize,obj.VST.rectGridSize,size(C,3));
             RF=squeeze(max(C,[],4));
+            RFT=squeeze(mean(mean(C,2),3));
+            tRF=t((mid-lag):(mid+lag));
 
+            %{
+            plot(tRF,mean(RFT,1))
+            imagesc(squeeze(mean(RF,1)))
             
-            f=figure;Tl=tiledlayout(8,15,'TileSpacing','tight');hL.Visible='off';
-            for i=1:size(RF,1)
+            f=figure;Tl=tiledlayout(8,15,'TileSpacing','tight');
+                for i=1:size(RF,1)
                 nexttile;imagesc(squeeze(RF(i,:,:)));
                 set(gca,'XTick',obj.VST.rectGridSize/2,'XTickLabel',num2str(pRate(i)),'YTickLabel',{});
             end
+            %}
+            %save results in the right file
+            fprintf('Saving results to file.\n');
+            save(obj.getAnalysisFileName,'C','RF','tRF','RFT','pRate','lag','params');
+        end
+
+        function plotReceptiveFields(obj,params)
+            %Generates a few plots with the position spike tuning for the rectGrid stim
+            arguments (Input)
+                obj
+                params.overwrite logical = false %if true overwrites results
+                params.analysisTime = datetime('now') %extract the time at which analysis was performed
+                params.inputParams = false %if true - prints out the iput parameters so that it is clear what can be manipulated in the method
+            end
+            if params.inputParams,disp(params),return,end
+
+            C=obj.getReceptiveFields;
+            f=figure;Tl=tiledlayout(8,15,'TileSpacing','tight');hL.Visible='off';
+            for i=1:size(C.RF,1)
+                nexttile;imagesc(squeeze(C.RF(i,:,:)));
+                set(gca,'XTick',obj.VST.rectGridSize/2,'XTickLabel',num2str(C.pRate(i)),'YTickLabel',{});
+            end
             hL.Visible='on';
-            params.updatePlots=1;
-            if params.updatePlots,obj.printFig(f,'RFs'),end
+            if params.overwrite,obj.printFig(f,'RFs'),end
+
+            f=figure;
+            plot(tRF,mean(RFT,1));
+
+            f=figure;
+            imagesc(squeeze(mean(RF,1)))
 
             %obj.VST.pos2X
             %pos2Y
             %obj.VST.rectData
-
-            %save results in the right file
-            fprintf('Saving results to file.\n');
-            save(obj.getAnalysisFileName,'C','RF','pRate','lag','params');
         end
-
         %Methods in this m file
         function results=getSyncedDiodeTriggers(obj,varargin)
             %Call superclass function but analysis for this visual stimulation should only be done on the on Flips

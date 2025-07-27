@@ -2,7 +2,6 @@ function plotSpatialTuningSpikes(obj,params)
 %Generates a few plots with the position spike tuning for the rectGrid stim
 arguments (Input)
     obj
-    params.updatePlots = true %if true overwrites the existing plots. If false only generates the plots without saving
     params.bin = 10 %[ms] - bins size for the generated rasters
     params.win = [500,500] % duration [1,2] [ms] (for on and off) for LFP analysis
     params.overwrite logical = false %if true overwrites results
@@ -41,7 +40,7 @@ for i=1:obj.VST.rectGridSize^2
     set(gca,'XTick',[],'YTick',[],'CLim',[0 1/params.bin]);
 end
 hL.Visible='on';
-if params.updatePlots,obj.printFig(f1,'On_SpkVsPosition'),end
+if params.overwrite,obj.printFig(f1,'On_SpkVsPosition'),end
 
 f2=figure('Name','Off spike responses vs position');hL=tiledlayout(obj.VST.rectGridSize,obj.VST.rectGridSize,'TileSpacing','tight','Padding','tight','Visible','off');
 for i=1:obj.VST.rectGridSize^2
@@ -50,31 +49,31 @@ for i=1:obj.VST.rectGridSize^2
     set(gca,'XTick',[],'YTick',[],'CLim',[0 1/params.bin]);
 end
 hL.Visible='on';
-if params.updatePlots,obj.printFig(f2,'Off_SpkVsPosition'),end
+if params.overwrite,obj.printFig(f2,'Off_SpkVsPosition'),end
 
 f3=figure('Name','On spike averaged across positions');
 imagesc((1:nBins)*params.bin,1:nNeu,squeeze(mean(mSpk_on,2)));colormap(flipud(gray(16)));
 clim([0 0.1/params.bin]);
 ylabel('Ch #');
 xlabel('Time [ms]');
-if params.updatePlots,obj.printFig(f3,'On_SpkAvgOnPositions'),end
+if params.overwrite,obj.printFig(f3,'On_SpkAvgOnPositions'),end
 
 f4=figure('Name','Off spike averaged across positions');
 imagesc((1:nBins)*params.bin,1:nNeu,squeeze(mean(mSpk_off,2)));colormap(flipud(gray(16)));
 clim([0 0.1/params.bin]);
 ylabel('Ch #');
 xlabel('Time [ms]');
-if params.updatePlots,obj.printFig(f4,'Off_SpkAvgOnPositions'),end
+if params.overwrite,obj.printFig(f4,'Off_SpkAvgOnPositions'),end
 
 f5=figure('Name','On spike averaged across electrodes');
 h=axes;
 activityTracePhysicalSpacePlot(h,1:numel(vStimGrid),squeeze(mean(mSpk_on,2)),vStimGrid,'traceColor',[0.8 0.2 0.2],'DrawElectrodeNumbers',0);
-if params.updatePlots,obj.printFig(f5,'On_SpkAvgOnElectrodes'),end
+if params.overwrite,obj.printFig(f5,'On_SpkAvgOnElectrodes'),end
 
 f6=figure('Name','Off spike averaged across electrodes');
 h=axes;
 activityTracePhysicalSpacePlot(h,1:numel(vStimGrid),squeeze(mean(mSpk_off,2)),vStimGrid,'traceColor',[0.8 0.2 0.2],'DrawElectrodeNumbers',0);
-if params.updatePlots,obj.printFig(f6,'Off_SpkAvgOnElectrodes'),end
+if params.overwrite,obj.printFig(f6,'Off_SpkAvgOnElectrodes'),end
 
 mM_on=squeeze(mean(Mspk_on,3));
 f7=figure('Name','On spike all trials averaged across electrodes');hL=tiledlayout(obj.VST.rectGridSize,obj.VST.rectGridSize,'TileSpacing','tight','Padding','tight','Visible','off');
@@ -84,7 +83,7 @@ for i=1:obj.VST.rectGridSize^2
     set(gca,'XTick',[],'YTick',[],'CLim',[0 0.5/params.bin]);
 end
 hL.Visible='on';
-if params.updatePlots,obj.printFig(f7,'On_SpkTrialsVsPosition'),end
+if params.overwrite,obj.printFig(f7,'On_SpkTrialsVsPosition'),end
 
 mM_off=squeeze(mean(Mspk_on,3));
 f8=figure('Name','Off spike all trials averaged across electrodes');hL=tiledlayout(obj.VST.rectGridSize,obj.VST.rectGridSize,'TileSpacing','tight','Padding','tight','Visible','off');
@@ -94,7 +93,7 @@ for i=1:obj.VST.rectGridSize^2
     set(gca,'XTick',[],'YTick',[],'CLim',[0 0.5/params.bin]);
 end
 hL.Visible='on';
-if params.updatePlots,obj.printFig(f8,'Off_SpkTrialsVsPosition'),end
+if params.overwrite,obj.printFig(f8,'Off_SpkTrialsVsPosition'),end
 
 f7=figure('Name','On spike all trials averaged across electrodes');
 h=axes;

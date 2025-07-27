@@ -668,6 +668,7 @@ classdef (Abstract) VStimAnalysis < handle
                     end
                 else
                     fprintf('Analysis already exists (use overwrite option to recalculate).\n');
+                    results=false;
                 end
             else
                 if isOutput
