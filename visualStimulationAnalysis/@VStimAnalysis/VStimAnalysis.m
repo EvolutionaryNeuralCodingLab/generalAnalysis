@@ -21,7 +21,7 @@ classdef (Abstract) VStimAnalysis < handle
     end
 
     properties (Constant, Abstract)
-        trialType % The type of trials in terms of flips 'imageTrials' have one flip per trial and 'videoTrials' have many flips per trial 
+        trialType % The type of trials in terms of flips 'imageTrials' have one flip per trial and 'videoTrials' have many flips per trial
     end
 
     methods (Hidden)
@@ -58,14 +58,14 @@ classdef (Abstract) VStimAnalysis < handle
         end
 
         function results = getStimLFP(obj,params)
-        %Extracts the LFP for all visual stimulation times from the row data. 
+            %Extracts the LFP for all visual stimulation times from the row data.
             arguments (Input)
                 obj
                 params.win = [500,500] % duration [1,2] [ms] (for on and off) for LFP analysis
                 params.channelSkip = 5 %includes every 5th channel
                 params.getWinFromStimDuration = false %if this option is used, only the on response is calculated
                 params.overwrite logical = false %if true overwrites results
-                params.analysisTime = datetime('now') %extract the time at which analysis was performed 
+                params.analysisTime = datetime('now') %extract the time at which analysis was performed
                 params.inputParams = false %if true - prints out the iput parameters so that it is clear what can be manipulated in the method
             end
             if params.inputParams,disp(params),return,end
@@ -99,7 +99,7 @@ classdef (Abstract) VStimAnalysis < handle
         end
 
         function obj = getStimParams(obj)
-        %extract visual stimulation parameters from the file saved by VStim classes when running visualStimGUI
+            %extract visual stimulation parameters from the file saved by VStim classes when running visualStimGUI
             VSFile=[obj.visualStimFolder filesep obj.visualStimulationFile];
             disp(['Extracting information from: ' VSFile]);
             VS=load(VSFile);
@@ -121,7 +121,7 @@ classdef (Abstract) VStimAnalysis < handle
         end
 
         function analysisFile = getAnalysisFileName(obj)
-        %extract currently running analysis method name and use it to create a unique file name for saving analysis results 
+            %extract currently running analysis method name and use it to create a unique file name for saving analysis results
             db=dbstack;currentMethod=strsplit(db(2).name,'.');
             analysisFile=[obj.visualStimAnalysisFolder,filesep,currentMethod{2},'.mat'];
         end
@@ -148,7 +148,7 @@ classdef (Abstract) VStimAnalysis < handle
                 T = []%the start times of for the trials included in the analysis and its categories
                 trialCat = []% the category of each of the trials.
                 params.win = 1000 %the window post stimTimes times
-                params.bin = 10 %[ms] - bins size for the generated rasters 
+                params.bin = 10 %[ms] - bins size for the generated rasters
                 params.gaussConvSamples = 5 % one standard deviation of the Gaussian for smoothing rasters in units of bin
                 params.overwrite logical = false %if true overwrites results
                 params.analysisTime = datetime('now') %extract the time at which analysis was performed
@@ -220,7 +220,7 @@ classdef (Abstract) VStimAnalysis < handle
             f5=figure;
             [DC,order]=DendrogramMatrix(res.C,'toPlotBinaryTree',1,'maxClusters',8,'figureHandle',f5);
             if params.overwrite,obj.printFig(f5,'dendrogramedTrialCorrMatrix'),end
-            
+
             f6=figure;
             text(1:numel(order),order,res.trialCat,'FontSize',8);hold on;plot(order,'.','MarkerSize',10);
             xlabel('Trial');ylabel('Reordered trial');
@@ -235,7 +235,7 @@ classdef (Abstract) VStimAnalysis < handle
                 params.analyzeOnlyOnFlips = false %in some stimuli - the off flips exist but not analyzed.
                 params.ignoreNLastFlips = 0 %some stimuli have residual flips that do not need to be analyzed.
                 params.overwrite logical = false %if true overwrites results
-                params.analysisTime = datetime('now') %extract the time at which analysis was performed   
+                params.analysisTime = datetime('now') %extract the time at which analysis was performed
                 params.inputParams = false %if true - prints out the iput parameters so that it is clear what can be manipulated in the method
             end
             if params.inputParams,disp(params),return,end
@@ -262,7 +262,11 @@ classdef (Abstract) VStimAnalysis < handle
             end
 
             %remove flips with NaN - which are just the result of fixed matrix size
-            allFlips=allFlips(~isnan(allFlips))*1000;
+            if all(isnan(allFlips(:)))
+                error('All flip times in the visual stimulation meta data were NaNs!!! Please check that your vStim is valid');
+            else
+                allFlips=allFlips(~isnan(allFlips))*1000;
+            end
 
             %ignore a few last flips - needed for some stimuli
             if params.ignoreNLastFlips~=0
@@ -343,8 +347,8 @@ classdef (Abstract) VStimAnalysis < handle
         end
 
         function copyFilesFromRecordingFolder(obj)
-        %searches visual stimulation files and copies them to a dedicated visual stimulation folder 
-            numberOfParentFolders=2; %How many parent folders to go in looking for the visual stimulation files 
+            %searches visual stimulation files and copies them to a dedicated visual stimulation folder
+            numberOfParentFolders=2; %How many parent folders to go in looking for the visual stimulation files
 
             tmpFolder=obj.dataObj.recordingDir;
             filesFound=false;
@@ -390,7 +394,7 @@ classdef (Abstract) VStimAnalysis < handle
                     dateTime=datetime({VSFiles.date},'InputFormat','dd-MMM-yyyy HH:mm:ss','Locale', 'he_IL');
                 end
                 [~,pDate]=sort(dateTime);
-                VSFiles={VSFiles.name}; %do not switch with line above                
+                VSFiles={VSFiles.name}; %do not switch with line above
                 VSFiles = VSFiles(~contains(lower(VSFiles), 'metadata')); %exclude metadata
                 recordingsFound=0;
                 tmpDateTime = datetime.empty(0,numel(VSFiles));
@@ -434,11 +438,11 @@ classdef (Abstract) VStimAnalysis < handle
         end
 
         function results=getSessionTime(obj,params)
-        %obj=getSessionTime(obj,params) - Gets the start times of each visual stimulation session from digital triggers in the recoring
+            %obj=getSessionTime(obj,params) - Gets the start times of each visual stimulation session from digital triggers in the recoring
             arguments (Input)
                 obj
                 params.startEndChannel = [] %[1,2] - The digital triger channel for stim onset and offset
-                params.analysisTime = datetime('now') %extract the time at which analysis was performed 
+                params.analysisTime = datetime('now') %extract the time at which analysis was performed
                 params.inputParams = false %if true - prints out the iput parameters so that it is clear what can be manipulated in the method
                 params.overwrite logical = false %if true overwrites results %if true overwrites results
             end
@@ -489,7 +493,7 @@ classdef (Abstract) VStimAnalysis < handle
                 params.extractionMethod string = 'diodeThreshold' %the method used to extract frame flipes-{'diodeThreshold','digitalTriggerDiode'}
                 params.analogDataCh = 1
                 params.overwrite logical = false %if true overwrites results
-                params.analysisTime = datetime('now') %extract the time at which analysis was performed 
+                params.analysisTime = datetime('now') %extract the time at which analysis was performed
                 params.inputParams = false %if true - prints out the iput parameters so that it is clear what can be manipulated in the method
             end
             if params.inputParams,disp(params),return,end
@@ -510,10 +514,11 @@ classdef (Abstract) VStimAnalysis < handle
                         diodeDownCross=t_ms(A(1:end-1)>Th & A(2:end)<=Th)+obj.sessionStartTime;
                     else
                         disp('Missing start and end times!!! Please run getSessionTime before extracting triggers');
+                        return;
                     end
                 case "digitalTriggerDiode"
                     if ~any(isempty([obj.sessionStartTime,obj.sessionEndTime]))
-                        
+
                         if all(obj.trialType == 'videoTrials')
                             expectedFlipsperTrial = unique(obj.VST.nFrames);
                             speeds = obj.VST.speeds;
@@ -528,12 +533,12 @@ classdef (Abstract) VStimAnalysis < handle
 
                         t = obj.dataObj.getTrigger;
                         trialOn = t{3}(t{3} > obj.sessionStartTime & t{3} < obj.sessionEndTime);
-                        trialOff = t{4}(t{4} > obj.sessionStartTime & t{4} < obj.sessionEndTime); 
+                        trialOff = t{4}(t{4} > obj.sessionStartTime & t{4} < obj.sessionEndTime);
                         interDelayMs = obj.VST.interTrialDelay*1000;
 
                         %[A,t_ms]=obj.dataObj.getAnalogData(params.analogDataCh,trialOn(1)-interDelayMs/2,trialOff(end)-trialOn(1)+interDelayMs); %extract diode data for entire recording
                         [A,t_ms]=obj.dataObj.getAnalogData(params.analogDataCh,trialOn(1),trialOff(end)-trialOn(1)+interDelayMs); %extract diode data for entire recording
-                       
+
                         DiodeCrosses = cell(2,numel(trialOn));
                         moreCross =0;
                         trialMostcross=inf;
@@ -548,7 +553,7 @@ classdef (Abstract) VStimAnalysis < handle
                             endSnip  = round((trialOff(i)-trialOn(1)+interDelayMs)*(obj.dataObj.samplingFrequencyNI/1000));
 
                             if endSnip>length(A)
-                                signal = squeeze(A(startSnip:end)); 
+                                signal = squeeze(A(startSnip:end));
                                 t_msS = t_ms(startSnip:end);
                             else
                                 signal =squeeze(A(startSnip:endSnip));
@@ -591,7 +596,7 @@ classdef (Abstract) VStimAnalysis < handle
                                     [~, ind]=min([DiodeCrosses{1,i}(1)  DiodeCrosses{2,i}(1)]); %check if trial starts with up or down cross
                                     diodeAll = sort([DiodeCrosses{1,i} DiodeCrosses{2,i}]);
                                 end
-                                   
+
                                 %DiodeInterp = linspace(diodeAll(1),diodeAll(end),framesNspeed(2,i));
                                 DiodeInterp = diodeAll(1):1000/obj.VST.fps: diodeAll(1) + (framesNspeed(2,i)-1)*(1000/obj.VST.fps);
                                 if ind == 2 %Trial starts with down cross
@@ -617,7 +622,7 @@ classdef (Abstract) VStimAnalysis < handle
                                 end
                             end
                         end
-                        
+
                         diodeUpCross=cell2mat(DiodeCrosses(1,:));
                         diodeDownCross=cell2mat(DiodeCrosses(2,:));
 
@@ -688,12 +693,13 @@ classdef (Abstract) VStimAnalysis < handle
                         fprintf('Loading saved results from file.\n');
                         results=load(analysisFileName);
                     else
-                        fprintf('No results for this analyis!!! Please run without output argument first and then run again to load the results.\n');
-                        results=false;
+                        fprintf('No results for this analyis!!! Running analysis first but will not be able to load and output the results.\n');
                     end
                 else
-                    fprintf('Analysis already exists (use overwrite option to recalculate).\n');
-                    results=false;
+                    if isfile(analysisFileName)
+                        fprintf('Analysis already exists (use overwrite option to recalculate).\n');
+                        results=false;
+                    end
                 end
             else
                 if isOutput
