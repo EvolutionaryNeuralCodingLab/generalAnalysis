@@ -15,7 +15,6 @@ LFP=obj.getStimLFP;
 
 %add code to create multiple plots in case that more than 1 ball size or velocity was used.
 nSpeeds=numel(obj.VST.speed);
-nBallSizes=numel(obj.VST.ballSize);
 nOffsets=numel(obj.VST.parallelsOffset);
 nDirections=obj.VST.numberOfDirections;
 
@@ -88,7 +87,7 @@ xlabel('Time [ms]');
 if params.updatePlots,obj.printFig(f3,'On_AvgOnPositions'),end
 
 f4=figure('Name','Off averaged across positions','Position',[30 200 1000 300]);
-imagesc((1:nBins)/LFP.samplingFreqLFP*1000,1:nElecs,squeeze(mean(mFLP_off,2)));
+imagesc((1:nBins_off)/LFP.samplingFreqLFP*1000,1:nElecs,squeeze(mean(mFLP_off,2)));
 ylabel('Ch #');
 xlabel('Time [ms]');
 if params.updatePlots,obj.printFig(f4,'Off_AvgOnPositions'),end

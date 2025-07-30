@@ -18,7 +18,6 @@ s=obj.getSpikeTIcData;
 
 %add code to create multiple plots in case that more than 1 ball size or velocity was used.
 nSpeeds=numel(obj.VST.speed);
-nBallSizes=numel(obj.VST.ballSize);
 nOffsets=numel(obj.VST.parallelsOffset);
 nDirections=obj.VST.numberOfDirections;
 
