@@ -263,10 +263,14 @@ classdef (Abstract) VStimAnalysis < handle
 
             %remove flips with NaN - which are just the result of fixed matrix size
             if all(isnan(allFlips(:)))
-                error('All flip times in the visual stimulation meta data were NaNs!!! Please check that your vStim is valid');
+                fprintf('<strong>All flip times in the visual stimulation meta data were NaNs!!!</strong> Please check that your vStim is valid\nTrying to use the start times of diode signals and expected frame rates\n');
+                pTrialEnds=[find(diff(allDiodeFlips)>obj.VST.interTrialDelay*0.9*1000) numel(allDiodeFlips)];
+                pTrialStarts=[1 1+find(diff(allDiodeFlips)>obj.VST.interTrialDelay*0.9*1000)];
+                allFlips=bsxfun(@plus, (0:size(allFlips,1)-1)*obj.VST.ifi*1000,allDiodeFlips(pTrialStarts)');
             else
                 allFlips=allFlips(~isnan(allFlips))*1000;
             end
+
 
             %ignore a few last flips - needed for some stimuli
             if params.ignoreNLastFlips~=0
@@ -407,7 +411,7 @@ classdef (Abstract) VStimAnalysis < handle
                         vStimIdentifiers=split(VSFiles{i},["_","."]);
                         tmpDateTime(i)=datetime(join(vStimIdentifiers(2:8), "-"),'InputFormat','yyyy-MM-dd-HH-mm-ss-SSS');
                     catch
-                        fprintf('!!!!Important!!!!!\nUnable to extract date and time from a visual stimulation file name!!!!\nPlease correct the format or remove the file and run again!!!!\n')
+                        fprintf('<strong>!!!!Important!!!!!</strong>\nUnable to extract date and time from a visual stimulation file name!!!!\nPlease correct the format or remove the file and run again!!!!\n')
                     end
                 end
 
