@@ -97,7 +97,7 @@ if params.overwrite,obj.printFig(f8,'Off_SpkTrialsVsPosition'),end
 
 f7=figure('Name','On spike all trials averaged across electrodes');
 h=axes;
-[hPlot]=activityMultiTracePhysicalSpacePlot(h,1:81,permute(squeeze(),[2,1,3]),vStimGrid,'scaling','noOverlap','DrawElectrodeNumbers',0,'traceColor',[0.8 0.2 0.2]);
+%[hPlot]=activityMultiTracePhysicalSpacePlot(h,1:81,permute(squeeze(),[2,1,3]),vStimGrid,'scaling','noOverlap','DrawElectrodeNumbers',0,'traceColor',[0.8 0.2 0.2]);
 
 %[hPlot]=activityMultiTracePhysicalSpacePlot(h,(1:32)',squeeze(M_Int),vStimGrid,'DrawElectrodeNumbers',0,'traceColor',[0.8 0.2 0.2]);
 %[hScaleBar]=addScaleBar(h,'scaleFac',1.4);
