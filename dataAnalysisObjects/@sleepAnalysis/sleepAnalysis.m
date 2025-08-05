@@ -3528,7 +3528,7 @@ classdef sleepAnalysis < recAnalysis
                 hitsIdx = strcmpi(screenTouch.is_hit,'true');
                 strikesTimes = screenTouch.Timestamps(hitsIdx);
                 strikesFrame = obj.getVideoFrames(videoFrames,strikesTimes); % theres a 15 frames difference.
-                strikeTrialNum = screenTouch.in_block_trial_id;
+                strikeTrialNum = screenTouch.in_block_trial_id(hitsIdx);
             else
                 disp('No screen touchs preformed for this session')
                 screenTouch = [];
@@ -3579,6 +3579,89 @@ classdef sleepAnalysis < recAnalysis
             end
         end
 
+        %% getStimTrigDiode
+        function [diodeTriggers]=getStimDiodeTrig(obj,varargin)
+            
+            obj.checkFileRecording;
+            
+            parseObj = inputParser;
+            addParameter(parseObj,'diodeCh',obj.recTable.stimDiodeCh(obj.currentPRec),@isnumeric);
+            addParameter(parseObj,'win',obj.currentDataObj.recordingDuration_ms,@isnumeric);
+            addParameter(parseObj,'tStart',0,@isnumeric);
+            addParameter(parseObj,'lowpss_cutoff',100,@isnumeric);
+            addParameter(parseObj,'diodeThreshold',470000,@isnumeric);
+            addParameter(parseObj,'minSampleDiff',2,@isnumeric); %minimal time between transitions, in sec    
+            addParameter(parseObj,'plotFig',0,@isnumeric); 
+            addParameter(parseObj,'overwrite',0,@isnumeric);
+                  
+            addParameter(parseObj,'inputParams',false,@isnumeric);
+            parseObj.parse(varargin{:});
+            if parseObj.Results.inputParams
+                disp(parseObj.Results);
+                return;
+            end
+            
+            %evaluate all input parameters in workspace
+            for i=1:numel(parseObj.Parameters)
+                eval([parseObj.Parameters{i} '=' 'parseObj.Results.(parseObj.Parameters{i});']);
+            end
+            
+            %make parameter structure
+            parTrigger=parseObj.Results;
+
+            %check if analysis was already done
+            obj.files.diodeTrigger=[obj.currentAnalysisFolder filesep 'diodeTrigger' num2str(diodeCh) '.mat'];
+            if exist(obj.files.diodeTrigger,'file') & ~overwrite
+                disp('Sharp wave analysis already exists for this recording');
+                return;
+            end
+            
+            d = obj.currentDataObj.getAnalogData(diodeCh,tStart,win);
+            d=squeeze(d);
+            fs = obj.currentDataObj.samplingFrequencyAnalog(diodeCh);
+            d_lowpass = lowpass(d,lowpss_cutoff,fs);
+            threshold_signal = d_lowpass>diodeThreshold;
+            X = minSampleDiff*fs; % how much time in samples of 0 before transition
+            n = length(threshold_signal);
+
+            if n <= X
+                diodeTriggers = [];
+                return;
+            end
+
+            % Get the triggers:
+            % Find 0->1 transitions
+            transitions = [true; diff(threshold_signal) == 1];
+            % find the indexes of transitions, and the diffs between indexes
+            transition_ind = find(transitions);
+            % find only the transions that the first after X samples (meaning the
+            % diffs between indexs are above X)
+            diffs = [0;diff(transition_ind)];
+            all_valid_trans_ind = transition_ind(diffs >X);
+            % From them, remove those how do not have another stimulation within 10
+            % seconds. removes the change in light in the end of recording.
+            minimal_diff = 200000;
+            prev = all_valid_trans_ind -[inf;all_valid_trans_ind(1:end-1)];
+            next =  [all_valid_trans_ind(2:end);inf]-all_valid_trans_ind ;
+            true_ind = (prev<=minimal_diff) | (next<=minimal_diff);
+            
+            diodeTriggers = all_valid_trans_ind(true_ind);
+
+
+            if nargout==1
+                diodeTriggers=load(obj.files.diodeTrigger);
+            end
+
+            if plotFig ==1 
+                figure; plot(d_lowpass,'.'); title('original signal,lowpass')
+                if ~isempty(diodeTriggers)
+                    hold on; xline(diodeTriggers,'r')
+                end
+            end
+           
+            
+            save(obj.files.diodeTrigger,'diodeTriggers','parTrigger');
+        end
 
         %% plotDelta2BetaRatio
         function [h]=plotSharpWavesAnalysis(obj,varargin)
