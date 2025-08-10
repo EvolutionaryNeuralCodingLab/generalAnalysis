@@ -263,10 +263,10 @@ classdef (Abstract) VStimAnalysis < handle
 
             %remove flips with NaN - which are just the result of fixed matrix size
             if all(isnan(allFlips(:)))
-                print('<strong>All flip times in the visual stimulation meta data were NaNs!!!</strong> Please check that your vStim is valid\nTrying to use the start times of diode signals and expected frame rates\n');
-                    pTrialEnds=[find(diff(allDiodeFlips)>obj.VST.interTrialDelay*0.9*1000) numel(allDiodeFlips)];
-                    pTrialStarts=[1 1+find(diff(allDiodeFlips)>obj.VST.interTrialDelay*0.9*1000)];
-                    tmp=bsxfun(@plus, (0:size(allFlips,1)-1)*obj.VST.ifi,allDiodeFlips(pTrialStarts)');
+                fprintf('<strong>All flip times in the visual stimulation meta data were NaNs!!!</strong> Please check that your vStim is valid\nTrying to use the start times of diode signals and expected frame rates\n');
+                pTrialEnds=[find(diff(allDiodeFlips)>obj.VST.interTrialDelay*0.9*1000) numel(allDiodeFlips)];
+                pTrialStarts=[1 1+find(diff(allDiodeFlips)>obj.VST.interTrialDelay*0.9*1000)];
+                allFlips=bsxfun(@plus, (0:size(allFlips,1)-1)*obj.VST.ifi*1000,allDiodeFlips(pTrialStarts)');
             else
                 allFlips=allFlips(~isnan(allFlips))*1000;
             end
@@ -521,6 +521,8 @@ classdef (Abstract) VStimAnalysis < handle
                         return;
                     end
                 case "digitalTriggerDiode"
+
+
                     if ~any(isempty([obj.sessionStartTime,obj.sessionEndTime]))
 
                         if all(obj.trialType == 'videoTrials')

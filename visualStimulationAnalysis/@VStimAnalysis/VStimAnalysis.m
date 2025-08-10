@@ -521,6 +521,11 @@ classdef (Abstract) VStimAnalysis < handle
                         return;
                     end
                 case "digitalTriggerDiode"
+
+                switch obj.trialType
+
+                    case 'videoTrials'
+
                     if ~any(isempty([obj.sessionStartTime,obj.sessionEndTime]))
 
                         if all(obj.trialType == 'videoTrials')
@@ -647,6 +652,11 @@ classdef (Abstract) VStimAnalysis < handle
                     else
                         disp('Missing start and end times!!! Please run getSessionTime before extracting triggers');
                     end
+
+                    case 'imageTrials'
+
+                        
+                end
             end
             results.diodeUpCross = diodeUpCross;
             results.diodeDownCross = diodeDownCross;
