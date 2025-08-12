@@ -655,7 +655,69 @@ classdef (Abstract) VStimAnalysis < handle
 
                     case 'imageTrials'
 
-                        
+                        t = obj.dataObj.getTrigger;
+                        trialOn = t{3}(t{3} > obj.sessionStartTime & t{3} < obj.sessionEndTime);
+                        trialOff = t{4}(t{4} > obj.sessionStartTime & t{4} < obj.sessionEndTime);
+                        interDelayMs = obj.VST.interTrialDelay*1000;
+
+                        %[A,t_ms]=obj.dataObj.getAnalogData(params.analogDataCh,trialOn(1)-interDelayMs/2,trialOff(end)-trialOn(1)+interDelayMs); %extract diode data for entire recording
+                        [A,t_ms]=obj.dataObj.getAnalogData(params.analogDataCh,trialOn(1),trialOff(end)-trialOn(1)+interDelayMs); %extract diode data for entire recording
+
+                        DiodeCrosses = cell(2,numel(trialOn));
+                        moreCross =0;
+                        trialMostcross=inf;
+                        intTrials =[];
+                        iMC =0;
+                        intrialsNum = 0;
+                        trialFail =0;
+                        failedTrials =[];
+                        for i =1:length(trialOff)
+
+                            startSnip  = round((trialOn(i)-trialOn(1)-100)*(obj.dataObj.samplingFrequencyNI/1000))+1;
+                            endSnip  = round((trialOff(i)-trialOn(1)+interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000));
+
+                            if endSnip>length(A)
+                                signal = squeeze(A(startSnip:end));
+                                t_msS = t_ms(startSnip:end);
+                            elseif startSnip<1
+                                signal =squeeze(A(1:endSnip));
+                                t_msS = t_ms(1:endSnip);
+                            else
+                                signal =squeeze(A(startSnip:endSnip));
+                                t_msS = t_ms(startSnip:endSnip);
+                            end
+
+                           
+
+                            fDat=medfilt1(signal,(obj.VST.stimDuration/4)*1000);
+                            Th=mean(fDat(1:100:end));
+                            stdS = std(fDat(1:100:end));
+                            sdK = 0;
+                            upTimes=t_msS(fDat(1:end-1)<Th-sdK*stdS & fDat(2:end)>=Th+sdK*stdS)+trialOn(1)+100;%+interDelayMs/2; %get real recording times
+                            downTimes=t_msS(fDat(1:end-1)>Th+sdK*stdS  & fDat(2:end)<=Th-sdK*stdS )+trialOn(1)+100;%+interDelayMs/2;
+
+                            if length(upTimes) >1 || length(downTimes)>1
+                                upTimes=upTimes(1);
+                                downTimes = downTimes(1);
+                            end
+
+                            if length(upTimes) <1 || length(downTimes)<1
+                                2+2
+                            end
+
+                            DiodeCrosses{1,i} = upTimes;
+                            DiodeCrosses{2,i} = downTimes;
+
+                            
+                        end
+
+                        figure;plot(squeeze(fDat));
+                        hold on;xline((DiodeCrosses{1,i} - trialOn(i))*(obj.dataObj.samplingFrequencyNI/1000))
+                        xline((DiodeCrosses{2,i}  - trialOn(i))*(obj.dataObj.samplingFrequencyNI/1000),'r')
+
+                        diodeUpCross=cell2mat(DiodeCrosses(1,:));
+                        diodeDownCross=cell2mat(DiodeCrosses(2,:));
+
                 end
             end
             results.diodeUpCross = diodeUpCross;

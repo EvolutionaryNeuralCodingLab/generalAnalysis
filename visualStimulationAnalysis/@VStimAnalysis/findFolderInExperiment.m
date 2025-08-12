@@ -11,6 +11,7 @@ folderFound=false;
 
 %find visual stimulation folder
 tmpDir=dir([rootFolder filesep folderNamePart '*']);
+tmpDir = tmpDir([tmpDir.isdir]);  % Keep only folders
 if isempty(tmpDir) %check if not in the current data folder
     %go one folder back and look for visualStimulation folder
     fileSepTransitions=regexp(rootFolder,filesep); %look for file separation transitions

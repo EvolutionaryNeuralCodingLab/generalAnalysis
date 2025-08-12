@@ -92,6 +92,7 @@ classdef rectNoiseGridAnalysis < VStimAnalysis
             end
             %}
             %save results in the right file
+            results = C;
             fprintf('Saving results to file.\n');
             save(obj.getAnalysisFileName,'C','RF','tRF','RFT','pRate','lag','params');
         end
