@@ -23,20 +23,7 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
 
         plotSpatialTuningLFP(obj,params)
         plotSpatialTuningSpikes(obj,params)
-
-        function result = getCorrSpikePattern(obj,varargin)
-            %Plots the correlation matrix between the responses of all pairs of stimlui
-            T = obj.getSyncedDiodeTriggers;
-
-            %order trials accoridng ot direction of movement and offset for each direction.
-            [~,pOrdered2]=sort(obj.VST.offsets);
-            [originalOrder,pOrdered1]=sort(obj.VST.directions(pOrdered2));
-            pOrdered=pOrdered2(pOrdered1);
-            trialCat="Dir="+ num2str(obj.VST.directions(pOrdered)',2)+",offset=" + num2str(obj.VST.offsets(pOrdered)',4);
-
-            result = getCorrSpikePattern@VStimAnalysis(obj,T.stimOnFlipTimes(pOrdered),trialCat,'win',obj.VST.stimDuration*1000,varargin{:});
-
-        end
+        result = getCorrSpikePattern(obj,varargin)
 
         % function results = setUpAnalysis(obj, params)
         function results = ResponseWindow(obj, params)
@@ -114,7 +101,7 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
 
             [nT,nN,nB] = size(Mr);
 
-            window_size = [1, round( params.durationWindow/params.binRaster)];
+            window_size = [1, round(params.durationWindow/params.binRaster)];
             trialDivision = nT/(numel(unique(obj.VST.directions))*numel(unique(obj.VST.offsets))*numel(unique(obj.VST.ballSizes))*numel(unique(obj.VST.speeds)));
 
             %5. Initialize the maximum mean value and its position
@@ -200,7 +187,6 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
                     NeuronRespProfile(k,6) = C(i*mergeTrials,3);
                     NeuronRespProfile(k,7) = C(i*mergeTrials,4);
                     NeuronRespProfile(k,8) = C(i*mergeTrials,5);
-
                     k = k+1;
 
                 end
@@ -208,16 +194,134 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
                 %figure;imagesc(uM);xline(max_position_Trial(i,2));xline(max_position_Trial(i,2)+window_size(2))
                 NeuronVals(u,:,:) = NeuronRespProfile;
             end
+
+            colNames = {'Resp','MaxWinTrial','MaxWinBin','RespSubsBaseline','Directions','Offsets','Sizes','Speeds'};
+
             %save results in the right file
             fprintf('Saving results to file.\n');
-            save(obj.getAnalysisFileName,'params','NeuronVals','C','Coff','goodU');
+            save(obj.getAnalysisFileName,'params','NeuronVals','C','Coff','goodU','stimDur','stimInter','colNames');
         end
 
-    end
-end
+        function results = ShufflingAnalysis(obj, params)
 
-%%%1. Get Diode
-%%%2. Create A Matrix.
-%%%3. Load Kilos0rt and phy results.
-%%%4. Create response matrix.
+            arguments (Input) %ResponseWindow.mat
+                obj
+                params.overwrite logical = false
+                params.analysisTime = datetime('now')
+                params.inputParams = false
+                params.trialThreshold = 0.6
+                params.N_bootstrap = 2000;
+                % params.preBase = 200;
+                % params.durationWindow = 100
+                % params.bin = 1;
+            end
+            if params.inputParams,disp(params),return,end
+
+            if isfile(obj.getAnalysisFileName) && ~params.overwrite
+                if nargout==1
+                    fprintf('Loading saved results from file.\n');
+                    results=load(obj.getAnalysisFileName);
+                else
+                    fprintf('Analysis already exists (use overwrite option to recalculate).\n');
+                end
+
+                return
+            end
+
+            ResponseWindowPath = [fileparts(obj.getAnalysisFileName) filesep 'ResponseWindow.mat'];
+
+            if isfile(ResponseWindowPath)
+                NeuronResp = load(ResponseWindowPath);
+            else
+                fprintf('Run ResponseWindow method first!\n');
+                return
+            end
+
+            directimesSorted = NeuronResp.C(:,1)';
+            goodU = NeuronResp.goodU;
+            p = obj.dataObj.convertPhySorting2tIc(obj.dataObj.recordingDir);
+
+            trialDivision = numel(directimesSorted)/numel(unique(NeuronResp.C(:,2)))/numel(unique(NeuronResp.C(:,3)))/numel(unique(NeuronResp.C(:,4)))...
+                /numel(unique(NeuronResp.C(:,5)));
+
+            %Load same parameters used in response window calculation
+            preBase = NeuronResp.params.preBase;
+            duration =  NeuronResp.params.durationWindow;
+            bin =  NeuronResp.params.binRaster;
+
+            baseline = BuildBurstMatrix(goodU,round(p.t/bin),round((directimesSorted-preBase)/bin),round((preBase)/bin));
+            baseline = single(baseline);
+            [nT,nN,nB] = size(baseline);
+
+            % Bootstrapping settings
+            boot_means = zeros(params.N_bootstrap, nN,'single');
+            resampled_indicesTr = single(randi(nT, [trialDivision, params.N_bootstrap]));% To store bootstrapped means
+            resampled_indicesTi = single(randi(nB, [duration, params.N_bootstrap]));
+            kernel = ones(trialDivision, duration) / (trialDivision * duration); % Normalize for mean
+
+
+            tic
+            for i = 1:params.N_bootstrap
+                % Resample trials with replacement
+                resampled_trials = baseline(resampled_indicesTr(:, i), :,resampled_indicesTi(:, i));
+                for ui = 1:nN
+                    % Extract the slice for the current unit (t x b matrix)
+                    slice = resampled_trials(:, ui, :);
+                    slice = squeeze(slice); % Result is t x b
+
+                    % Compute the mean using 2D convolution
+                    means = conv2(slice, kernel, 'valid'); % 'valid' ensures the window fits within bounds
+
+                    % Find the maximum mean in this slice
+                    boot_means(i, ui) = max(means(:));
+                end
+            end
+            toc
+
+            %[bootstats] = get_bootstrapped_equalsamples(data,nruns,num_trials,param)
+
+            [respVal,respVali]= max(NeuronResp.NeuronVals(:,:,1),[],2);
+
+            Mr = BuildBurstMatrix(goodU,round(p.t/bin),round((directimesSorted)/bin),round((NeuronResp.stimDur+duration)/bin)); %response matrix
+
+            %%% Calculate p-value & Filter out neurons in which max response window is empty for more than
+            %%% 60% of trials
+
+            pvalsResponse = zeros(1,nN);
+            ZScoreU = zeros(1,nN);
+
+            for u = 1:nN
+
+                posTr = NeuronResp.NeuronVals(u,respVali(u),2);
+                posBin = NeuronResp.NeuronVals(u,respVali(u),3);
+
+                maxWindow = squeeze(Mr(posTr*trialDivision-trialDivision+1:posTr*trialDivision,u,posBin:posBin+duration-1));
+
+                emptyRows = sum(all(maxWindow == 0, 2));
+
+                pvalsResponse(u) = mean(boot_means(:,u)>respVal(u));
+                ZScoreU(u) = (respVal(u)-mean(boot_means(:,u)))/(std(boot_means(:,u))+1/(params.N_bootstrap*trialDivision));
+
+
+                if emptyRows/trialDivision >= params.trialThreshold %%%Check which unit is 34 i respU
+                    pvalsResponse(u) = 1;
+                end
+
+            end
+            
+            %save results in the right file
+            fprintf('Saving results to file.\n');
+            save(obj.getAnalysisFileName,'params','pvalsResponse','ZScoreU','boot_means');
+        end
+    
+    
+    end %end Methods
+end %end clas
+
+        %%%1. Get Diode
+        %%%2. Create A Matrix.
+        %%%3. Load Kilos0rt and phy results.
+        %%%4. Create response matrix.
 %%%5. Create shuffling analysis
+%%%6. Create receptive field analysis with eyes moving.
+%%%7. Create receptive field analysis with eyes not moving. 

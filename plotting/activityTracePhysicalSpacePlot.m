@@ -134,7 +134,7 @@ end
 
 if strcmp(scaling,'std')
     if isempty(scaleFac)
-        scaleFac=[nanmedian(Waveform(:)) 10*nanstd(Waveform(:))];
+        scaleFac=[median(Waveform(:),'omitmissing') 10*std(Waveform(:),'omitmissing')];
     end
     Waveform=(Waveform-scaleFac(1))./scaleFac(2);
 elseif strcmp(scaling,'std0Mean')

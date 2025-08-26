@@ -56,7 +56,7 @@ classdef rectNoiseGridAnalysis < VStimAnalysis
             end
             binsInFrame=round(obj.VST.stimDuration*1000/params.bin);
             V(:,p(end)+1:p(end)+binsInFrame)=obj.VST.stimSequence(:,end)*ones(1,binsInFrame); %add last frames based on the duration of each noise stim
-            V=V-obj.VST.visualFieldBackgroundLuminance;
+            V=V-obj.VST.visualFieldBackgroundLuminance; %Visual stimulation matrix 
 
             totWinBins=ceil((T.sessionEndTime-T.sessionStartTime+params.win(2))/params.bin);
             M=squeeze(BuildBurstMatrix(s.ic,round((s.t-params.delay)/params.bin),round(T.sessionStartTime/params.bin),totWinBins));
@@ -65,7 +65,7 @@ classdef rectNoiseGridAnalysis < VStimAnalysis
             %plot((1:size(M,2))*params.bin,mean(M,1),'k');hold on;line([SD.stimOnFlipTimes-T.sessionStartTime;SD.stimOnFlipTimes-T.sessionStartTime],ylim,'Color','r');
             
             t=((1:totWinBins)-totWinBins/2)*params.bin;
-            pRate=find(sum(M,2)>params.minSpkRate/1000*totWinBins*params.bin);
+            pRate=find(sum(M,2)>params.minSpkRate/1000*totWinBins*params.bin); %select neurons with high rate
             lag=round(params.corssCorrLag/params.bin);
             mid=round(totWinBins/2+1);
             C=nan(numel(pRate),size(V,1),2*lag+1);
@@ -92,6 +92,7 @@ classdef rectNoiseGridAnalysis < VStimAnalysis
             end
             %}
             %save results in the right file
+            results = C;
             fprintf('Saving results to file.\n');
             save(obj.getAnalysisFileName,'C','RF','tRF','RFT','pRate','lag','params');
         end
