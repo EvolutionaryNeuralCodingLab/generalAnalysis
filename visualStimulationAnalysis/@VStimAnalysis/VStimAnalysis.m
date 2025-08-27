@@ -131,6 +131,7 @@ classdef (Abstract) VStimAnalysis < handle
             %extract currently running analysis method name and use it to create a unique file name for saving analysis results
             db=dbstack;currentMethod=strsplit(db(2).name,'.');
             analysisFile=[obj.visualStimAnalysisFolder,filesep,currentMethod{end},'.mat'];
+            analysisFile=[obj.visualStimAnalysisFolder,filesep,currentMethod{end},'.mat'];
         end
 
         %check if spike sorting data exists and converts to t,ic format if needed.
