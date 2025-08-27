@@ -26,24 +26,31 @@ classdef (Abstract) VStimAnalysis < handle
 
     methods (Hidden)
         %class constructor - gets name and adds listener to update initialization every time the dataRecording object is changed
-        function obj=VStimAnalysis(dataObj)
+        %If
+        function obj=VStimAnalysis(dataObj, params)
+            arguments (Input) %ResponseWindow.mat
+                dataObj
+                params.Session = 1;
+            end
+            StimSession =  params.Session;
             obj.stimName=class(obj);obj.stimName=obj.stimName(1:end-8); %
-            addlistener(obj, 'dataObj', 'PostSet',@(src,evnt)obj.initialize);
+            addlistener(obj, 'dataObj', 'PostSet',@(src,evnt)obj.initialize(StimSession));
             if nargin==0 || isempty(dataObj)
                 fprintf('No dataRecording object entered as input!!! Most functions will not work!!!\n Please manually populate the dataObj property.\n');
             else
                 obj.dataObj=dataObj;
             end
+           
         end
     end
 
     methods
 
-        function obj = initialize(obj)
+        function obj = initialize(obj, StimSession)
             %Initialization - extraction of folders and visual parameters subclass name should match the visual stimulation
             %extract the visual stimulation parameters from parameter file
             obj.visualStimFolder=obj.findFolderInExperiment(obj.dataObj.recordingDir,'visualStimulation');
-            obj=setVisualStimulationFile(obj);
+            obj=setVisualStimulationFile(obj,'Session',StimSession);
             obj=getStimParams(obj);
             obj.spikeSortingFolder=obj.findFolderInExperiment(obj.dataObj.recordingDir,'kilosort');
         end
@@ -123,7 +130,7 @@ classdef (Abstract) VStimAnalysis < handle
         function analysisFile = getAnalysisFileName(obj)
             %extract currently running analysis method name and use it to create a unique file name for saving analysis results
             db=dbstack;currentMethod=strsplit(db(2).name,'.');
-            analysisFile=[obj.visualStimAnalysisFolder,filesep,currentMethod{2},'.mat'];
+            analysisFile=[obj.visualStimAnalysisFolder,filesep,currentMethod{end},'.mat'];
         end
 
         %check if spike sorting data exists and converts to t,ic format if needed.
@@ -382,9 +389,15 @@ classdef (Abstract) VStimAnalysis < handle
             end
         end
 
-        function obj=setVisualStimulationFile(obj,visualStimulationfile)
+        function obj=setVisualStimulationFile(obj,params)
             %find visual stimulation file according to recording file names and the name of the visual stimulation analysis class
-            if nargin==1
+            arguments (Input) %ResponseWindow.mat
+                obj
+                params.visualStimulationfile = [];
+                params.Session = 1;
+            end
+
+            if isempty(params.visualStimulationfile)
                 VSFiles=dir([obj.visualStimFolder filesep '*.mat']);
                 if isempty(VSFiles)
                     obj.copyFilesFromRecordingFolder;
@@ -402,10 +415,11 @@ classdef (Abstract) VStimAnalysis < handle
                 VSFiles = VSFiles(~contains(lower(VSFiles), 'metadata')); %exclude metadata
                 recordingsFound=0;
                 tmpDateTime = datetime.empty(0,numel(VSFiles));
+                pSession = [];
                 for i=1:numel(VSFiles)
                     if contains(VSFiles{i},obj.stimName,'IgnoreCase',true)
                         recordingsFound=recordingsFound+1;
-                        pSession=i;
+                        pSession=[pSession i];
                     end
                     try
                         vStimIdentifiers=split(VSFiles{i},["_","."]);
@@ -415,13 +429,13 @@ classdef (Abstract) VStimAnalysis < handle
                     end
                 end
 
-                if recordingsFound~=1
+                if recordingsFound<1
                     fprintf('No matchings visual stimulation files found!!!\n Please check the names of visual stimulation files or run setVisualStimulationFile(file) with the filename as input.\n');
                     return;
                 else
-                    obj.visualStimulationFile=VSFiles{pSession};
+                    obj.visualStimulationFile=VSFiles{pSession(params.Session)};
                     [~,order]=sort(tmpDateTime);
-                    obj.sessionOrderInRecording=find(order==pSession);
+                    obj.sessionOrderInRecording=find(order==pSession(params.Session));
                 end
             else
                 obj.visualStimulationFile=visualStimulationfile;
@@ -559,7 +573,7 @@ classdef (Abstract) VStimAnalysis < handle
                         for i =1:length(trialOff)
 
                             startSnip  = round((trialOn(i)-trialOn(1))*(obj.dataObj.samplingFrequencyNI/1000))+1;
-                            endSnip  = round((trialOff(i)-trialOn(1)+interDelayMs)*(obj.dataObj.samplingFrequencyNI/1000));
+                            endSnip  = round((trialOff(i)-trialOn(1)+100)*(obj.dataObj.samplingFrequencyNI/1000));
 
                             if endSnip>length(A)
                                 signal = squeeze(A(startSnip:end));
@@ -607,7 +621,7 @@ classdef (Abstract) VStimAnalysis < handle
                                 end
 
                                 %DiodeInterp = linspace(diodeAll(1),diodeAll(end),framesNspeed(2,i));
-                                DiodeInterp = diodeAll(1):1000/obj.VST.fps: diodeAll(1) + (framesNspeed(2,i)-1)*(1000/obj.VST.fps);
+                                DiodeInterp = diodeAll(1):1000/obj.VST.fps: min([diodeAll(1) + (framesNspeed(2,i)-1)*(1000/obj.VST.fps), trialOff(i)]);
                                 if ind == 2 %Trial starts with down cross
                                     DiodeCrosses{2,i} = DiodeInterp(1:2:end);
                                     DiodeCrosses{1,i} = DiodeInterp(2:2:end);
