@@ -5,26 +5,32 @@ arguments (Input)
     params.overwrite logical = false
     params.analysisTime = datetime('now')
     params.inputParams = false
-    params.preBase = 200;
-    params.bin = 15;
-    params.exNeurons = 1;
-    params.AllSomaticNeurons = false;
-    params.AllResponsiveNeurons = false;
-    params.fixedWindow = false;
+    params.preBase = 200
+    params.bin = 15
+    params.exNeurons = 1
+    params.AllSomaticNeurons = false
+    params.AllResponsiveNeurons = false
+    params.fixedWindow = false
+    params.speed = 1
+    params.MergeNtrials =1
 end
+
+fieldName =  sprintf('Speed%d',  params.speed);
 
 NeuronResp = obj.ResponseWindow;
 Stats = obj.ShufflingAnalysis;
 
-directimesSorted = NeuronResp.C(:,1)';
-goodU = NeuronResp.goodU;
-p = obj.dataObj.convertPhySorting2tIc(obj.dataObj.recordingDir);
-phy_IDg = p.phy_ID(string(p.label') == 'good');
-pvals = Stats.pvalsResponse;
- %%%Why unit 59 has a pvalue of 0.
+C = NeuronResp.(fieldName).C;
 
-C = NeuronResp.C;
-stimDur = NeuronResp.stimDur;
+[C indexS] = sortrows(C,[2 6 3 4 5]);
+
+directimesSorted = NeuronResp.(fieldName).C(:,1)';
+goodU = NeuronResp.goodU;
+p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
+phy_IDg = p.phy_ID(string(p.label') == 'good');
+pvals = Stats.(fieldName).pvalsResponse;
+
+stimDur = NeuronResp.(fieldName).stimDur;
 stimInter = NeuronResp.stimInter;
 
 uDir = unique(C(:,2));
@@ -35,8 +41,10 @@ uSize = unique(C(:,4));
 sizeN = length(uSize);
 uSpeed = unique(C(:,5));
 speedN = length(uSpeed);
+uLums= unique(C(:,6));
+lumsN = length(uLums);
 nT = numel(C(:,1));
-trialDivision = nT/(offsetN*direcN*speedN*sizeN); %Number of trials per unique conditions
+trialDivision = nT/(offsetN*direcN*speedN*sizeN*lumsN); %Number of trials per unique conditions
 
 preBase = round(stimInter-stimInter/4);
 
@@ -45,7 +53,11 @@ if params.AllSomaticNeurons
     pvals = [eNeuron;pvals(eNeuron)];
 elseif params.AllResponsiveNeurons
     eNeuron = find(pvals<0.05);
-    pvals = [eNeuron;pvals(eNeuron)];% Select all good neurons if not specified    
+    pvals = [eNeuron;pvals(eNeuron)];% Select all good neurons if not specified  
+    if isempty(eNeuron) 
+        fprintf('No responsive neurons.\n')
+        return
+    end
 else
     eNeuron = params.exNeurons;
     pvals = [eNeuron;pvals(eNeuron)];
@@ -64,27 +76,23 @@ for u = eNeuron
 
     fig =  figure;
 
-    title(sprintf('U.%d-Unit-phy-%d-p-%d',u,phy_IDg(u),pvals(2)));
+    title(sprintf('U.%d-Unit-phy-%d-p-%d',u,phy_IDg(u),pvals(2,ur)));
 
-    sizeN=1;
+    %sizeN=1;
 
     j=1;
 
-    if sizeN >1
+    mergeTrials = params.MergeNtrials;
 
-        mergeTrials = trialDivision;
+    Mr2 = zeros(size(Mr,1),size(Mr,3));
 
-    else
-        mergeTrials = 1;
-    end
-
-    if mergeTrials ~= 1 %Merge trials
+    if mergeTrials > 1 %Merge trials
 
         for i = 1:mergeTrials:nT
 
             meanb = mean(squeeze(Mr(i:min(i+mergeTrials-1, end),ur,:)),1);
 
-            Mr2(j,:) = meanb;
+            Mr2(i:i+mergeTrials-1,:) = repmat(meanb,[mergeTrials 1]);
 
             j = j+1;
 
@@ -94,6 +102,20 @@ for u = eNeuron
     end
 
     [nT,nB] = size(Mr2);
+
+    if nB>300
+
+        MergeBins = 3;
+
+        for i = 1:MergeBins:nB
+
+            meanb = mean(squeeze(Mr2(:,i:min(i+MergeBins-1, end))),2);
+
+            Mr2(:,i:i+MergeBins-1) = repmat(meanb,[1 MergeBins]);
+
+        end
+
+    end
 
 
     subplot(20,1,[7 18]);
@@ -107,14 +129,24 @@ for u = eNeuron
     caxis([0 1])
     dirStart = C(1,2);
     offStart = C(1,3);
-    for t = 1:nT*mergeTrials
+    lumStart = C(1,6);
+    sizeStart = C(1,4);
+    for t = 1:nT
         if dirStart ~= C(t,2)
-            yline(t/mergeTrials-0.5,'k',LineWidth=1.5);
+            yline(t-0.5,'k',LineWidth=2);
             dirStart = C(t,2);
         end
         if offStart ~= C(t,3)
-            yline(t/mergeTrials-0.5,'k',LineWidth=0.5);
+            yline(t-0.5,'k',LineWidth=0.5);
             offStart = C(t,3);
+        end
+        if lumStart ~= C(t,6)
+            yline(t-0.5,'--b',LineWidth=1);
+            lumStart = C(t,6);
+        end
+        if sizeStart ~= C(t,4)
+            yline(t-0.5,'--r',LineWidth=0.05);
+            sizeStart = C(t,4);
         end
 
     end
@@ -155,8 +187,8 @@ for u = eNeuron
         start = -50;
         window = 500;
     else
-        [maxResp,maxRespIn]= max(NeuronResp.NeuronVals(u,:,1));
-        start = NeuronResp.NeuronVals(u,maxRespIn,3)*NeuronResp.params.binRaster-20;  
+        [maxResp,maxRespIn]= max(NeuronResp.(fieldName).NeuronVals(u,:,1));
+        start = NeuronResp.(fieldName).NeuronVals(u,maxRespIn,3)*NeuronResp.params.binRaster-20;  
         window = 500;
     end
 
@@ -192,6 +224,9 @@ for u = eNeuron
     spikeTimes = spikeTimes(logical(MRhist));
     % Define bin edges (adjust for resolution)
     binWidth = 125; % 10 ms bins
+    if nB>300
+         binWidth = 250;
+    end
     edges = [1:binWidth:round((stimDur+preBase*2))]; % Adjust time window as needed
 
     % Compute histogram
@@ -250,6 +285,7 @@ for u = eNeuron
     xticklabels([])
     xlabel([]);xticks([])
     ylabel('uV')
+    title(sprintf('U.%d-Unit-phy-%d-p-%d',u,phy_IDg(u),pvals(2,ur)));
 
     %%%%%%%%%%% Plot raster of selected trials
     %%%%%%%%%%% %%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -295,7 +331,7 @@ for u = eNeuron
 
     fig.Position = [680     5   296   9734];
 
-    if params.overwrite,obj.printFig(fig,sprintf('%s-MovBall-SelectedTrials-eNeuron-%d',obj.dataObj.recordingName,u)),end
+    if params.overwrite,obj.printFig(fig,sprintf('%s-%s-MovBall-SelectedTrials-eNeuron-%d',obj.dataObj.recordingName,fieldName,u)),end
 
     ur = ur+1;
 
