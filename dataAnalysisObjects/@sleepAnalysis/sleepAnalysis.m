@@ -3610,13 +3610,14 @@ classdef sleepAnalysis < recAnalysis
             parTrigger=parseObj.Results;
 
             %check if analysis was already done
-            obj.files.diodeTrigger=[obj.currentAnalysisFolder filesep 'diodeTrigger' num2str(diodeCh) '.mat'];
+            obj.files.diodeTrigger=[obj.currentAnalysisFolder filesep 'diodeTrigger_ch' num2str(diodeCh) '.mat'];
             if exist(obj.files.diodeTrigger,'file') & ~overwrite
-                disp('Sharp wave analysis already exists for this recording');
+                disp('StimDiode analysis already exists for this recording');
+                diodeTriggers=load(obj.files.diodeTrigger);
                 return;
             end
             
-            d = obj.currentDataObj.getAnalogData(diodeCh,tStart,win);
+            [d,d_ms] = obj.currentDataObj.getAnalogData(diodeCh,tStart,win);
             d=squeeze(d);
             fs = obj.currentDataObj.samplingFrequencyAnalog(diodeCh);
             d_lowpass = lowpass(d,lowpss_cutoff,fs);
@@ -3644,13 +3645,14 @@ classdef sleepAnalysis < recAnalysis
             prev = all_valid_trans_ind -[inf;all_valid_trans_ind(1:end-1)];
             next =  [all_valid_trans_ind(2:end);inf]-all_valid_trans_ind ;
             true_ind = (prev<=minimal_diff) | (next<=minimal_diff);
-            
-            diodeTriggers = all_valid_trans_ind(true_ind);
+            valid_Ind = all_valid_trans_ind(true_ind);
+            diodeTriggers = d_ms(valid_Ind);
+            % diodeTriggers = all_valid_trans_ind(true_ind);
 
-
-            if nargout==1
-                diodeTriggers=load(obj.files.diodeTrigger);
-            end
+            % 
+            % if nargout==1
+            %     diodeTriggers=load(obj.files.diodeTrigger);
+            % end
 
             if plotFig ==1 
                 figure; plot(d_lowpass,'.'); title('original signal,lowpass')
