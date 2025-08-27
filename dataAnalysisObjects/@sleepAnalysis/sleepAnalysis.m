@@ -210,6 +210,7 @@ classdef sleepAnalysis < recAnalysis
             addParameter(parseObj,'movLongWin',1000*60*30,@isnumeric); %for max chunck size
             addParameter(parseObj,'zeroGBias',[472971.375013507,494947.777368294,493554.966062353]',@(x) size(x,1)==3); % the zeroGB accelerometer calibration value [units uV]
             addParameter(parseObj,'sensitivity',[-34735.1293215227,34954.7241622606,34589.4195371905]',@(x) size(x,1)==3); % the sensitivity accelerometer calibration value [units uV]
+
             addParameter(parseObj,'staticWin',1000,@isnumeric);%the duration [ms] for the static filter
             addParameter(parseObj,'movLongOL',1000,@isnumeric);
             addParameter(parseObj,'tStart',0,@isnumeric);
@@ -3579,24 +3580,20 @@ classdef sleepAnalysis < recAnalysis
         end
 
         %% getStimTrigDiode
-              
-        function [diodeTriggersM]=getStimDiodeTrig(obj,varargin)
+        function [diodeTriggers]=getStimDiodeTrig(obj,varargin)
             
             obj.checkFileRecording;
+            
             parseObj = inputParser;
-            addParameter(parseObj,'tStart',0,@isnumeric);
-            addParameter(parseObj,'win',0,@isnumeric); %if 0 uses the whole recording duration
             addParameter(parseObj,'diodeCh',obj.recTable.stimDiodeCh(obj.currentPRec),@isnumeric);
+            addParameter(parseObj,'win',obj.currentDataObj.recordingDuration_ms,@isnumeric);
+            addParameter(parseObj,'tStart',0,@isnumeric);
             addParameter(parseObj,'lowpss_cutoff',100,@isnumeric);
             addParameter(parseObj,'diodeThreshold',470000,@isnumeric);
             addParameter(parseObj,'minSampleDiff',2,@isnumeric); %minimal time between transitions, in sec    
             addParameter(parseObj,'plotFig',0,@isnumeric); 
             addParameter(parseObj,'overwrite',0,@isnumeric);
-            
-            addParameter(parseObj,'movLongWin',1000*60*30,@isnumeric); %for max chunck size
-            addParameter(parseObj,'movLongOL',1000,@isnumeric);
-
-
+                  
             addParameter(parseObj,'inputParams',false,@isnumeric);
             parseObj.parse(varargin{:});
             if parseObj.Results.inputParams
@@ -3613,87 +3610,57 @@ classdef sleepAnalysis < recAnalysis
             parTrigger=parseObj.Results;
 
             %check if analysis was already done
-            obj.files.diodeTrigger=[obj.currentAnalysisFolder filesep 'diodeTrigger_ch' num2str(diodeCh) '.mat'];
+            obj.files.diodeTrigger=[obj.currentAnalysisFolder filesep 'diodeTrigger' num2str(diodeCh) '.mat'];
             if exist(obj.files.diodeTrigger,'file') & ~overwrite
-                disp('Trigger calculation already exists for this recording');
-                if nargout ==1
-                    load(obj.files.diodeTrigger)
-                end
+                disp('Sharp wave analysis already exists for this recording');
                 return;
             end
             
-            if win==0
-                win=obj.currentDataObj.recordingDuration_ms-tStart;
-                endTime=obj.currentDataObj.recordingDuration_ms;
-            else
-                endTime=min(win+tStart,obj.currentDataObj.recordingDuration_ms);
-            end
-            startTimes=tStart:(movLongWin):endTime;
-            nChunks=numel(startTimes);
-            diodeTriggers=cell(1,nChunks);
-            fs = obj.currentDataObj.samplingFrequencyAnalog(diodeCh);         
+            d = obj.currentDataObj.getAnalogData(diodeCh,tStart,win);
+            d=squeeze(d);
+            fs = obj.currentDataObj.samplingFrequencyAnalog(diodeCh);
+            d_lowpass = lowpass(d,lowpss_cutoff,fs);
+            threshold_signal = d_lowpass>diodeThreshold;
+            X = minSampleDiff*fs; % how much time in samples of 0 before transition
+            n = length(threshold_signal);
 
-            if isempty(diodeCh)
-                error('No diode channel entered! Can not find analog data!');
+            if n <= X
+                diodeTriggers = [];
+                return;
             end
-            fprintf('\nLight Stim diode data extraction (%d chunks)-',nChunks);
-            for i=1:nChunks
-                fprintf('%d,',i);
-                [MLong,MLong_ms]=obj.currentDataObj.getAnalogData(diodeCh,startTimes(i),min(win,movLongWin));
-                dMLong=squeeze(MLong);                
-                d_lowpass = lowpass(dMLong,lowpss_cutoff,fs);
-                threshold_signal = d_lowpass>diodeThreshold;
-                X = minSampleDiff*fs; % how much time in samples of 0 before transition
-                n = length(threshold_signal);
 
-                if n <= X
-                    diodeTriggers{i} = [];
-                    return;
+            % Get the triggers:
+            % Find 0->1 transitions
+            transitions = [true; diff(threshold_signal) == 1];
+            % find the indexes of transitions, and the diffs between indexes
+            transition_ind = find(transitions);
+            % find only the transions that the first after X samples (meaning the
+            % diffs between indexs are above X)
+            diffs = [0;diff(transition_ind)];
+            all_valid_trans_ind = transition_ind(diffs >X);
+            % From them, remove those how do not have another stimulation within 10
+            % seconds. removes the change in light in the end of recording.
+            minimal_diff = 200000;
+            prev = all_valid_trans_ind -[inf;all_valid_trans_ind(1:end-1)];
+            next =  [all_valid_trans_ind(2:end);inf]-all_valid_trans_ind ;
+            true_ind = (prev<=minimal_diff) | (next<=minimal_diff);
+            
+            diodeTriggers = all_valid_trans_ind(true_ind);
+
+
+            if nargout==1
+                diodeTriggers=load(obj.files.diodeTrigger);
+            end
+
+            if plotFig ==1 
+                figure; plot(d_lowpass,'.'); title('original signal,lowpass')
+                if ~isempty(diodeTriggers)
+                    hold on; xline(diodeTriggers,'r')
                 end
-
-                % Get the triggers:
-                % Find 0->1 transitions
-                transitions = [true; diff(threshold_signal) == 1];
-                % find the indexes of transitions, and the diffs between indexes
-                transition_ind = find(transitions);
-                % find only the transions that the first after X samples (meaning the
-                % diffs between indexs are above X)
-                diffs = [0;diff(transition_ind)];
-                all_valid_trans_ind = transition_ind(diffs >X);
-
-                % TO DO - ADD The case of a trigger that start shortly
-                % after the start on the chunk
-
-                % From them, remove those how do not have another stimulation within 200
-                % seconds. removes the change in light in the end of recording.
-                minimal_diff = 200000;
-                prev = all_valid_trans_ind -[inf;all_valid_trans_ind(1:end-1)];
-                next =  [all_valid_trans_ind(2:end);inf]-all_valid_trans_ind ;
-                true_ind = (prev<=minimal_diff) | (next<=minimal_diff);
-                true_trans_ind = all_valid_trans_ind(true_ind);
-                cur_diode_trig = MLong_ms(true_trans_ind);
-                diodeTriggers{i} =cur_diode_trig+startTimes(i);
-
-                if plotFig ==1
-                    figure; plot(MLong_ms,d_lowpass,'.'); title('original signal,lowpass')
-                    if ~isempty(cur_diode_trig)
-                        hold on; xline(cur_diode_trig,'r')
-                    end
-                end
-
             end
-
-            try 
-                diodeTriggersM = cat(2,diodeTriggers{~cellfun(@isempty,diodeTriggers)});
-            catch ME
-            end
-            fprintf('\n');
-
-
-
            
             
-            save(obj.files.diodeTrigger,'diodeTriggersM','diodeTriggers','parTrigger');
+            save(obj.files.diodeTrigger,'diodeTriggers','parTrigger');
         end
 
         %% plotDelta2BetaRatio
@@ -4133,7 +4100,6 @@ classdef sleepAnalysis < recAnalysis
                 h(10)=line([bestSleepTime/1000/60/60,bestSleepTime/1000/60/60],yl,'color','k');
             end
             linkaxes(h(1:2),'x');
-                title(obj.recTable.Remarks(obj.currentPRec))
 
             if saveFigures
                 set(fSAC,'PaperPositionMode','auto');
