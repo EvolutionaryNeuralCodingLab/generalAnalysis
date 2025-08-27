@@ -3640,16 +3640,30 @@ classdef sleepAnalysis < recAnalysis
             diffs = [0;diff(transition_ind)];
             all_valid_trans_ind = transition_ind(diffs >X);
             % From them, remove those how do not have another stimulation within 10
-            % seconds. removes the change in light in the end of recording.
+            % seconds. removes the change in light in the end of recording
+            % - for short recs:
             minimal_diff = 200000;
             prev = all_valid_trans_ind -[inf;all_valid_trans_ind(1:end-1)];
             next =  [all_valid_trans_ind(2:end);inf]-all_valid_trans_ind ;
             true_ind = (prev<=minimal_diff) | (next<=minimal_diff);
             valid_Ind = all_valid_trans_ind(true_ind);
-            diodeTriggers = d_ms(valid_Ind);
-            % diodeTriggers = all_valid_trans_ind(true_ind);
-
-            % 
+            
+            trigTimes = d_ms(valid_Ind);
+            
+            maxDiff = 125000;
+            t_diff = diff(trigTimes);
+            firstBigDiff = find(t_diff>maxDiff);
+            if ~isempty(firstBigDiff)
+                if firstBigDiff<8
+                diodeTriggers = trigTimes(firstBigDiff(1)+1:end);
+                elseif firstBigDiff>8
+                    diodeTriggers = trigTimes(1:firstBigDiff(1));
+                end
+            else
+                diodeTriggers = trigTimes;
+            end
+            
+           % 
             % if nargout==1
             %     diodeTriggers=load(obj.files.diodeTrigger);
             % end
