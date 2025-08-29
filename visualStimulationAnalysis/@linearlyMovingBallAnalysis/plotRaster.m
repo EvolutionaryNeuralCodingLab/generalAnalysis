@@ -24,7 +24,7 @@ C = NeuronResp.(fieldName).C;
 
 [C indexS] = sortrows(C,[2 6 3 4 5]);
 
-directimesSorted = NeuronResp.(fieldName).C(:,1)';
+directimesSorted = C(:,1)';
 goodU = NeuronResp.goodU;
 p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
 phy_IDg = p.phy_ID(string(p.label') == 'good');

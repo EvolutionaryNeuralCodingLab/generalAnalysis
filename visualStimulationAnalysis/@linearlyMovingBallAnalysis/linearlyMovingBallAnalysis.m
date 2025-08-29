@@ -11,7 +11,7 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
     methods (Hidden)
         %class constructor - name of class should be identical to the visual stimulation with the addition of Analysis
         function [obj] = linearlyMovingBallAnalysis(dataObj,params)
-             arguments (Input) %ResponseWindow.mat
+            arguments (Input) %ResponseWindow.mat
                 dataObj
                 params.Session = 1;
             end
@@ -40,6 +40,7 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
                 params.binRaster = 1
                 params.durationWindow = 100
                 params.preBase = 200
+                params.GaussianLength =5;
             end
             if params.inputParams,disp(params),return,end
 
@@ -112,7 +113,7 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
                 %4. Sort directions:
                 directimesSorted = C(:,1)';
                 Mr = BuildBurstMatrix(goodU,round(p.t/params.binRaster),round(directimesSorted/params.binRaster),round((stimDur+ params.durationWindow)/params.binRaster)); %response matrix
-                [MrC]=ConvBurstMatrix(Mr,fspecial('gaussian',[1 5],3),'same');
+                [MrC]=ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
 
                 [nT,nN,nB] = size(Mr);
 
