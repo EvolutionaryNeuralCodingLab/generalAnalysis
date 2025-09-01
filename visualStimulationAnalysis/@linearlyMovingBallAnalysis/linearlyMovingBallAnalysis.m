@@ -95,9 +95,9 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
 
                 Bt =  B(B(:,5) ==speeds(s),:);
 
-                [C indexS] = sortrows(At,[2 3 4 5 6]);
+                [C indexS] = sortrows(At,[2 6 3 4 5]); %2 6 3 4 5
 
-                [Coff indexSo] = sortrows(Bt,[2 3 4 5 6]);
+                [Coff indexSo] = sortrows(Bt,[2 6 3 4 5]);
 
                 stimOnT = At(:,1);
                 stimOffT = Bt(:,1);

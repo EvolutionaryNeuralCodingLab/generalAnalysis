@@ -12,7 +12,7 @@ arguments (Input)
     params.speed = 1; %min =1, max = 2;
     params.noEyeMoves = false
     params.reduceFactor = 20
-    params.allCombined = false
+    params.allDir = false
     params.RFsDivision = {'Direction','',''}; %Direction, luminosities, sizes
     params.eye_to_monitor_distance = 21.5 % Distance from eye to monitor in cm
     params.pixel_size = 33
@@ -79,7 +79,7 @@ for u = eNeuron
 
     ru = find(eNeuron == u);
 
-    if params.allCombined
+    if params.allDir
 
         % %%%Filter with gaussian:
 
@@ -126,23 +126,30 @@ for u = eNeuron
     cMin = inf;
     hasNotString = find(~cellfun(@isempty, params.RFsDivision)==0); %gives you dimensions (dirs, sizes, or lums) that are to be combined.
 
+    RFuRed =reshape(RFuDirSizeFilt(:,:,:,:,:,ru),[size(RFuDirSizeFilt,1),size(RFuDirSizeFilt,2),size(RFuDirSizeFilt,3),size(RFuDirSizeFilt,4)...
+        ,size(RFuDirSizeFilt,5)]);
 
+    for i = 1:numel(hasNotString) %Take mean of elements that are not going to be compared (like luminosities, or directions, etc)
+
+        RFuRed = mean(RFuRed,hasNotString(i));
+
+        size(RFuRed)
+
+    end
 
     if params.meanAllNeurons
         RFuRed =reshape(mean(RFuDirSizeFilt,6),[size(RFuDirSizeFilt,1),size(RFuDirSizeFilt,2),...
             size(RFuDirSizeFilt,3),size(RFuDirSizeFilt,4)...
             ,size(RFuDirSizeFilt,5)]);
+
         for i = 1:numel(hasNotString) %Take mean of elements that are not going to be compared (like luminosities, or directions, etc)
+
             RFuRed = mean(RFuRed,hasNotString(i));
+
             size(RFuRed)
+
         end
-    else
-        RFuRed =reshape(RFuDirSizeFilt(:,:,:,:,:,ru),[size(RFuDirSizeFilt,1),size(RFuDirSizeFilt,2),size(RFuDirSizeFilt,3),size(RFuDirSizeFilt,4)...
-            ,size(RFuDirSizeFilt,5)]);
-        for i = 1:numel(hasNotString) %Take mean of elements that are not going to be compared (like luminosities, or directions, etc)
-            RFuRed = mean(RFuRed,hasNotString(i));
-            size(RFuRed)
-        end
+
     end
   
     cMax = max(RFuRed,[],'all');
@@ -210,10 +217,9 @@ for u = eNeuron
     title(NeuronLayout, sprintf('Unit-%d',u));
     figRF.Position = [  0.2328125                     0.315                0.23515625                   0.38125];
     if params.meanAllNeurons
-        title(NeuronLayout,'MeanAllUnits');
-        if params.overwrite,obj.printFig(figRF,sprintf('%s-%s-MovBall-RF-sep-%s-Mean',...
-                obj.dataObj.recordingName,fieldName, strjoin(params.RFsDivision, '&'))),end
-        return
+        if params.overwrite,obj.printFig(figRF,sprintf('%s-%s-MovBall-RF-sep-%s-eNeuron-%d',...
+                obj.dataObj.recordingName,fieldName, strjoin(params.RFsDivision, '&'),u)),end
+
     end
     if params.noEyeMoves
        
