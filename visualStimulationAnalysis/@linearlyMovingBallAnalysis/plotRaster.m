@@ -24,6 +24,8 @@ C = NeuronResp.(fieldName).C;
 
 [C indexS] = sortrows(C,[2 6 3 4 5]);
 
+NeuronResp.(fieldName).NeuronVals
+
 directimesSorted = C(:,1)';
 goodU = NeuronResp.goodU;
 p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
@@ -242,7 +244,12 @@ for u = eNeuron
     ylabel('Spikes/sec','FontSize',10);
     xlabel('Seconds','FontSize',10);
     xlim([0 round((stimDur+preBase*2)/100)*100])
+    try
     ylim([0 max(psthRate)+std(psthRate)])
+    catch
+
+        2+2
+    end
 
     xticks([0 preBase:300:(stimDur+preBase*2) round((stimDur+preBase*2)/100)*100])
 

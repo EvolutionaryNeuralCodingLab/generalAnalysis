@@ -477,7 +477,7 @@ for t = 1:numel(IndexDiv)
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Apply 2d Gaussian to receptive fields
         %TwoDGaussian = fspecial('gaussian',floor(size(RFuSTDirSize,3)/9),5);
 
-       TwoDGaussian = fspecial('gaussian',floor(size(RFuDirSizeLum,4)/(offsetN/2)),redCoorY/offsetN); %increase size of gaussian by 100%.
+        TwoDGaussian = fspecial('gaussian',floor(size(RFuDirSizeLum,4)/(offsetN/2)),redCoorY/offsetN); %increase size of gaussian by 100%.
         %RFuSTDirFilt = zeros(size(RFuSTDir));
 
        RFuDirSizeLumFilt = zeros(size(RFuSTDirSizeLum));
@@ -486,7 +486,7 @@ for t = 1:numel(IndexDiv)
        for d = 1:size(RFuSTDirSizeLum,1) %dirs
            for s = 1:size(RFuSTDirSizeLum,2) %Size
                for l = 1:size(RFuSTDirSizeLum,3) %Lums
-                   parfor ui =1:size(RFuSTDirSizeLum,6) %units
+                   parfor ui =1:size(RFuSTDirSizeLum,5) %units
                        slice = squeeze(RFuSTDirSizeLum(d,s,l,:,:,ui));
 
                        slicek = conv2(slice,TwoDGaussian,'same');
