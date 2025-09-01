@@ -12,7 +12,7 @@ arguments (Input)
     params.speed = 1; %min =1, max = 2;
     params.noEyeMoves = false
     params.reduceFactor = 20
-    params.allDir = false
+    params.allCombined = false
     params.RFsDivision = {'Direction','',''}; %Direction, luminosities, sizes
     params.eye_to_monitor_distance = 21.5 % Distance from eye to monitor in cm
     params.pixel_size = 33
@@ -79,7 +79,7 @@ for u = eNeuron
 
     ru = find(eNeuron == u);
 
-    if params.allDir
+    if params.allCombined
 
         % %%%Filter with gaussian:
 
