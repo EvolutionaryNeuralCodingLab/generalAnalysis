@@ -66,6 +66,11 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
             stimOn = DiodeCrossings.stimOnFlipTimes;
             stimOff = DiodeCrossings.stimOffFlipTimes;
 
+            if  ~isfield(obj.VST,'Luminosities')
+                obj.VST.Luminosities = zeros(1,numel(obj.VST.directions))+255;
+                
+            end
+
             A = [stimOn' obj.VST.directions' obj.VST.offsets' obj.VST.ballSizes' obj.VST.speeds' obj.VST.Luminosities'];
             [C indexS] = sortrows(A,[2 3 4 5]);
 

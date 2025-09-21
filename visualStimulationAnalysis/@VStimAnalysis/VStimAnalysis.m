@@ -774,6 +774,7 @@ classdef (Abstract) VStimAnalysis < handle
         %find a specific folder in the experiment
         %folderLocation=findFolderInExperiment(rootFolder,folderNamePart,params)
         folderLocation=findFolderInExperiment()
+        Fig = PlotZScoreComparison()
 
         function results=isOutputAnalysis(analysisFileName,overwrite,isOutput)
             %load previous results if analysis was previuosly performed and there is no need to overwrite

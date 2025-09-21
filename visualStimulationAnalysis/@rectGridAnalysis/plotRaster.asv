@@ -184,17 +184,17 @@ for u = eNeuron
     end
 
     [fig2, mx, mn] = PlotRawDataNP(obj,fig = fig2,chan = chan, startTimes = startTimes(ind),...
-        window = window,spikeTimes = spikes(ind,:),multFactor =1.5, stdMult = 3);
+        window = window,spikeTimes = spikes(ind,:),multFactor =1.5);
 
     xline(-start/1000,'LineWidth',1.5,Color="#77AC30")
     xline((stimDur+abs(start))/1000,'LineWidth',1.5,Color="#0072BD")
-    xticks([0,abs(start)/1000:abs(start)/1000:obj.VST.stimDuration+abs(start*2)/1000+1])
-    xticklabels([start,0:abs(start):obj.VST.stimDuration*1000+abs(start*2)])
-    xlabel('Miliseconds')
-    yticks([])
+    xlim([0,obj.VST.stimDuration+abs(start*2)/1000])
+    xticks([abs(start)/1000:abs(start)/1000:obj.VST.stimDuration+abs(start*2)/1000+1])
+    xlim
+    %xticklabels([])
+    %xlabel([]);xticks([])
     ylabel('uV')
     title(sprintf('U.%d-Unit-phy-%d-p-%d',u,phy_IDg(u),pvals(2,ur)));
-    fig2.Position =  [147   270   662   446];
 
     if params.overwrite,obj.printFig(fig2,sprintf('%s-rect-GRid-rawData-raster-eNeuron-%d',obj.dataObj.recordingName,u)),close(fig2),end
 

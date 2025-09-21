@@ -1,9 +1,24 @@
 
 
-function [fig mx mn] = PlotRawDataNP(obj,fig,chan,startTimes,window,freq,typeD,preBase,spikeTimes)
+function [fig mx mn] = PlotRawDataNP(obj,opts,params)
+
+arguments (Input) 
+    obj 
+    opts.fig (1,1) matlab.ui.Figure
+    opts.chan double 
+    opts.startTimes double
+    opts.window double
+    opts.spikeTimes double
+    params.freq = "AP"
+    params.typeD = "line"
+    params.multFactor = 1
+    params.stdMult = 2
+
+end
+
 tic
 NP = obj.dataObj;
-raw_signal = squeeze(NP.getData(chan,startTimes,window));
+raw_signal = squeeze(NP.getData(opts.chan,opts.startTimes,opts.window));
 toc
 %raw_signal = squeeze(aaa(:,1,:));
 
@@ -11,58 +26,64 @@ toc
 
 fc = 300;
 
-%
-% cd('D:\Mark_S13\Downloads')
-% raw_signale = readNPY('Ch16_PV27_25_6_23_3.npy');
-% raw_signale = squeeze(raw_signal);
-
-if freq == "AP"
+if params.freq == "AP"
     [b, a] = butter(4, fc/(NP.samplingFrequency/2), 'high');
 end
 
 t = (0:length(raw_signal)-1) /NP.samplingFrequency;
-%offset = 2.5*mean(std(raw_signal));
-offset = mean(2*std(raw_signal));
+offset = mean(params.stdMult*std(raw_signal));
 
-figure(fig)
+fig = figure(opts.fig);
 
-if typeD == "line"
+if  params.typeD == "line"
 
     mx = -inf;
     mn = inf;
 
-for tr = 1:min(size(raw_signal))
+for tr = 1:size(raw_signal,1)
 
-    if freq == "AP"
+    if params.freq == "AP"
 
         if size(raw_signal,2) == 1
             raw_signal =  raw_signal'; 
         end
-        signal = filtfilt(b, a, raw_signal(tr,:));
+        signal = params.multFactor.*filtfilt(b, a, raw_signal(tr,:));
 
     else
         if size(raw_signal,2) == 1
             raw_signal =  raw_signal'; 
         end
-        signal = raw_signal(tr,:);
+        signal = params.multFactor.*raw_signal(tr,:);
     end
 
     j = size(raw_signal,1)-tr;
     plot(t, signal+offset*(j), 'LineWidth',0.5,'Color','k');
 
-    if size(spikeTimes,2) > 0
+    if size(opts.spikeTimes,2) > 0
 
         %Convert ms of raster to seconds
-        spikeTimesIndex = find(spikeTimes(tr,:)>0)/1000;
+        spikeTimesIndex = find( opts.spikeTimes(tr,:)>0)/1000;
+        spikeSamples = round(spikeTimesIndex * NP.samplingFrequency);
 
         hold on
         %plot(spikeTimesIndex,repmat(min(signal-offset*(j)),1,length(spikeTimesIndex)),'.','Color','b','MarkerSize',7);
+        win = round(0.001* NP.samplingFrequency); %ms
+        % Overlay red segments for each spike
 
-        %%Improve with plot function for several trials
-        try
-        xline(spikeTimesIndex,'LineWidth',1,'Color','b','Alpha',0.3) %Plot spikes.
-        catch
-        fprintf('Selected trial has no spikes')
+        if size(raw_signal,1) >1
+            for i = 1:numel(spikeSamples)
+                idx1 = max(1, spikeSamples(i)-win);
+                idx2 = min(length(signal), spikeSamples(i)+win);
+                plot(t(idx1:idx2), signal(idx1:idx2)+offset*(j), 'r', 'LineWidth', 1.5);
+            end
+
+        else
+            %%Improve with plot function for several trials
+            try
+                xline(spikeTimesIndex,'LineWidth',1,'Color','b','Alpha',0.3) %Plot spikes.
+            catch
+                fprintf('Selected trial has no spikes')
+            end
         end
         
     end
@@ -79,28 +100,17 @@ for tr = 1:min(size(raw_signal))
     hold on
 end
 
-
-
 %yticks([])
 
 xlim([0 length(raw_signal)/NP.samplingFrequency]);
 lims = xlim;
 
 limsY = ylim;
-ylim([limsY(1)-std(raw_signal)/2 limsY(2)+std(raw_signal)/2]);
+ylim([limsY(1)+std(raw_signal(:)) limsY(2)-std(raw_signal(:))]);
 
-stimDur = window-2*preBase;
+% ax = gca; % Get current axes
+% ax.YAxis.FontSize = 7; % Change font size of y-axis tick labels
 
-xticks([0 preBase/1000:300/1000:(stimDur+preBase*2)/1000 lims(end)-0.00001])
-xticklabels([-(preBase) 0:300:round((stimDur/100))*100 round((stimDur/100))*100 + preBase]./1000)
-
-ylabel('10 Trials')
-xlabel('Time (sec)')
-
-ax = gca; % Get current axes
-ax.YAxis.FontSize = 7; % Change font size of y-axis tick labels
-
-%fig.Position = [  1027         246         415         241];
 hold off
 
 end
