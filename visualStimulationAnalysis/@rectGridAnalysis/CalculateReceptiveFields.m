@@ -60,9 +60,12 @@ end
 
 seqMatrix = obj.VST.pos;
 sizes = obj.VST.tilingRatios;
-nSize = length(unique(sizes));
+uSize = unique(sizes);
+nSize = length(uSize);
+uLums = unique(obj.VST.rectLuminosity(obj.VST.luminosities));
+nLums = length(uLums); %%mAKE IT TO BE ABLE TO COMPARE TWO LUMINOSITIES. 
 
-trialDiv  = length(seqMatrix)/length(unique(seqMatrix))/nSize;
+trialDiv  = length(seqMatrix)/length(unique(seqMatrix))/nSize/nLums;
 directimesSorted = C(:,1)';
 
 [Mr] = BuildBurstMatrix(goodU,round(p.t/params.bin),round((directimesSorted+params.offsetR)/params.bin),round(params.duration/params.bin));
@@ -159,27 +162,33 @@ if params.noEyeMoves
 
 else
 
-    MrC = zeros(round(nT/trialDiv),nN, NB+NBo);
+    MrC = zeros(2,nLums,nSize,round(nT/trialDiv),nN, NB);
+
+    MRtotal = zeros(2,size(Mr,1),size(Mr,2),size(Mr,3)); %includes on and off response
+
+    MRtotal(1,:,:,:) =  Mr;
+
+    MRtotal(2,:,:,:) =  Mro;
 
     %%Create summary of identical trials
 
     for u = 1:length(goodU)
-        j=1;
+       
 
-        for i = 1:trialDiv:nT
+        for o = 1:2
+             j=1;
+            for i = 1:trialDiv:nT
 
-            meanRon = mean(squeeze(Mr(i:i+trialDiv-1,u,:)));
+                meanR = mean(squeeze(MRtotal(o,i:i+trialDiv-1,u,:)));
 
-            meanRoff =  mean(squeeze(Mro(i:i+trialDiv-1,u,:)));
+                MrC(o,uLums == C(i,4),uSize == C(i,3),j,u,:) =meanR; %Combine on and off response
 
-            MrC(j,u,:) = [meanRon meanRoff]; %Combine on and off response
-
-            j = j+1;
-
+                j = j+1;
+            end
         end
     end
 
-    MrMean = mean(MrC,3);%-Nbase;
+    MrMean = mean(MrC,6);%-Nbase;
 
 end
 
@@ -238,23 +247,47 @@ end
 
 %  M = MrMean(:,u)'./Nbase(u);
 
-VD = repmat(VideoScreen,[1 1 1 nN]);
+VD = reshape(VideoScreen,[1 1 1 size(VideoScreen,1) size(VideoScreen,1) size(VideoScreen,3)]);
+VD = repmat(VD,[1,1,1,1,1,1,nN]);
+
 
 NanPos = isnan(MrMean);
 
 MrMean(NanPos) = 0;
 
-Res = reshape(MrMean,[1,1,size(MrMean,1),nN]).*1000;
+Res = reshape(MrMean,[size(MrMean,1),size(MrMean,2),size(MrMean,3),1,1,size(MrMean,4),nN]).*1000;
 
-RFu = squeeze(sum(VD.*Res,3));
+RFu = reshape(sum(VD.*Res,6),[size(MrMean,1),size(MrMean,2),size(MrMean,3),size(VD,4),size(VD,4),nN]);
 
-figure;imagesc(RFu(:,:,92));
+offsetN = sqrt(max(seqMatrix));
 
+TwoDGaussian = fspecial('gaussian',floor(size(RFu,4)/(offsetN/2)),screenRed/offsetN);
+
+RFuFilt = zeros(size(RFu));
+
+
+for d = 1:size(RFu,1) %On off response
+    for s = 1:size(RFu,2) %Lums
+        for l = 1:size(RFu,3) %size
+            for ui =1:size(RFu,6) %units
+                slice = squeeze(RFu(d,s,l,:,:,ui));
+
+                slicek = conv2(slice,TwoDGaussian,'same');
+
+                RFuFilt(d,s,l,:,:,ui) =slicek;
+            end
+        end
+    end
+end
+
+% figure;imagesc(squeeze(RFu(2,:,:,:,:,83)));
 S.RFu = RFu;
 
+S.RFuFilt = RFuFilt;
+
+S.params = params;
 
 save(filename,'-struct','S');
-
 
 end
 
