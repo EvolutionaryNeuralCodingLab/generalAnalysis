@@ -8,12 +8,10 @@ arguments (Input)
     params.exNeurons = 1;
     params.AllSomaticNeurons = false;
     params.AllResponsiveNeurons = true;
-    params.fixedWindow = false;
-    params.speed = 1; %min =1, max = 2;
     params.noEyeMoves = false
     params.reduceFactor = 20
-    params.allDir = false
-    params.RFsDivision = {'Direction','',''}; %Direction, luminosities, sizes
+    params.allStimParamsCombined = false
+    params.RFsDivision = {'On-Off','',''}; %On-Off, luminosities, sizes
     params.eye_to_monitor_distance = 21.5 % Distance from eye to monitor in cm
     params.pixel_size = 33
     params.resolution = 1080
@@ -23,16 +21,14 @@ end
 if params.inputParams,disp(params),return,end
 
 Stats = obj.ShufflingAnalysis;
-RFs = obj.CalculateReceptiveFields('speed',params.speed);
+RFs = obj.CalculateReceptiveFields;
 %Parameters
 %check receptive field neurons first
-fieldName = sprintf('Speed%d', params.speed);
-pvals = Stats.(fieldName).pvalsResponse;
+pvals = Stats.pvalsResponse;
 
 responses = obj.ResponseWindow;
-uDir = unique(responses.(fieldName).C(:,2));
-uSize = unique(responses.(fieldName).C(:,4));
-uLum = unique(responses.(fieldName).C(:,6));
+uSize = unique(responses.C(:,3));
+uLum = unique(responses.C(:,4));
 
 
 if params.AllSomaticNeurons
@@ -52,39 +48,58 @@ end
 
 
 coorRect = obj.VST.rect';
-reduceFactor = min([params.reduceFactor min(obj.VST.ballSizes)]); %has to be bigger than the smallest ball size
-redCoorX = round(coorRect(3)/reduceFactor);
-redCoorY = round(coorRect(4)/reduceFactor);
+% reduceFactor = min([params.reduceFactor min(obj.VST.ballSizes)]); %has to be bigger than the smallest ball size
+redCoorX = round(coorRect(3)/RFs.params.reduceFactor);
+redCoorY = round(coorRect(4)/RFs.params.reduceFactor);
 
-pixel_size = params.pixel_size/(params.resolution/reduceFactor); % Size of one pixel in cm (e.g., 25 micrometers)
+pixel_size = params.pixel_size/(params.resolution/RFs.params.reduceFactor); % Size of one pixel in cm (e.g., 25 micrometers)
 monitor_resolution = [redCoorX, redCoorY]; % Width and height in pixels
 [theta_x,theta_y] = pixels2eyeDegrees(params.eye_to_monitor_distance,pixel_size,monitor_resolution);
 
 theta_x = theta_x(:,1+(redCoorX-redCoorY)/2:(redCoorX-redCoorY)/2+redCoorY);
 
 if params.noEyeMoves %%%mode quadrant
-    RFu = squeeze(load(sprintf('NEM-RFuST-Q1-Div-X-%s',NP.recordingName)).RFuST);
+    %;
 else
-    RFu = RFs.RFuST; %Sum of RFUs
+    RFu = RFs.RFu; %Sum of RFUs
 
-    RFuDirSizeFilt = RFs.RFuDirSizeLumFilt; %Size and dir and lum
+    RFuFilt = RFs.RFuFilt; %Size and dir and lum
 
 end
 
-offsetN = numel(unique(obj.VST.offsets));
-TwoDGaussian = fspecial('gaussian',floor(size(RFu,2)/(offsetN/2)),redCoorY/offsetN); %increase size of gaussian by 100%.
+offsetN = sqrt(max(obj.VST.pos));
+TwoDGaussian = fspecial('gaussian',floor(size(RFu,4)/(offsetN/2)),redCoorY/offsetN); %increase size of gaussian by 100%.
+hasNotString = find(~cellfun(@isempty, params.RFsDivision)==0); %gives you dimensions (dirs, sizes, or lums) that are to be combined.
+
+if params.meanAllNeurons
+    RFuRed =reshape(mean(RFuFilt,6),[size(RFuFilt,1),size(RFuFilt,2),...
+        size(RFuFilt,3),size(RFuFilt,4)...
+        ,size(RFuFilt,5)]);
+    for i = 1:numel(hasNotString) %Take mean of elements that are not going to be compared (like luminosities, or directions, etc)
+        RFuRed = mean(RFuRed,hasNotString(i));
+        size(RFuRed)
+    end
+
+    RFu = mean(sum(RFu,[1,2,3]),6);
+
+    eNeuron =1;
+
+end
 
 for u = eNeuron
 
-
-    ru = find(eNeuron == u);
-
-    if params.allDir
+    if params.allStimParamsCombined
 
         % %%%Filter with gaussian:
 
+        RFu = sum(RFu,[1,2,3]);
+
         figRF=figure;
-        imagesc((squeeze(conv2(RFu(:,:,ru),TwoDGaussian,'same'))));
+        if params.meanAllNeurons
+            imagesc((squeeze(conv2(squeeze(RFu),TwoDGaussian,'same'))));
+        else
+            imagesc((squeeze(conv2(squeeze(RFu(:,:,:,:,:,u)),TwoDGaussian,'same'))));
+        end
 
         c = colorbar;
         title(c,'spk/s')
@@ -107,10 +122,10 @@ for u = eNeuron
         figRF.Position = [ 680   577   156   139];
         if  params.noEyeMoves
             %print(figRF, sprintf('%s-NEM-MovBall-ReceptiveField-eNeuron-%d.pdf',NP.recordingName,u), '-dpdf', '-r300', '-vector');
-            if params.overwrite,obj.printFig(figRF,sprintf('%s-NEM-MovBall-ReceptiveField-eNeuron-%d.pdf',obj.dataObj.recordingName,u)),end
+            if params.overwrite,obj.printFig(figRF,sprintf('%s-NEM-rectGrid-ReceptiveField-eNeuron-%d.pdf',obj.dataObj.recordingName,u)),end
         else
             %print(figRF, sprintf('%s-MovBall-ReceptiveField-eNeuron-%d.pdf',NP.recordingName,u), '-dpdf', '-r300', '-vector');
-            if params.overwrite,obj.printFig(figRF,sprintf('%s-MovBall-ReceptiveField-eNeuron-%d',obj.dataObj.recordingName,u)),end
+            if params.overwrite,obj.printFig(figRF,sprintf('%s-rectGrid-ReceptiveField-eNeuron-%d',obj.dataObj.recordingName,u)),end
         end
         close
 
@@ -120,36 +135,16 @@ for u = eNeuron
     %%%% Plot receptive field per direction
     %%%% find max and min of colorbar limits
 
-
-
     cMax = -inf;
     cMin = inf;
-    hasNotString = find(~cellfun(@isempty, params.RFsDivision)==0); %gives you dimensions (dirs, sizes, or lums) that are to be combined.
 
-    RFuRed =reshape(RFuDirSizeFilt(:,:,:,:,:,ru),[size(RFuDirSizeFilt,1),size(RFuDirSizeFilt,2),size(RFuDirSizeFilt,3),size(RFuDirSizeFilt,4)...
-        ,size(RFuDirSizeFilt,5)]);
-
-    for i = 1:numel(hasNotString) %Take mean of elements that are not going to be compared (like luminosities, or directions, etc)
-
-        RFuRed = mean(RFuRed,hasNotString(i));
-
-        size(RFuRed)
-
-    end
-
-    if params.meanAllNeurons
-        RFuRed =reshape(mean(RFuDirSizeFilt,6),[size(RFuDirSizeFilt,1),size(RFuDirSizeFilt,2),...
-            size(RFuDirSizeFilt,3),size(RFuDirSizeFilt,4)...
-            ,size(RFuDirSizeFilt,5)]);
-
+    if ~params.meanAllNeurons
+        RFuRed =reshape(RFuFilt(:,:,:,:,:,u),[size(RFuFilt,1),size(RFuFilt,2),size(RFuFilt,3),size(RFuFilt,4)...
+            ,size(RFuFilt,5)]);
         for i = 1:numel(hasNotString) %Take mean of elements that are not going to be compared (like luminosities, or directions, etc)
-
             RFuRed = mean(RFuRed,hasNotString(i));
-
             size(RFuRed)
-
         end
-
     end
   
     cMax = max(RFuRed,[],'all');
@@ -157,7 +152,7 @@ for u = eNeuron
 
     hasString = find(~cellfun(@isempty, params.RFsDivision)==1); %gives you dimensions (dirs, sizes, or lums) that are to be combined.
 
-    tilesSize = size(RFuDirSizeFilt,hasString);
+    tilesSize = size(RFuFilt,hasString);
 
     if numel(tilesSize) ==1 %%Create tile grid for RF ploting 
         if tilesSize<4
@@ -178,17 +173,19 @@ for u = eNeuron
 
     j=0;
 
-    for d = 1:size(RFuRed,1)
-        for s = 1:size(RFuRed,2)
-            for l = 1:size(RFuRed,3)
+    rspT={'on','off'};
+
+    for r = 1:size(RFuRed,1)
+        for l = 1:size(RFuRed,2)
+            for s = 1:size(RFuRed,3)
 
                 ax = nexttile;
-                imagesc((squeeze(RFuRed(d,s,l,:,:))));
+                imagesc((squeeze(RFuRed(r,l,s,:,:))));
 
                 caxis([cMin cMax]);
 
                 colormap('turbo')
-                title(sprintf('Dir-%s-Size-%s-Lum-%s',string(uDir(d)),string(uSize(s)),string(uLum(l))))
+                title(sprintf('respType-%s-Lum-%s-Size-%s',string(rspT{r}),string(uLum(l)),string(uSize(s))))
 
                 %xlim([(redCoorX-redCoorY)/2 (redCoorX-redCoorY)/2+redCoorY])
                 xt = xticks;%(linspace((redCoorX-redCoorY)/2,(redCoorX-redCoorY)/2+redCoorY,offsetN*2));
@@ -213,13 +210,14 @@ for u = eNeuron
         end
     end
 
-    
     title(NeuronLayout, sprintf('Unit-%d',u));
+
     figRF.Position = [  0.2328125                     0.315                0.23515625                   0.38125];
     if params.meanAllNeurons
-        if params.overwrite,obj.printFig(figRF,sprintf('%s-%s-MovBall-RF-sep-%s-eNeuron-%d',...
-                obj.dataObj.recordingName,fieldName, strjoin(params.RFsDivision, '&'),u)),end
-
+        title(NeuronLayout,'MeanAllUnits');
+        if params.overwrite,obj.printFig(figRF,sprintf('%s-%s-MovBall-RF-sep-%s-Mean',...
+                obj.dataObj.recordingName,fieldName, strjoin(params.RFsDivision, '&'))),end
+        return
     end
     if params.noEyeMoves
        

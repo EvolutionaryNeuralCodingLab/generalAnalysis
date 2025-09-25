@@ -15,6 +15,7 @@ arguments (Input)
     params.delay = 250
     params.nShuffle = 20 %Number of shuffles to generate shuffled receptive fields. 
     params.testConvolution = false
+    params.reduceFactor = 20 %reduce factor for screen resolution
 end
 
 if params.inputParams,disp(params),return,end
@@ -52,6 +53,8 @@ if params.AllResponsiveNeurons
         fprintf('No responsive neurons.\n')
         return
     end
+end
+
 if params.exNeurons >0
     respU = params.exNeurons;
 end
@@ -268,8 +271,7 @@ else %%%%%%%%%%% Eye moves: %%%%%%%%%%%%%%%%%%%%%%
 
     coorRect = obj.VST.rect;%cell2mat(ball.VSMetaData.allPropVal(find(strcmp(ball.VSMetaData.allPropName,'rect'))));
 
-    reduceFactor = min([20 min(sizeV)]); %has to be bigger than the smallest ball size
-
+    reduceFactor = min([params.reduceFactor min(sizeV)]); %has to be bigger than the smallest ball size
     redCoorX = round(coorRect(3)/reduceFactor);
     redCoorY = round(coorRect(4)/reduceFactor);
 

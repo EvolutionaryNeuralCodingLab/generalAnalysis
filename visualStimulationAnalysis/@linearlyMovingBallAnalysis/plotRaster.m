@@ -24,7 +24,6 @@ C = NeuronResp.(fieldName).C;
 
 [C indexS] = sortrows(C,[2 6 3 4 5]);
 
-NeuronResp.(fieldName).NeuronVals
 
 directimesSorted = C(:,1)';
 goodU = NeuronResp.goodU;
@@ -119,6 +118,11 @@ for u = eNeuron
 
     end
 
+    if sum(Mr2,'all') ==0
+        close
+        continue
+    end
+
 
     subplot(20,1,[7 18]);
     imagesc(squeeze(Mr2).*(1000/params.bin));colormap(flipud(gray(64)));
@@ -190,7 +194,7 @@ for u = eNeuron
         window = 500;
     else
         [maxResp,maxRespIn]= max(NeuronResp.(fieldName).NeuronVals(u,:,1));
-        start = NeuronResp.(fieldName).NeuronVals(u,maxRespIn,3)*NeuronResp.params.binRaster-20;  
+        start = NeuronResp.(fieldName).NeuronVals(u,maxRespIn,3)*NeuronResp.params.bin-20;  
         window = 500;
     end
 
@@ -244,12 +248,8 @@ for u = eNeuron
     ylabel('Spikes/sec','FontSize',10);
     xlabel('Seconds','FontSize',10);
     xlim([0 round((stimDur+preBase*2)/100)*100])
-    try
+  
     ylim([0 max(psthRate)+std(psthRate)])
-    catch
-
-        2+2
-    end
 
     xticks([0 preBase:300:(stimDur+preBase*2) round((stimDur+preBase*2)/100)*100])
 
@@ -312,6 +312,10 @@ for u = eNeuron
     TrialM(TrialM~=0) = 0.3;
     spikes1 = TrialM(TrialNumber,:);
     spikeLoc = find(spikes1 >0);
+    if isempty(spikeLoc)
+        close
+        continue
+    end
     TrialM(TrialNumber,spikeLoc) = 1;
 
     %Select offset in which selected trial belongs (10 trials)
@@ -338,11 +342,11 @@ for u = eNeuron
 
     fig.Position = [680     5   296   9734];
 
-    if params.overwrite,obj.printFig(fig,sprintf('%s-%s-MovBall-SelectedTrials-eNeuron-%d',obj.dataObj.recordingName,fieldName,u)),end
+    if params.overwrite,obj.printFig(fig,sprintf('%s-%s-MovBall-SelectedTrials-eNeuron-%d',obj.dataObj.recordingName,fieldName,u)),close,end
 
     ur = ur+1;
 
-    close 
+    
 
 end %end eNeuron for loop
 

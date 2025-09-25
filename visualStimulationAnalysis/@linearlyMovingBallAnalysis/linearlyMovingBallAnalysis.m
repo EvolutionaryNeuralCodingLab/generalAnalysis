@@ -66,6 +66,11 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
             stimOn = DiodeCrossings.stimOnFlipTimes;
             stimOff = DiodeCrossings.stimOffFlipTimes;
 
+            if  ~isfield(obj.VST,'Luminosities')
+                obj.VST.Luminosities = zeros(1,numel(obj.VST.directions))+255;
+                
+            end
+
             A = [stimOn' obj.VST.directions' obj.VST.offsets' obj.VST.ballSizes' obj.VST.speeds' obj.VST.Luminosities'];
             [C indexS] = sortrows(A,[2 3 4 5]);
 
@@ -382,11 +387,3 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
     
     end %end Methods
 end %end clas
-
-        %%%1. Get Diode
-        %%%2. Create A Matrix.
-        %%%3. Load Kilos0rt and phy results.
-        %%%4. Create response matrix.
-%%%5. Create shuffling analysis
-%%%6. Create receptive field analysis with eyes moving.
-%%%7. Create receptive field analysis with eyes not moving. 

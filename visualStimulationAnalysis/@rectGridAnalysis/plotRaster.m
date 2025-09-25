@@ -10,9 +10,10 @@ arguments (Input)
     params.exNeurons = 1
     params.AllSomaticNeurons = false
     params.AllResponsiveNeurons = false
-    params.fixedWindow = false
+    params.fixedWindow = true
     params.MergeNtrials =1
     params.GaussianLength = 3
+    params.oneTrial = false
 end
 
 
@@ -92,8 +93,27 @@ for u = eNeuron
         mergeTrials =1;
     end
 
+     if params.fixedWindow  %%Select highest window stim type
+        j =1;
+        meanMr = zeros(1,nT/trialsPerCath);
+        for i = 1:trialsPerCath:nT
+            meanMr(j) = mean(Mr2(i:i+trialsPerCath-1,:),'all');
+            j = j+1;
+        end
+
+        [maxResp,maxRespIn]= max(meanMr);
+        %Figure paper
+        start = -50;
+        window = stimDur+100;
+    else
+        [maxResp,maxRespIn]= max(NeuronResp.NeuronVals(u,:,1));
+        start = NeuronResp.NeuronVals(u,maxRespIn,3)*NeuronResp.params.binRaster -20;
+        window = 500;
+     end
+
     [T,B] = size(Mr2);
     j=1;
+
     for i = 1:trialsPerCath/mergeTrials:T
         %Build raster
         M = Mr2(i:min(i+trialsPerCath/mergeTrials-1, end),:,:).*(1000/bin);
@@ -119,25 +139,69 @@ for u = eNeuron
 
         end
 
+        if j ==  maxRespIn
+
+            ylims = ylim;
+
+            xlims = xlim;
+            hold on
+            patch([xlims sort(xlims,'descend')],[ylims(1) ylims(1) ylims(2) ylims(2)],'b', 'FaceAlpha', 0.2, 'EdgeColor', 'k', 'LineWidth', 2)
+            hold off
+        end
+
         j = j+1;
     end
     fig = gcf;
     set(fig, 'Color', 'w');
-
     % Set the color of the figure and axes to black
     colorbar;
-    title(t,sprintf('Rect-GRid-raster-U%d-pval-%s',u,num2str(pvals(2,ur),'%.4f')))
+    title(t,sprintf('Rect-GRid-raster-U%d-PhyU-%dpval-%s',u,phy_IDg(u),num2str(pvals(2,ur),'%.4f')))
     ylabel(t,sprintf('%d trials',nTrials*mergeTrials))
     xlabel(t,'Time (ms)')
     fig.Position =  [147   270   662   446];%[147    58   994   658];
 
-    if params.overwrite,obj.printFig(fig,sprintf('%s-rect-GRid-raster-eNeuron-%d',obj.dataObj.recordingName,u)),end
+    %%Plot raw data
+
+    maxRespIn = maxRespIn-1;
+    trials = maxRespIn*trialsPerCath+1:maxRespIn*trialsPerCath + trialsPerCath;
+
+    chan = goodU(1,u);
+
+    startTimes = directimesSorted(trials)+start;
+
+    freq = "AP"; %or "LFP"
+
+    typeData = "line"; %or heatmap
+
+    fig2 = figure;
+    
+    spikes = squeeze(BuildBurstMatrix(goodU(:,u),round(p.t),round(startTimes),round((window))));
+    
+    if params.oneTrial
+        [mx ind] = max(sum(spikes,2)); %select trial with most spikes
+    else
+        ind = 1:size(spikes,1);
+    end
+
+    [fig2, mx, mn] = PlotRawDataNP(obj,fig = fig2,chan = chan, startTimes = startTimes(ind),...
+        window = window,spikeTimes = spikes(ind,:),multFactor =1.5, stdMult = 3);
+
+    xline(-start/1000,'LineWidth',1.5,Color="#77AC30")
+    xline((stimDur+abs(start))/1000,'LineWidth',1.5,Color="#0072BD")
+    xticks([0,abs(start)/1000:abs(start)/1000:obj.VST.stimDuration+abs(start*2)/1000+1])
+    xticklabels([start,0:abs(start):obj.VST.stimDuration*1000+abs(start*2)])
+    xlabel('Miliseconds')
+    yticks([])
+    ylabel('uV')
+    title(sprintf('U.%d-Unit-phy-%d-p-%d',u,phy_IDg(u),pvals(2,ur)));
+    fig2.Position =  [147   270   662   446];
+
+    if params.overwrite,obj.printFig(fig2,sprintf('%s-rect-GRid-rawData-raster-eNeuron-%d',obj.dataObj.recordingName,u)),close(fig2),end
+
+    if params.overwrite,obj.printFig(fig,sprintf('%s-rect-GRid-raster-eNeuron-%d',obj.dataObj.recordingName,u)),close(fig),end
     %prettify_plot
-    close
-
+    
     ur = ur+1;
-
-
 
 end %end eNeuron for loop
 
