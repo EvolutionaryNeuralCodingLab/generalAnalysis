@@ -3582,7 +3582,12 @@ classdef sleepAnalysis < recAnalysis
         %% getStimTrigger
         function stimTriggers = getStimTriggers(obj)
             % getStimTriggers - Load or generate stimulus trigger data
-          
+            %
+            % Syntax: stimTriggers = obj.getStimTriggers()
+            %
+            % This method checks for existing stimTrigger.mat file, or generates
+            % it from diode triggers or digital triggers if necessary.
+
             % 1. Define the stimTrigger file path
             stimTriggerPath = [obj.currentAnalysisFolder filesep 'stimTrigger.mat'];
 
@@ -3620,16 +3625,16 @@ classdef sleepAnalysis < recAnalysis
 
                 % Save as stimTrigger.mat
                 save(stimTriggerPath, 'stimTriggers');
-                % 
+
                 if nargout > 0
                     return;
                 end
+            end
 
             % 4. Check if stimDiodeCh is available
-            elseif isempty(diodeFiles) & ~isnan(obj.recTable.stimDiodeCh(obj.currentPRec))            
-               
+            if ~isnan(obj.recTable.stimDiodeCh(obj.currentPRec))
                 % Call getStimDiode method
-                stimTriggers = obj.getStimDiodeTrig();
+                stimTriggers = obj.getStimDiode();
 
                 % Save as stimTrigger.mat
                 save(stimTriggerPath, 'stimTriggers');
@@ -3637,14 +3642,13 @@ classdef sleepAnalysis < recAnalysis
                 if nargout > 0
                     return;
                 end
-            
-            % 5. Check if StimTrighCh is available 
-            elseif ~isnan(obj.recTable.StimTrighCh(obj.currentPRec))
+            end
+
+            % 5. Check if StimTrighCh is available (note: preserving your spelling)
+            if ~isnan(obj.recTable.StimTrighCh(obj.currentPRec))
                 % Call getDigitalTrigger method
-                stimCh =  obj.recTable.StimTrighCh(obj.currentPRec);
-                obj.getDigitalTriggers;
-                T = obj.getDigitalTriggers;
-                stimTriggers = T.tTrig{stimCh};
+                stimTriggers = obj.getDigitalTrigger();
+
                 % Save as stimTrigger.mat
                 save(stimTriggerPath, 'stimTriggers');
 
