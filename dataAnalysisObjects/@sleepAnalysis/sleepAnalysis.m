@@ -3580,14 +3580,16 @@ classdef sleepAnalysis < recAnalysis
         end
 
         %% getStimTrigger
-        function stimTriggers = getStimTriggers(obj)
+        function stimTriggers = getStimTriggers(obj,overwrite)
             % getStimTriggers - Load or generate stimulus trigger data
           
             % 1. Define the stimTrigger file path
             stimTriggerPath = [obj.currentAnalysisFolder filesep 'stimTrigger.mat'];
-
+             if nargin < 2
+                overwrite = 0;
+            end
             % 2. Check if stimTrigger.mat already exists
-            if exist(stimTriggerPath, 'file')
+            if exist(stimTriggerPath, 'file') && ~overwrite
                 if nargout > 0
                     % Load and return the existing file
                     data = load(stimTriggerPath);
@@ -3607,37 +3609,38 @@ classdef sleepAnalysis < recAnalysis
             % 3. Check for diodeTrigger_ch*.mat file
             diodeFiles = dir([obj.currentAnalysisFolder filesep 'diodeTrigger_ch*.mat']);
 
-            if ~isempty(diodeFiles)
-                % Load the first matching diodeTrigger file
-                diodeData = load([obj.currentAnalysisFolder filesep diodeFiles(1).name]);
+            if ~isnan(obj.recTable.stimDiodeCh(obj.currentPRec)) 
+                if ~isempty(diodeFiles) 
+                    % Load the first matching diodeTrigger file
+                    diodeData = load([obj.currentAnalysisFolder filesep diodeFiles(1).name]);
 
-                % Extract diodeTriggers variable
-                if isfield(diodeData, 'diodeTriggers')
-                    stimTriggers = diodeData.diodeTriggers;
-                else
-                    error('diodeTriggers variable not found in %s', diodeFiles(1).name);
-                end
+                    % Extract diodeTriggers variable
+                    if isfield(diodeData, 'diodeTriggers')
+                        stimTriggers = diodeData.diodeTriggers;
+                    else
+                        error('diodeTriggers variable not found in %s', diodeFiles(1).name);
+                    end
 
-                % Save as stimTrigger.mat
-                save(stimTriggerPath, 'stimTriggers');
-                % 
-                if nargout > 0
-                    return;
-                end
+                    % Save as stimTrigger.mat
+                    save(stimTriggerPath, 'stimTriggers');
 
-            % 4. Check if stimDiodeCh is available
-            elseif isempty(diodeFiles) & ~isnan(obj.recTable.stimDiodeCh(obj.currentPRec))            
-               
-                % Call getStimDiode method
-                stimTriggers = obj.getStimDiodeTrig();
+                    if nargout > 0
+                        return;
+                    end
+                    
+               % 4. Check if stimDiodeCh is available
+                elseif isempty(diodeFiles)
+    
+                          % Call getStimDiode method
+                          stimTriggers = obj.getStimDiodeTrig();
 
-                % Save as stimTrigger.mat
-                save(stimTriggerPath, 'stimTriggers');
+                          % Save as stimTrigger.mat
+                          save(stimTriggerPath, 'stimTriggers');
 
-                if nargout > 0
-                    return;
-                end
-            
+                          if nargout > 0
+                              return;
+                          end
+                      end 
             % 5. Check if StimTrighCh is available 
             elseif ~isnan(obj.recTable.StimTrighCh(obj.currentPRec))
                 % Call getDigitalTrigger method
