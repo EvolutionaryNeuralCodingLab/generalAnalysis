@@ -1505,12 +1505,10 @@ classdef sleepAnalysis < recAnalysis
                 digiTrigFile=[obj.currentAnalysisFolder filesep 'getDigitalTriggers.mat'];
                 obj.checkFileRecording(digiTrigFile,'digital trigger file missing, please first run getDigitalTriggers');
                 load(digiTrigFile); %load data
-                tFrames=tTrig{digitalVideoSyncCh};
             else 
                 camTrigFile=[obj.currentAnalysisFolder filesep 'camTrigs.mat'];
                 obj.checkFileRecording(camTrigFile,'camera trigger file missing, please first run getCameraTriggers');
                 load(camTrigFile)
-                tFrames = camTrigs;
 
             end
             dbRatioFile=[obj.currentAnalysisFolder filesep 'dbRatio_ch' num2str(ch) '.mat'];
@@ -1523,7 +1521,7 @@ classdef sleepAnalysis < recAnalysis
             
             %remove frames that are close to a ROI shift and frames with large shifts
             p2RemoveShifts=find(sqrt(diff(bboxCenterAll(:,1)).^2+diff(bboxCenterAll(:,2)).^2)>pixelMoveThresh)+1;
-            pFramesValid=round(pFrames);
+            pFramesValid=pFrames;
             validmOF=mOF;
             if ~isempty(pbboxUpdate) || ~isempty(p2RemoveShifts)
                 p2Remove=union(p2RemoveShifts,pbboxUpdate)';
@@ -1539,7 +1537,7 @@ classdef sleepAnalysis < recAnalysis
             end
 
             nFramesVideo=parEyeTracking.nFramesVideo;
-            % tFrames=tTrig{digitalVideoSyncCh};
+            tFrames=tTrig{digitalVideoSyncCh};
             diffFrames=abs(numel(tFrames)-round(nFramesVideo));
             if diffFrames==0
                 disp('Number of frames in video and in triggers is equal, proceeding with analysis');
@@ -1820,10 +1818,10 @@ classdef sleepAnalysis < recAnalysis
             if startTime~=0 % this is much faster!!!
                 videoReader.CurrentTime = startTime;
                 initFrame = rgb2gray(videoReader.readFrame);
-                startFrame = round(videoReader.FrameRate*videoReader.CurrentTime);
+                startFrame = videoReader.FrameRate*videoReader.CurrentTime;
             else
                 initFrame = rgb2gray(videoReader.readFrame);
-                startFrame = round(videoReader.FrameRate*videoReader.CurrentTime);
+                startFrame = videoReader.FrameRate*videoReader.CurrentTime;
             end
 
             if isempty(initialFrameSubregion) %to manually select region for extracting eye movements
