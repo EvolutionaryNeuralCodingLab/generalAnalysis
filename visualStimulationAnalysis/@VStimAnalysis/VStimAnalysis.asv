@@ -330,10 +330,14 @@ classdef (Abstract) VStimAnalysis < handle
                     end
 
                     trialDiodeFlips=cell(1,obj.VST.nTotTrials);
+                    
                     try
-                    diodeFrameFlipTimes=nan(size(obj.VST.flip));
+                        diodeFrameFlipTimes=nan(size(obj.VST.flip));
+                    catch
+                        obj.VST.flip = obj.VST.flipOnsetTimeStamp;
+                        diodeFrameFlipTimes=nan(size(obj.VST.flip));
+                    end
 
-                    catc
                     for i=1:obj.VST.nTotTrials
                         pFlips=~isnan(obj.VST.flip(i,:)); %not all trials have the same number of flips
                         currentDiodeFlipTimes=allDiodeFlips(pTrialStarts(i):pTrialEnds(i));
@@ -344,7 +348,7 @@ classdef (Abstract) VStimAnalysis < handle
                         frameMatch=numel(currentPCFlipTimes)-(numel(currentDiodeFlipTimes)+sum(pDelayed));
                         if frameMatch>=0 %all frames that were not present were missed
                             [in,p]=ismembertol(currentPCFlipTimes-currentPCFlipTimes(1),currentDiodeFlipTimes-currentDiodeFlipTimes(1),obj.VST.ifi*1000/2,'DataScale',1);
-                        elseif (frameMatch+sum(pDelayed))==0 %at least some of the frames were delayed in presentation and not just missed
+                        elseif (frameMatch+sum(pDelayed))==0 && ~isequal(obj.stimName,'StaticDriftingGrating')%at least some of the frames were delayed in presentation and not just missed
                             %look for a delay in diode flips which may explain a consistent delay
                             tmpDiode=currentDiodeFlipTimes+cumsum([zeros(1,-frameMatch) pDelayed])*(-obj.VST.ifi*1000);
                             [in,p]=ismembertol(currentPCFlipTimes-currentPCFlipTimes(1),tmpDiode-tmpDiode(1),obj.VST.ifi*1000/2,'DataScale',1);
@@ -692,7 +696,17 @@ classdef (Abstract) VStimAnalysis < handle
 
                             if isequal(obj.stimName,'StaticDriftingGrating') %Make sure there is only one start frame. 
                                 
-                                firstCross = min([DiodeCrosses{1,i},DiodeCrosses{2,i}]);
+                                [firstCross, idx]= min([DiodeCrosses{1,i}(1),DiodeCrosses{2,i}(1)]);
+
+                                if firstCross > t_msS(1) + trialOn(1) + (obj.VST.static_time*1000)/2 %Add first frame that might not be read brcsuse of no diode change
+                                    if idx ==1
+                                        DiodeCrosses{2,i} = [t_msS(1)+50 DiodeCrosses{2,i}];
+                                    else
+                                         DiodeCrosses{1,i} = [t_msS(1)+50 DiodeCrosses{1,i}];
+                                    end
+                                    [firstCross, idx]= min([DiodeCrosses{1,i}(1),DiodeCrosses{2,i}(1)]);
+                                end
+
                                 ups = DiodeCrosses{1,i};
                                 downs = DiodeCrosses{2,i};
                                 ups = ups(ups == firstCross | ups>firstCross+obj.VST.static_time*1000*0.9);
@@ -721,6 +735,7 @@ classdef (Abstract) VStimAnalysis < handle
                         hold on;xline((DiodeCrosses{1,i} - trialOn(i))*(obj.dataObj.samplingFrequencyNI/1000))
                         xline((DiodeCrosses{2,i}  - trialOn(i))*(obj.dataObj.samplingFrequencyNI/1000),'r')
                         yline(Th)
+                        hold on;xline((upTimes-trialOn(i))*(obj.dataObj.samplingFrequencyNI/1000));xline((t_msS(1)- + 50)*(obj.dataObj.samplingFrequencyNI/1000))
                         % %xline((trialOff(i)-trialOn(1))*(obj.dataObj.samplingFrequencyNI/1000),'b')
                         % figure;plot(1:length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i})-1,diff(sort([DiodeCrosses{1,i} DiodeCrosses{2,i}])))
                     else
