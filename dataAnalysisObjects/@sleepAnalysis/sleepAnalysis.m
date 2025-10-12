@@ -3731,28 +3731,7 @@ classdef sleepAnalysis < recAnalysis
             true_ind = (prev<=minimal_diff) | (next<=minimal_diff);
             valid_Ind = all_valid_trans_ind(true_ind);
             
-           
-           %  maxDiff = 125000;
-           %  t_diff = diff(trigTimes);
-           %  firstBigDiff = find(t_diff>maxDiff);
-           %  if ~isempty(firstBigDiff)
-           % 
-           %      if any(firstBigDiff<8)
-           %          thisBigdiff = firstBigDiff<8;
-           %          diodeTriggers = trigTimes(firstBigDiff(1)+1:end);
-           %      elseif any(firstBigDiff>8)
-           %          diodeTriggers = trigTimes(1:firstBigDiff(1));
-           %      end
-           %  else
-           %      diodeTriggers = trigTimes;
-           %  end
-           % 
-           % % 
-           %  % if nargout==1
-           %  %     diodeTriggers=load(obj.files.diodeTrigger);
-           %  % end
-
-           trigTimes = d_ms(valid_Ind);
+            trigTimes = d_ms(valid_Ind);
            maxDiff = 125000;
            t_diff = diff(trigTimes);
 
@@ -3792,6 +3771,60 @@ classdef sleepAnalysis < recAnalysis
            
             
             save(obj.files.diodeTrigger,'diodeTriggers','parTrigger');
+        end
+
+        %% getCameraTriggers
+        function camTrigs = getCameraTriggers(obj,stop_len)
+            %Extract triggers fron event channel, only for the times
+            %between 2 triggers stops of above 1 sec.
+            % It calls the regular getTiggers, and add another selection
+            % for the relavnt triggers.
+             
+            if nargin < 2 
+                stop_len = 5000; % assuming that in Reptilearn the stop in the triggers are ~8000 ms.
+            end
+            trigCh = obj.recTable.camTriggerCh(obj.currentPRec);
+            T = obj.getDigitalTriggers;
+            trig = T.tTrig{trigCh}; % might change according to connections to the aquisition board.
+
+            edges = find(diff(trig)>stop_len);
+            if length(edges) == 2
+                camTrigs = trig(edges(1)+1:edges(2)); % only the triggers between stops.
+            elseif length(edges) >= 3
+                disp('more than 2 stops in triggers, taking the triggers between the largest gaps.')
+
+                maxD = find(max(diff(edges)));
+                camTrigs = trig(edges(maxD)+1:edges(maxD+1));
+
+                %camTrigs = trig(edges(1)+1:edges(2)+1); % only the triggers between stops.
+            elseif length(edges)==1
+                disp('only 1 stop in triggers, check recording integrity.')
+            end  
+        
+            % check for too small diffs (happened for night recordings in
+            % recorded in summer 2025in RL3). 
+            % Here, the problem is specificaly "extra" triggers between 2
+            % real frames, creating triggers after 12 and then 5 ms (30
+            % fps). generaly, if there aren't any extra triggers this
+            % should nt matter. can be put in "if" in case of problems. 
+            
+            dt = diff(camTrigs);% Step 1: check small diffs
+            thresh = 15; % 15 ms between frames. the camera can't go bellow that. 
+            badIdx = find(dt < thresh);   % indices of bad diffs
+            if ~isempty(badIdx)
+                isStart = [false, diff(badIdx) == 1]; % Step 2: detect cluster starts
+                keeps = find(diff(isStart)==0);% Step 3: keep the indx if it have 1 before and after
+                keeps2 = reshape(keeps,2,length(keeps)/2);
+                real_keeps = keeps2(2,:);
+                isStart(real_keeps)=0;
+                removeIdx = badIdx(isStart);
+                camTrigs(removeIdx) = [];% Step 4: clean timings
+            end
+
+            % saveTriggers:
+            filename = [obj.currentAnalysisFolder filesep 'camTrigs.mat'];
+            save(filename,'camTrigs','-mat');
+
         end
 
         %% plotDelta2BetaRatio
