@@ -266,10 +266,10 @@ if forloop
         spkDiff_FFF = max(rwFFF.NeuronVals(:,:,4),[],2);
 
         %Load stats of SDG moving
-        zScores_SDGm = statsSDG.ZScoreU;
-        pValuesSDGm = statsSDG.pvalsResponse;
-        spkR_SDGm = max(rwSDG.NeuronVals(:,:,1),[],2);
-        spkDiff_SDGm = max(rwSDG.NeuronVals(:,:,4),[],2);
+        zScores_SDGm = statsSDG.Moving.ZScoreU;
+        pValuesSDGm = statsSDG.Moving.pvalsResponse;
+        spkR_SDGm = max(rwSDG.Moving.NeuronVals(:,:,1),[],2);
+        spkDiff_SDGm = max(rwSDG.Moving.NeuronVals(:,:,4),[],2);
 
         %Load stats of SDG static
         zScores_SDGs = statsSDG.ZScoreU;
