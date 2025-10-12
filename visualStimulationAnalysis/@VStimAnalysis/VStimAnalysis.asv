@@ -330,14 +330,10 @@ classdef (Abstract) VStimAnalysis < handle
                     end
 
                     trialDiodeFlips=cell(1,obj.VST.nTotTrials);
-                    
                     try
-                        diodeFrameFlipTimes=nan(size(obj.VST.flip));
-                    catch
-                        obj.VST.flip = obj.VST.flipOnsetTimeStamp;
-                        diodeFrameFlipTimes=nan(size(obj.VST.flip));
-                    end
+                    diodeFrameFlipTimes=nan(size(obj.VST.flip));
 
+                    catc
                     for i=1:obj.VST.nTotTrials
                         pFlips=~isnan(obj.VST.flip(i,:)); %not all trials have the same number of flips
                         currentDiodeFlipTimes=allDiodeFlips(pTrialStarts(i):pTrialEnds(i));

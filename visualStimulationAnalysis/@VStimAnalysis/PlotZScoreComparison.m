@@ -7,17 +7,16 @@ arguments
     params.threshold = 0.005;
     params.diffResp = false;
     params.overwrite = false;
-    % params.MBRpresent = true;
-    % params.SDGpresent = false;
-    % params.FFFpresent = false;
+    params.StimsPresent = {'MB'}; %assumes that at list moving ball is present
+    params.StimsNotPresent = {};
 end
 
 % Compare z-scores and p-values between moving ball and rect grid analyses
 
 animal = 0;
 animalVector = cell(1,numel(expList));
-zScoresMBall = cell(1,numel(expList));
-zScoresRGall = cell(1,numel(expList));
+zScoresMB = cell(1,numel(expList));
+zScoresRG = cell(1,numel(expList));
 spKrMB = cell(1,numel(expList));
 spKrRG = cell(1,numel(expList));
 diffSpkMB = cell(1,numel(expList));
@@ -34,7 +33,7 @@ diffSpkFFF = cell(1,numel(expList));
 diffSpkSDGm = cell(1,numel(expList));
 
 zScoresNI = cell(1,numel(expList));
-zScoresNV = cell(1,numel(expList));
+% zScoresNV = cell(1,numel(expList));
 spKrNI = cell(1,numel(expList));
 spKrNV = cell(1,numel(expList));
 diffSpkNI = cell(1,numel(expList));
@@ -51,7 +50,7 @@ vs.ResponseWindow;
 MBvs = vs.ResponseWindow;
 %%%
 
-
+nameOfFile = sprintf('\\Ex_%d-%d_Combined_Neural_responses_%s_filtered.mat',expList(1),expList(end),Stims2Comp{1});
 p = extractBefore(vs.getAnalysisFileName,'lizards');
 p = [p 'lizards'];
 
@@ -61,9 +60,9 @@ if ~exist([p '\Combined_lizard_analysis'],'dir')
 end
 saveDir = [p '\Combined_lizard_analysis'];
 
-if exist(saveDir,'dir') && ~params.overwrite 
+if exist([saveDir nameOfFile],'file') == 2 && ~params.overwrite 
 
-    S = load([saveDir '\Combined_Neural_responses.mat']);
+    S = load([saveDir nameOfFile]);
 
     expList2 = S.expList;
 
@@ -72,15 +71,15 @@ if exist(saveDir,'dir') && ~params.overwrite
         spKrMB = S.spKrMB;
         spKrRG = S.spKrRG;
         diffSpkMB = S.diffSpkMB;
-        diffSpkRG = S.spKrdiffSpkRGMB;
+        diffSpkRG = S.diffSpkRG;
         animalVector = S.animalVector;
-        zScoresMBall = S.zScoresMBall;
-        zScoresRGall = S.zScoresRGall;
+        zScoresMB = S.zScoresMB;
+        zScoresRG = S.zScoresRG;
 
         if isfield(S,'spKrMBR')
             spKrMBR = S.spKrMBR;
             diffSpkMBR = S.diffSpkMBR;
-            zScoresMBar = S.zScoresMBar;
+            zScoresMBR = S.zScoresMBR;
         end
 
         if isfield(S,'spKrSDGm')
@@ -127,40 +126,55 @@ if forloop
         vsR = rectGridAnalysis(NP);
         try
             vsBr = linearlyMovingBarAnalysis(NP);
+            params.StimsPresent{3} = 'MBR';
         catch
-            MBRpresent = false;
+            params.StimsPresent{3} = '';
             fprintf('Moving Bar stimulus not found.\n')
-            vsBr = linearlyMovingBallAnalysis(NP); %use moving ball here to avoid puting lots of ifs.
+            vsBr = linearlyMovingBallAnalysis(NP); %use rectGrid here to avoid puting lots of ifs.
         end
         try
             vsG = StaticDriftingGratings(NP);
+            params.StimsPresent{4} = 'SDG';
         catch
-            vsGpresent = false;
+           params.StimsPresent{4} = '';
             fprintf('Gratings stimulus not found.\n')
-            vsG = linearlyMovingBallAnalysis(NP); %use moving ball here to avoid puting lots of ifs.
+            vsG = rectGridAnalysis(NP); %use rectGrid here to avoid puting lots of ifs.
         end
         try
             vsNI = NaturalImage(NP);
+            params.StimsPresent{5} = 'NI';
         catch
-            vsGpresent = false;
+            params.StimsPresent{5} = '';
             fprintf('Natural images stimulus not found.\n')
-            vsG = linearlyMovingBallAnalysis(NP); %use moving ball here to avoid puting lots of ifs.
+            vsNI = rectGridAnalysis(NP); %use rectGrid here to avoid puting lots of ifs.
         end
         try
             vsNV = NaturalVideo(NP);
+            params.StimsPresent{6} = 'NV';
         catch
-            vsGpresent = false;
+            params.StimsPresent{6} = '';
             fprintf('Natural video stimulus not found.\n')
-            vsG = linearlyMovingBallAnalysis(NP); %use moving ball here to avoid puting lots of ifs.
+            vsNV = rectGridAnalysis(NP); %use rectGrid here to avoid puting lots of ifs.
         end
+
+        try
+            vsFFF = FullFieldFlashAnalysis(NP);
+            params.StimsPresent{7} = 'FFF';
+        catch
+            params.StimsPresent{7} = '';
+            fprintf('FFF stimulus not found.\n')
+            vsFFF = rectGridAnalysis(NP); %use moving ball here to avoid puting lots of ifs.
+        end
+        
 
         %%Load pvals and zscore from rect grid and moving ball
         vs.ResponseWindow;
         vsR.ResponseWindow;
-        sBr.ResponseWindow;
-        sG.ResponseWindow;
-        sNI.ResponseWindow;
-        sNV.ResponseWindow;
+        vsBr.ResponseWindow;
+        vsG.ResponseWindow;
+        vsNI.ResponseWindow;
+        vsNV.ResponseWindow;
+        vsFFF.ResponseWindow;
 
         try
             statsMB = vs.ShufflingAnalysis;
@@ -191,6 +205,14 @@ if forloop
         end
 
         try
+            statsFFF = vsFFF.ShufflingAnalysis;
+        catch
+            vsFFF.ShufflingAnalysis;
+            statsFFF =  vsFFF.ShufflingAnalysis;
+        end
+
+
+        try
             statsNI = vsNI.ShufflingAnalysis;
         catch
             vsNI.ShufflingAnalysis;
@@ -207,75 +229,106 @@ if forloop
         rwRG = vsR.ResponseWindow;
         rwMB = vs.ResponseWindow;
         rwMBR = vsBr.ResponseWindow;
-        rwSDG = sG.ResponseWindow;
-        rwNI = NI.ResponseWindow;
-        rwNV = NV.ResponseWindow;
+        rwFFF = vsFFF.ResponseWindow;
+        rwSDG = vsG.ResponseWindow;
+        rwNI = vsNI.ResponseWindow;
+        rwNV = vsNV.ResponseWindow;
 
         %Load stats of Moving Ball, select fastest speed if there are several
-        zScoresMB = statsMB.Speed1.ZScoreU;
+        zScores_MB = statsMB.Speed1.ZScoreU;
         pValuesMB = statsMB.Speed1.pvalsResponse;
         spkR_MB = max(rwMB.Speed1.NeuronVals(:,:,1),[],2);
         spkDiff_MB = max(rwMB.Speed1.NeuronVals(:,:,4),[],2);
 
         if isfield(statsMB, 'Speed2') %If
-            zScoresMB = statsMB.Speed2.ZScoreU;
+            zScores_MB = statsMB.Speed2.ZScoreU;
             pValuesMB = statsMB.Speed2.pvalsResponse;
             spkR_MB = max(rwMB.Speed2.NeuronVals(:,:,1),[],2);
             spkDiff_MB = max(rwMB.Speed2.NeuronVals(:,:,4),[],2);
         end
 
         %Load stats of Rect Grid.
-        zScoresRG = statsRG.ZScoreU;
+        zScores_RG = statsRG.ZScoreU;
         pValuesRG = statsRG.pvalsResponse;
         spkR_RG = max(rwRG.NeuronVals(:,:,1),[],2);
         spkDiff_RG = max(rwRG.NeuronVals(:,:,4),[],2);
 
+        %Load stats of Moving bar.
+        zScores_MBR = statsMBR.Speed1.ZScoreU;
+        pValuesMBR = statsMBR.Speed1.pvalsResponse;
+        spkR_MBR = max(rwMBR.Speed1.NeuronVals(:,:,1),[],2);
+        spkDiff_MBR = max(rwMBR.Speed1.NeuronVals(:,:,4),[],2);
 
-        %Load stats of Rect Grid.
-        zScoresMBR = statsMBR.ZScoreU;
-        pValuesMBR = statsMBR.pvalsResponse;
-        spkR_MBR = max(rwMBR.NeuronVals(:,:,1),[],2);
-        spkDiff_MBR = max(rwMBR.NeuronVals(:,:,4),[],2);
+        %Load stats of FFF
+        zScores_FFF = statsFFF.ZScoreU;
+        pValuesFFF = statsFFF.pvalsResponse;
+        spkR_FFF = max(rwFFF.NeuronVals(:,:,1),[],2);
+        spkDiff_FFF = max(rwFFF.NeuronVals(:,:,4),[],2);
 
-        if strcmp(Stims2Comp{1}, 'MB') %%Check if MB goes first, if so select responsive units to MB
-            zScoresMB = zScoresMB(pValuesMB<=params.threshold);
-            spkR_MB =  spkR_MB(pValuesMB<=params.threshold);
-            spkDiff_MB =  spkDiff_MB(pValuesMB<=params.threshold);
+        %Load stats of SDG moving
+        zScores_SDGm = statsSDG.ZScoreU;
+        pValuesSDGm = statsSDG.pvalsResponse;
+        spkR_SDGm = max(rwSDG.NeuronVals(:,:,1),[],2);
+        spkDiff_SDGm = max(rwSDG.NeuronVals(:,:,4),[],2);
 
-            zScoresRG = zScoresRG(pValuesMB<=params.threshold);
-            spkR_RG = spkR_RG(pValuesMB<=params.threshold);
-            spkDiff_RG = spkDiff_RG(pValuesMB<=params.threshold);
+        %Load stats of SDG static
+        zScores_SDGs = statsSDG.ZScoreU;
+        pValuesSDGs = statsSDG.pvalsResponse;
+        spkR_SDGs = max(rwSDG.NeuronVals(:,:,1),[],2);
+        spkDiff_SDGs = max(rwSDG.NeuronVals(:,:,4),[],2);
 
-            zScoresMBR = zScoresMBR(pValuesMB<=params.threshold);
-            spkR_MBR = spkR_MBR(pValuesMB<=params.threshold);
-            spkDiff_MBR = spkDiff_MBR(pValuesMB<=params.threshold);
 
-        elseif strcmp(Stims2Comp{1}, 'RG')
-            zScoresMB = zScoresMB(pValuesRG<=params.threshold);
-            spkR_MB =  spkR_MB(pValuesRG<=params.threshold);
-            spkDiff_MB =  spkDiff_MB(pValuesRG<=params.threshold);
+        %Load stats of SDG moving
+        zScores_NI = statsNI.ZScoreU;
+        pValuesNI = statsNI.pvalsResponse;
+        spkR_NI = max(rwNI.NeuronVals(:,:,1),[],2);
+        spkDiff_NI = max(rwNI.NeuronVals(:,:,4),[],2);
 
-            zScoresRG = zScoresRG(pValuesRG<=params.threshold);
-            spkR_RG = spkR_RG(pValuesRG<=params.threshold);
-            spkDiff_RG = spkDiff_RG(pValuesRG<=params.threshold);
+        %Load stats of SDG static
+        zScores_NV = statsNV.ZScoreU;
+        pValuesNV = statsNV.pvalsResponse;
+        spkR_NV = max(rwNV.NeuronVals(:,:,1),[],2);
+        spkDiff_NV = max(rwNV.NeuronVals(:,:,4),[],2);
 
-            zScoresMBR = zScoresMBR(pValuesRG<=params.threshold);
-            spkR_MBR = spkR_MBR(pValuesRG<=params.threshold);
-            spkDiff_MBR = spkDiff_MBR(pValuesRG<=params.threshold);
+        pvals = {'pValuesMB','pValuesRG','pValuesMBR','pValuesFFF','pValuesSDGm','pValuesSDGs','pValuesNI','pValuesNV'...
+            ;pValuesMB,pValuesRG,pValuesMBR,pValuesFFF,pValuesSDGm,pValuesSDGs,pValuesNI,pValuesNV};
 
-        elseif strcmp(Stims2Comp{1}, 'MBR')
-            zScoresMB = zScoresMB(pValuesMBR<=params.threshold);
-            spkR_MB =  spkR_MB(pValuesMBR<=params.threshold);
-            spkDiff_MB =  spkDiff_MB(pValuesMBR<=params.threshold);
+        [row, col] = find(cellfun(@(x) ischar(x) && endsWith(x, Stims2Comp{1}), pvals));
 
-            zScoresRG = zScoresRG(pValuesMBR<=params.threshold);
-            spkR_RG = spkR_RG(pValuesMBR<=params.threshold);
-            spkDiff_RG = spkDiff_RG(pValuesMBR<=params.threshold);
+        pvalsStimSelected = pvals{2,col};
 
-            zScoresMBR = zScoresMBR(pValuesMBR<=params.threshold);
-            spkR_MBR = spkR_MBR(pValuesMBR<=params.threshold);
-            spkDiff_MBR = spkDiff_MBR(pValuesMBR<=params.threshold);
-        end
+
+        zScores_MB = zScores_MB(pvalsStimSelected<=params.threshold);
+        spkR_MB =  spkR_MB(pvalsStimSelected<=params.threshold);
+        spkDiff_MB =  spkDiff_MB(pvalsStimSelected<=params.threshold);
+
+        zScores_RG = zScores_RG(pvalsStimSelected<=params.threshold);
+        spkR_RG = spkR_RG(pvalsStimSelected<=params.threshold);
+        spkDiff_RG = spkDiff_RG(pvalsStimSelected<=params.threshold);
+
+        zScores_MBR = zScores_MBR(pvalsStimSelected<=params.threshold);
+        spkR_MBR = spkR_MBR(pvalsStimSelected<=params.threshold);
+        spkDiff_MBR = spkDiff_MBR(pvalsStimSelected<=params.threshold);
+
+        zScores_SDGm = zScores_SDGm(pvalsStimSelected<=params.threshold);
+        spkR_SDGm = spkR_SDGm(pvalsStimSelected<=params.threshold);
+        spkDiff_SDGm = spkDiff_SDGm(pvalsStimSelected<=params.threshold);
+
+        zScores_SDGs = zScores_SDGs(pvalsStimSelected<=params.threshold);
+        spkR_SDGs = spkR_SDGs(pvalsStimSelected<=params.threshold);
+        spkDiff_SDGs = spkDiff_SDGs(pvalsStimSelected<=params.threshold);
+
+        zScores_FFF = zScores_FFF(pvalsStimSelected<=params.threshold);
+        spkR_FFF = spkR_FFF(pvalsStimSelected<=params.threshold);
+        spkDiff_FFF = spkDiff_FFF(pvalsStimSelected<=params.threshold);
+
+        zScores_NI= zScores_NI(pvalsStimSelected<=params.threshold);
+        spkR_NI = spkR_NI(pvalsStimSelected<=params.threshold);
+        spkDiff_NI = spkDiff_NI(pvalsStimSelected<=params.threshold);
+
+        zScores_NV = zScores_NV(pvalsStimSelected<=params.threshold);
+        spkR_NV = spkR_NV(pvalsStimSelected<=params.threshold);
+        spkDiff_NV = spkDiff_NV(pvalsStimSelected<=params.threshold);
 
         %Check animal name
         Animal = string(regexp( vs.getAnalysisFileName, 'PV\d+', 'match', 'once'));
@@ -286,20 +339,38 @@ if forloop
             AnimalI = Animal;
         end
 
-        animalVector{j} = repmat(animal,[1, numel(zScoresMB)]);
-        zScoresMBall{j} = zScoresMB;
-        zScoresRGall{j} = zScoresRG;
+        animalVector{j} = repmat(animal,[1, numel(zScores_MB)]);
+        zScoresMB{j} = zScores_MB;
+        zScoresRG{j} = zScores_RG;
 
         spKrMB{j} = spkR_MB';
         spKrRG{j} = spkR_RG';
         diffSpkMB{j} = spkDiff_MB;
         diffSpkRG{j} = spkDiff_RG;
 
-        zScoresMBR{j} = zScoresMBR;
+        zScoresFFF{j} = zScores_FFF;
+        spKrFFF{j} = spkR_FFF';
+        diffSpkFFF{j} = spkDiff_FFF;
+
+        zScoresMBR{j} = zScores_MBR;
         spKrMBR{j} = spkR_MBR';
         diffSpkMBR{j} = spkDiff_MBR;
 
+        zScoresSDGm{j} = zScores_SDGm;
+        spKrSDGm{j} = spkR_SDGm';
+        diffSpkSDGm{j} = spkDiff_SDGm;
 
+        zScoresSDGs{j} = zScores_SDGs;
+        spKrSDGs{j} = spkR_SDGs';
+        diffSpkSDGs{j} = spkDiff_SDGs;
+
+        zScoresNI{j} = zScores_NI;
+        spKrNI{j} = spkR_NI';
+        diffSpkNI{j} = spkDiff_NI;
+
+        zScoresNV{j} = zScores_NV;
+        spKrNV{j} = spkR_NV';
+        diffSpkNV{j} = spkDiff_NV;
         % Create a figure for comparison
 
         j = j +1;
@@ -310,8 +381,8 @@ if forloop
     S.spKrRG = spKrRG;
     S.diffSpkMB = diffSpkMB;
     S.diffSpkRG = diffSpkRG;
-    S.zScoresMBall =zScoresMBall;
-    S.zScoresRGall = zScoresRGall;
+    S.zScoresMB =zScoresMB;
+    S.zScoresRG = zScoresRG;
     S.expList = expList;
     S.animalVector = animalVector;
     S.params = params;
@@ -337,54 +408,85 @@ if forloop
     S.zScoresNI =zScoresNI;
     S.zScoresNV = zScoresNV;
 
-    save([saveDir '\Combined_Neural_responses.mat'],'-struct', 'S');
+    S.expList = expList;
+    S.params = params;
+
+    save([saveDir nameOfFile],'-struct', 'S');
 end
 
 fig=figure;
 
 tiledlayout(2,2,"TileSpacing","compact");
 
-MB = cell2mat(zScoresMBall)';
-RG = cell2mat(zScoresRGall)';
+fn = fieldnames(S);
+StimZS = cell(numel(Stims2Comp),1);
+stimRSP = cell(numel(Stims2Comp),1);
+
+x = [];
+
+for i = 1:numel(Stims2Comp)
+
+    ending = Stims2Comp{i};
+    pattern = ['^zS.*' ending '$'];
+    matches = fn(~cellfun('isempty', regexp(fn, pattern)));
+
+    StimZS{i} = cell2mat(S.(matches{1}))';
+
+    if  ~params.diffResp
+        pattern = ['^spKr.*' ending '$'];
+    else
+        pattern = ['^diffSpk.*' ending '$'];
+    end
+    
+    matches = fn(~cellfun('isempty', regexp(fn, pattern)));
+    stimRSP{i} = cell2mat(S.(matches{1}))';
+
+    x = [x;ones(size(cell2mat(S.(matches{1}))'))*i];
+
+end
+% 
+% MB = cell2mat(zScoresMB)';
+% RG = cell2mat(zScoresRG)';
 AnIndex = cell2mat(animalVector)';
-colormapUsed = parula(max(AnIndex)).*0.8;
+colormapUsed = parula(max(AnIndex)).*0.6;
 
 % eMB = cell2mat(EntropMB);
 % eRG = cell2mat(EntropRG);
 
 %y =log10([MB; RG; SDGm; SDGs; MB-RG; MB-SDGm; MB-SDGs]);
 
-y =([MB; RG; MB-RG]);
+%y =([MB; RG; MB-RG]);
+y = cell2mat(StimZS);
 
+y = cell2mat(stimRSP);
 
-x =[];
-% Combine data
-for i =1:length(y)/length(MB)
-    x = [x;ones(size(MB))*i];
-end
+% x =[];
+% % Combine data
+% for i =1:length(y)/length(MB)
+%     x = [x;ones(size(MB))*i];
+% end
 
 % Combine all color indices
-allColorIndices = repmat(AnIndex,length(y)/length(MB),1);
+allColorIndices = repmat(AnIndex,numel(Stims2Comp),1);
 
 % ---- Swarmchart (Larger Left Subplot) ----
 nexttile % Takes most of the space
 swarmchart(x, y, 5, [colormapUsed(allColorIndices,:)], 'filled','MarkerFaceAlpha',0.7); % Marker size 50
 xticks(1:7);
-xticklabels({'MB', 'SB', 'MB-SB'});
-ylabel('Z-score');
+xticklabels(Stims2Comp);
+ylabel('SpikeRate');
 set(fig,'Color','w')
 %set(gca, 'YScale', 'log')
 yline([0],'LineWidth',2)
-ylim([-5 30])
-
+ylim([-5 40])
 
 
 nexttile
-scatter(MB,RG,10,AnIndex,"filled","MarkerFaceAlpha",0.5)
+scatter(StimZS{1},StimZS{2},10,AnIndex,"filled","MarkerFaceAlpha",0.5)
 colormap(colormapUsed)
 hold on
 axis equal
-lims = [-5 50];
+lims = [0 40];
 plot(lims, lims, 'k--', 'LineWidth', 1.5)
 ylim(lims)
 xlim(lims)
