@@ -1,4 +1,4 @@
-classdef linearlyMovingBallAnalysis < VStimAnalysis
+classdef StaticDriftingGratingAnalysis < VStimAnalysis
 
     properties
         Session
@@ -10,7 +10,7 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
 
     methods (Hidden)
         %class constructor - name of class should be identical to the visual stimulation with the addition of Analysis
-        function [obj] = linearlyMovingBallAnalysis(dataObj,params)
+        function [obj] = StaticDriftingGratingAnalysis(dataObj,params)
             arguments (Input) %ResponseWindow.mat
                 dataObj
                 params.Session = 1;
@@ -25,6 +25,11 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
     end
 
     methods
+
+        plotSpatialTuningLFP(obj,params)
+        plotSpatialTuningSpikes(obj,params)
+        result = getCorrSpikePattern(obj,varargin)
+
         % function results = setUpAnalysis(obj, params)
         function results = ResponseWindow(obj, params)
             arguments (Input)
@@ -61,30 +66,28 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
             stimOn = DiodeCrossings.stimOnFlipTimes;
             stimOff = DiodeCrossings.stimOffFlipTimes;
 
-            if  ~isfield(obj.VST,'Luminosities')
-                obj.VST.Luminosities = zeros(1,numel(obj.VST.directions))+255;
-                
-            end
+            A = [stimOn' obj.VST.angleSequence' obj.VST.tfSequence' obj.VST.sfSequence'];
+            [C indexS] = sortrows(A,[2 3 4]);
 
-            A = [stimOn' obj.VST.directions' obj.VST.offsets' obj.VST.ballSizes' obj.VST.speeds' obj.VST.Luminosities'];
-            [C indexS] = sortrows(A,[2 3 4 5]);
-
-            B = [stimOff' obj.VST.directions' obj.VST.offsets' obj.VST.ballSizes' obj.VST.speeds' obj.VST.Luminosities'];
-            [Coff indexSo] = sortrows(B,[2 3 4 5]);
+            B = [stimOff' obj.VST.angleSequence' obj.VST.tfSequence' obj.VST.sfSequence'];
+            [Coff indexSo] = sortrows(B,[2 3 4]);
 
             stimInter = obj.VST.interTrialDelay*1000;
+            StaticTime = obj.VST.static_time*1000;
 
-            speeds = sort(unique(A(:,5)));
+            stimDur = round(mean(-stimOn+stimOff));
 
-            x = length(speeds);
-
-            % Generate field names for each unique speed
-            topFields = arrayfun(@(n) sprintf('Speed%d', n), 1:x, 'UniformOutput', false);
+            % Generate field names for static and moving
+            topFields = {'Static','Moving'};
 
             % Initialize each as an empty struct with subfields
-            subFields = {'NeuronVals','C','Coff','stimDur'};  % subfield names
+            subFields = {'NeuronVals','stimDur'};  % subfield names
             emptySubStruct = cell2struct(cell(1, numel(subFields)), subFields, 2);
-            S = cell2struct(repmat({emptySubStruct}, 1, x), topFields, 2);
+            S = cell2struct(repmat({emptySubStruct}, 1, 2), topFields, 2);
+
+
+            Onsets = [C(:,1), C(:,1) + StaticTime];
+            Offsets = [B(:,1)-(stimDur-StaticTime), B(:,1)];
 
             preBase = round(stimInter-params.preBase);
             % Load Kilosort and phy results
@@ -92,44 +95,34 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
             label = string(p.label');
             goodU = p.ic(:,label == 'good');
 
-            for s = 1:x %iterate among unique speeds
+            for s = 1:2 %iterate among unique speeds
 
-                fieldName = sprintf('Speed%d', s);
+                fieldName = topFields{s};
 
-                %Select maximum speed
-                At =  A(A(:,5) ==speeds(s),:);
-
-                Bt =  B(B(:,5) ==speeds(s),:);
-
-                [C indexS] = sortrows(At,[2 6 3 4 5]); %2 6 3 4 5
-
-                [Coff indexSo] = sortrows(Bt,[2 6 3 4 5]);
-
-                stimOnT = At(:,1);
-                stimOffT = Bt(:,1);
+                stimOnT = Onsets(:,s);
+                stimOffT = Offsets(:,s);
                
                 stimDur = mean(-stimOnT+stimOffT);
 
                 %4. Sort directions:
-                directimesSorted = C(:,1)';
-                Mr = BuildBurstMatrix(goodU,round(p.t/params.binRaster),round(directimesSorted/params.binRaster),round((stimDur+ params.durationWindow)/params.binRaster)); %response matrix
+                directimesSorted = stimOnT';
+                Mr = BuildBurstMatrix(goodU,round(p.t/params.binRaster),round(directimesSorted/params.binRaster),round((stimDur)/params.binRaster)); %response matrix
                 [MrC]=ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
 
                 [nT,nN,nB] = size(Mr);
 
                 window_size = [1, round(params.durationWindow/params.binRaster)];
-                trialDivision = numel(directimesSorted)/numel(unique(C(:,2)))/numel(unique(C(:,3)))/numel(unique(C(:,4)))...
-                    /numel(unique(C(:,5)))/numel(unique(C(:,6)));
+                trialDivision = numel(directimesSorted)/numel(unique(C(:,2)));%/numel(unique(C(:,3)))/numel(unique(C(:,4)));
 
                 %5. Initialize the maximum mean value and its position
                 max_position = zeros(nN,2);
                 max_mean_value = zeros(1,nN);
                 max_mean_valueB = zeros(1,nN);
-                NeuronVals = zeros(nN,nT/trialDivision,9);
+                NeuronVals = zeros(nN,nT/trialDivision,7);
 
                 %Baseline = size window
 
-                [Mbd] = BuildBurstMatrix(goodU,round(p.t/params.binRaster),round((directimesSorted-preBase)/params.binRaster),round(preBase/params.binRaster)); %Baseline matrix plus
+                [Mbd] = BuildBurstMatrix(goodU,round(p.t/params.binRaster),round((C(:,1)'-preBase)/params.binRaster),round(preBase/params.binRaster)); %Baseline matrix plus
 
                 %Merge trials:
 
@@ -150,7 +143,7 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
                     %unit matrix
                     max_mean_value(u) = -Inf; %General max? not needed
                     max_mean_valueB(u)=-Inf;
-                    NeuronRespProfile = zeros(nT,9); %4 columns plus: ofsett, dir, size, speed, lum.
+                    NeuronRespProfile = zeros(nT,5); %4 columns plus: ofsett, dir, size, speed, lum.
 
                     k =1;
                     max_position_Trial = zeros(nT,2); %Create 2 matrices, for mean inside max window, and for position of window, for each trial category
@@ -203,8 +196,6 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
                         NeuronRespProfile(k,5) = C(i*mergeTrials,2);
                         NeuronRespProfile(k,6) = C(i*mergeTrials,3);
                         NeuronRespProfile(k,7) = C(i*mergeTrials,4);
-                        NeuronRespProfile(k,8) = C(i*mergeTrials,5);
-                        NeuronRespProfile(k,9) = C(i*mergeTrials,6);
                         k = k+1;
 
                     end
@@ -213,8 +204,6 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
                     NeuronVals(u,:,:) = NeuronRespProfile;
                 end
 
-                S.(fieldName).C = C;
-                S.(fieldName).Coff = Coff;
                 S.(fieldName).NeuronVals = NeuronVals;
                 S.(fieldName).stimDur = stimDur;
 
@@ -223,10 +212,14 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
 
             colNames = {'Resp','MaxWinTrial','MaxWinBin','RespSubsBaseline','Directions','Offsets','Sizes','Speeds','Luminosities'};
 
+            S.C = C;
+            S.Coff = Coff;
             S.params = params;
             S.colNames = {colNames};
             S.goodU = goodU;
             S.stimInter = stimInter;
+            S.Onsets = Onsets;
+            S.Offsets = Offsets;
 
             %save results in the right file
             fprintf('Saving results to file.\n');
@@ -243,8 +236,6 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
                 params.inputParams = false
                 params.trialThreshold = 0.6
                 params.N_bootstrap = 2000;
-                params.speed = 0; %min =1, middle = 2, max=3;
-                params.AllSpeeds = true;
             end
             if params.inputParams,disp(params),return,end
 
@@ -270,35 +261,27 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
                 return
             end
 
-            if params.AllSpeeds
-                speeds = sort(unique(obj.VST.speeds));
-            else
-                speeds = sort(unique(obj.VST.speeds));
-                speeds = speeds(params.speed);
-            end
 
-            x = length(speeds);
-
-            % Generate field names for each unique speed
-            topFields = arrayfun(@(n) sprintf('Speed%d', n), 1:x, 'UniformOutput', false);
+  
+            % Generate field names for static and moving
+            topFields = {'Static','Moving'};
 
             % Initialize each as an empty struct with subfields
-            subFields = {'pvalsResponse','ZScoreU','boot_means'};  % subfield names
+           subFields = {'pvalsResponse','ZScoreU','boot_means'};  % subfield names
             emptySubStruct = cell2struct(cell(1, numel(subFields)), subFields, 2);
-            S = cell2struct(repmat({emptySubStruct}, 1, x), topFields, 2);
+            S = cell2struct(repmat({emptySubStruct}, 1, 2), topFields, 2);
+
+            goodU = NeuronResp.goodU;
+            p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
 
 
-            for s=1:x %iterate among unique speeds
+            for s=1:2 %iterate among unique speeds
 
-                fieldName = sprintf('Speed%d', s);
+                fieldName = topFields{s};
 
-                directimesSorted = NeuronResp.(fieldName).C(:,1)';
-                goodU = NeuronResp.goodU;
-                p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
-
-                trialDivision = numel(directimesSorted)/numel(unique(NeuronResp.(fieldName).C(:,2)))/numel(unique(NeuronResp.(fieldName).C(:,3)))/...
-                    numel(unique(NeuronResp.(fieldName).C(:,4)))...
-                    /numel(unique(NeuronResp.(fieldName).C(:,5)))/numel(unique(NeuronResp.(fieldName).C(:,6)));
+                directimesSorted = NeuronResp.Onsets(:,s)';
+                
+                trialDivision = numel(directimesSorted)/numel(unique(NeuronResp.C(:,2)));
 
                 %Load same parameters used in response window calculation
                 preBase = NeuronResp.params.preBase;
@@ -338,7 +321,7 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
 
                 [respVal,respVali]= max(NeuronResp.(fieldName).NeuronVals(:,:,1),[],2);
 
-                Mr = BuildBurstMatrix(goodU,round(p.t/bin),round((directimesSorted)/bin),round((NeuronResp.(fieldName).stimDur+duration)/bin)); %response matrix
+                Mr = BuildBurstMatrix(goodU,round(p.t/bin),round((directimesSorted)/bin),round((NeuronResp.(fieldName).stimDur)/bin)); %response matrix
 
                 %%% Calculate p-value & Filter out neurons in which max response window is empty for more than
                 %%% 60% of trials
@@ -369,7 +352,6 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
                 S.(fieldName).boot_means = boot_means;
 
             end
-            params.speed = speeds;
             S.params = params;
 
             %save results in the right file

@@ -139,6 +139,9 @@ switch params.extractionMethod
                                 iMC = i;
                             end
                         end
+
+                        if obj.stimN
+                        end
                     end
 
                     diodeUpCross=cell2mat(DiodeCrosses(1,:));
