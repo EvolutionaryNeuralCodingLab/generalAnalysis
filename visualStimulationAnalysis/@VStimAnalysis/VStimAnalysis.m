@@ -303,7 +303,7 @@ classdef (Abstract) VStimAnalysis < handle
             expectedFlips=numel(allFlips);
             fprintf('%d flips expected, %d found (diff=%d). Linking existing flip times with stimuli...\n',expectedFlips,measuredFlips,expectedFlips-measuredFlips);
             if (expectedFlips-measuredFlips)>0.1*expectedFlips
-                fprintf('There are more than 10 percent mismatch in the number of diode and vStim expected flips. Cant continue!!! Please check diode extration!\n');
+                fprintf('There are more than 10 percent mismatch in the number of diode and vStim expected flips. Cant continue!!! Please check diode extraction!\n');
                 return;
             end
             switch obj.trialType
@@ -591,7 +591,8 @@ classdef (Abstract) VStimAnalysis < handle
                             framesNspeed(2,1) = round(obj.VST.actualStimDuration*obj.VST.fps); 
 
                             if isequal(obj.stimName,'movie')
-                                 framesNspeed = repmat(framesNspeed,1,numel(obj.VST.trialsPerCategory));
+                                framesNspeed(2,1) = round(obj.VST.movFrameCount);
+                                framesNspeed = repmat(framesNspeed,1,numel(obj.VST.movieSequence));
                             end
                             
                             if isequal(obj.stimName,'StaticDriftingGrating')
@@ -762,7 +763,7 @@ classdef (Abstract) VStimAnalysis < handle
                         failedTrials =[];
                         for i =1:length(trialOff)
 
-                            startSnip  = round((trialOn(i)-trialOn(1)-100)*(obj.dataObj.samplingFrequencyNI/1000))+1;
+                            startSnip  = round((trialOn(i)-trialOn(1))*(obj.dataObj.samplingFrequencyNI/1000))+1;
                             endSnip  = round((trialOff(i)-trialOn(1)+interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000));
 
                             if endSnip>length(A)
@@ -776,22 +777,22 @@ classdef (Abstract) VStimAnalysis < handle
                                 t_msS = t_ms(startSnip:endSnip);
                             end
 
-                           
-
-                            fDat=medfilt1(signal,(obj.VST.stimDuration/4)*1000);
+                            fDat=-1*medfilt1(signal,(obj.VST.stimDuration/4)*1000);
                             Th=mean(fDat(1:100:end));
                             stdS = std(fDat(1:100:end));
                             sdK = 0;
-                            upTimes=t_msS(fDat(1:end-1)<Th-sdK*stdS & fDat(2:end)>=Th+sdK*stdS)+trialOn(1)+100;%+interDelayMs/2; %get real recording times
-                            downTimes=t_msS(fDat(1:end-1)>Th+sdK*stdS  & fDat(2:end)<=Th-sdK*stdS )+trialOn(1)+100;%+interDelayMs/2;
+                            upTimes=t_msS(fDat(1:end-1)<Th-sdK*stdS & fDat(2:end)>=Th-sdK*stdS)+trialOn(1);%+interDelayMs/2; %get real recording times
+                            downTimes=t_msS(fDat(1:end-1)>Th-sdK*stdS  & fDat(2:end)<=Th-sdK*stdS )+trialOn(1);%+interDelayMs/2;
 
                             if length(upTimes) >1 || length(downTimes)>1
                                 upTimes=upTimes(1);
-                                downTimes = downTimes(1);
+                                downTimes = downTimes(2);
                             end
 
                             if length(upTimes) <1 || length(downTimes)<1
-                                2+2
+                                
+                                    upTimes = trialOn(i)+10;
+                                    downTimes = trialOff(i)+10;
                             end
 
                             DiodeCrosses{1,i} = upTimes;

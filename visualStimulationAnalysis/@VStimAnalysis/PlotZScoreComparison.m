@@ -127,6 +127,9 @@ if forloop
         try
             vsBr = linearlyMovingBarAnalysis(NP);
             params.StimsPresent{3} = 'MBR';
+            if isempty(vsBr.VST)
+                error('Moving Bar stimulus not found.\n')
+            end
         catch
             params.StimsPresent{3} = '';
             fprintf('Moving Bar stimulus not found.\n')
@@ -135,13 +138,16 @@ if forloop
         try
             vsG = StaticDriftingGratingAnalysis(NP);
             params.StimsPresent{4} = 'SDG';
+             if isempty(vsG.VST)
+                error('Gratings stimulus not found.\n')
+            end
         catch
            params.StimsPresent{4} = '';
             fprintf('Gratings stimulus not found.\n')
             vsG = rectGridAnalysis(NP); %use rectGrid here to avoid puting lots of ifs.
         end
         try
-            vsNI = NaturalImage(NP);
+            vsNI = imageAnalysis(NP);
             params.StimsPresent{5} = 'NI';
         catch
             params.StimsPresent{5} = '';
@@ -149,7 +155,7 @@ if forloop
             vsNI = rectGridAnalysis(NP); %use rectGrid here to avoid puting lots of ifs.
         end
         try
-            vsNV = NaturalVideo(NP);
+            vsNV = movieAnalysis(NP);
             params.StimsPresent{6} = 'NV';
         catch
             params.StimsPresent{6} = '';
@@ -266,25 +272,25 @@ if forloop
         spkDiff_FFF = max(rwFFF.NeuronVals(:,:,4),[],2);
 
         %Load stats of SDG moving
-        zScores_SDGm = statsSDG.ZScoreU;
-        pValuesSDGm = statsSDG.pvalsResponse;
-        spkR_SDGm = max(rwSDG.NeuronVals(:,:,1),[],2);
-        spkDiff_SDGm = max(rwSDG.NeuronVals(:,:,4),[],2);
+        zScores_SDGm = statsSDG.Moving.ZScoreU;
+        pValuesSDGm = statsSDG.Moving.pvalsResponse;
+        spkR_SDGm = max(rwSDG.Moving.NeuronVals(:,:,1),[],2);
+        spkDiff_SDGm = max(rwSDG.Moving.NeuronVals(:,:,4),[],2);
 
         %Load stats of SDG static
-        zScores_SDGs = statsSDG.ZScoreU;
-        pValuesSDGs = statsSDG.pvalsResponse;
-        spkR_SDGs = max(rwSDG.NeuronVals(:,:,1),[],2);
-        spkDiff_SDGs = max(rwSDG.NeuronVals(:,:,4),[],2);
+        zScores_SDGs = statsSDG.Static.ZScoreU;
+        pValuesSDGs = statsSDG.Static.pvalsResponse;
+        spkR_SDGs = max(rwSDG.Static.NeuronVals(:,:,1),[],2);
+        spkDiff_SDGs = max(rwSDG.Static.NeuronVals(:,:,4),[],2);
 
 
-        %Load stats of SDG moving
+        %Load stats of Natural images
         zScores_NI = statsNI.ZScoreU;
         pValuesNI = statsNI.pvalsResponse;
         spkR_NI = max(rwNI.NeuronVals(:,:,1),[],2);
         spkDiff_NI = max(rwNI.NeuronVals(:,:,4),[],2);
 
-        %Load stats of SDG static
+        %Load stats of video
         zScores_NV = statsNV.ZScoreU;
         pValuesNV = statsNV.pvalsResponse;
         spkR_NV = max(rwNV.NeuronVals(:,:,1),[],2);
@@ -419,6 +425,7 @@ fig=figure;
 tiledlayout(2,2,"TileSpacing","compact");
 
 fn = fieldnames(S);
+
 StimZS = cell(numel(Stims2Comp),1);
 stimRSP = cell(numel(Stims2Comp),1);
 
@@ -458,8 +465,6 @@ colormapUsed = parula(max(AnIndex)).*0.6;
 %y =([MB; RG; MB-RG]);
 y = cell2mat(StimZS);
 
-y = cell2mat(stimRSP);
-
 % x =[];
 % % Combine data
 % for i =1:length(y)/length(MB)
@@ -474,7 +479,7 @@ nexttile % Takes most of the space
 swarmchart(x, y, 5, [colormapUsed(allColorIndices,:)], 'filled','MarkerFaceAlpha',0.7); % Marker size 50
 xticks(1:7);
 xticklabels(Stims2Comp);
-ylabel('SpikeRate');
+ylabel('Z-score');
 set(fig,'Color','w')
 %set(gca, 'YScale', 'log')
 yline([0],'LineWidth',2)
@@ -490,60 +495,35 @@ lims = [0 40];
 plot(lims, lims, 'k--', 'LineWidth', 1.5)
 ylim(lims)
 xlim(lims)
-xlabel('MB')
-ylabel('SB')
+xlabel('Moving Ball')
+ylabel('Moving Grating')
 
 %%% Spike rate comparison
 
 
-if ~params.diffResp
-    MB = cell2mat(spKrMB)'.*(1000/MBvs.params.durationWindow);
-    RG = cell2mat(spKrRG)'.*(1000/MBvs.params.durationWindow);
-else
-    MB = cell2mat(diffSpkMB').*(1000/MBvs.params.durationWindow);
-    RG = cell2mat(diffSpkRG')*(1000/MBvs.params.durationWindow);
-end
-AnIndex = cell2mat(animalVector)';
-
-y =([MB; RG; MB-RG]);
-
-
-x =[];
-% Combine data
-for i =1:length(y)/length(MB)
-    x = [x;ones(size(MB))*i];
-end
-
-% Combine all color indices
-allColorIndices = repmat(AnIndex,length(y)/length(MB),1);
+y = cell2mat(stimRSP);
 
 % ---- Swarmchart (Larger Left Subplot) ----
-nexttile% Takes most of the space
+nexttile % Takes most of the space
 swarmchart(x, y, 5, [colormapUsed(allColorIndices,:)], 'filled','MarkerFaceAlpha',0.7); % Marker size 50
 xticks(1:7);
-xticklabels({'MB', 'SB', 'MB-SB'});
-ylabel('Spikes/sec');
-if params.diffResp
-    ylabel('Resp-Base spkR');
-end
+xticklabels(Stims2Comp);
+ylabel('Spike Rate');
+set(fig,'Color','w')
 %set(gca, 'YScale', 'log')
-%ylim([-0.01,0.1])
-yline([0],'LineWidth',2)
+%yline([0],'LineWidth',2)
 
-%lims = [-5 50];
 nexttile
-scatter(MB,RG,10,AnIndex,"filled","MarkerFaceAlpha",0.5)
+scatter(stimRSP{1},stimRSP{2},10,AnIndex,"filled","MarkerFaceAlpha",0.5)
 colormap(colormapUsed)
-xlims = xlim;
-ylims = ylim;
-lims = [0 max([xlims ylims])];
 hold on
-plot(lims, lims, 'k--', 'LineWidth', 1.5)
 axis equal
+lims = [0 max(xlim)];
+plot(lims, lims, 'k--', 'LineWidth', 1.5)
 ylim(lims)
 xlim(lims)
-xlabel('MB')
-ylabel('SB')
-fig.Position = [454   147   776   831];
+xlabel('Moving Ball')
+ylabel('Moving Grating')
+
 
 end
