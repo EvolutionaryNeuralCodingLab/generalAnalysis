@@ -3773,7 +3773,7 @@ classdef sleepAnalysis < recAnalysis
 
 
             if plotFig ==1 
-                figure; plot(d_lowpass,'.'); title('original signal,lowpass')
+                figure; plot(d_ms,d_lowpass,'.'); title('original signal,lowpass')
                 if ~isempty(diodeTriggers)
                     hold on; xline(diodeTriggers,'r')
                 end
