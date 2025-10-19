@@ -651,7 +651,7 @@ classdef (Abstract) VStimAnalysis < handle
                                 DiodeCrosses{2,i} = downTimes;
                             end
 
-                            if (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i}))*1.1 < framesNspeed(2,i)
+                            if (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i}))*1.1 < framesNspeed(2,i) && ~isequal(obj.stimName,'StaticDriftingGrating')
                                 %if the number of calculated frames is less than 10%
                                 %then perform an interpolation with the
                                 %first and last cross
@@ -695,15 +695,15 @@ classdef (Abstract) VStimAnalysis < handle
                                 end
                             end
 
-                            if isequal(obj.stimName,'StaticDriftingGrating') %Make sure there is only one start frame. 
-                                
+                            if isequal(obj.stimName,'StaticDriftingGrating') %Make sure there is only one start frame.
+
                                 [firstCross, idx]= min([DiodeCrosses{1,i}(1),DiodeCrosses{2,i}(1)]);
 
-                                if firstCross > t_msS(1) + trialOn(1) + (obj.VST.static_time*1000)/2 %Add first frame that might not be read brcsuse of no diode change
+                                if firstCross > t_msS(1) + trialOn(1) + (obj.VST.static_time*1000)/2 %Add first frame that might not be read because of no diode change
                                     if idx ==1
                                         DiodeCrosses{2,i} = [50+trialOn(i) DiodeCrosses{2,i}];
                                     else
-                                         DiodeCrosses{1,i} = [50+trialOn(i) DiodeCrosses{1,i}];
+                                        DiodeCrosses{1,i} = [50+trialOn(i) DiodeCrosses{1,i}];
                                     end
                                     [firstCross, idx]= min([DiodeCrosses{1,i}(1),DiodeCrosses{2,i}(1)]);
                                 end
@@ -715,10 +715,25 @@ classdef (Abstract) VStimAnalysis < handle
 
                                 DiodeCrosses{1,i} =  ups;
                                 DiodeCrosses{2,i} = downs;
-                            end
 
+                                if (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i}))*1.1 < framesNspeed(2,i)
+                                    [~, ind]=min([DiodeCrosses{1,i}(1)  DiodeCrosses{2,i}(1)]);
+                                    diodeAll = sort([DiodeCrosses{1,i} DiodeCrosses{2,i}]);
 
-                        end
+                                    %DiodeInterp = linspace(diodeAll(1),diodeAll(end),framesNspeed(2,i));
+                                    DiodeInterp = [diodeAll(1) diodeAll(2):1000/obj.VST.fps: diodeAll(2) + (framesNspeed(2,i)-1)*(1000/obj.VST.fps)];
+                                    if ind == 2 %Trial starts with down cross
+                                        DiodeCrosses{2,i} = DiodeInterp(1:2:end);
+                                        DiodeCrosses{1,i} = DiodeInterp(2:2:end);
+                                    else
+                                        DiodeCrosses{2,i} = DiodeInterp(2:2:end);
+                                        DiodeCrosses{1,i} = DiodeInterp(1:2:end);
+                                    end
+                                end
+
+                            end %end especial case "if" for static and drifting gratings. 
+
+                        end %End for loop through trials
 
                         diodeUpCross=cell2mat(DiodeCrosses(1,:));
                         diodeDownCross=cell2mat(DiodeCrosses(2,:));

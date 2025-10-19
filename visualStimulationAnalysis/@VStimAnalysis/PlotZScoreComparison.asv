@@ -10,9 +10,6 @@ arguments
     params.StimsPresent = {'MB'}; %assumes that at list moving ball is present
     params.StimsNotPresent = {};
     params.StimsToCompare = {};
-    params.overwriteResponse = false;
-    params.RespDurationWin = 100; %same as default
-    params.shuffles = 2000; %same as default
 end
 
 % Compare z-scores and p-values between moving ball and rect grid analyses
@@ -182,34 +179,34 @@ if forloop
         
 
         %%Load pvals and zscore from rect grid and moving ball
-        vs.ResponseWindow('overwrite',params.overwriteResponse,'durationWindow',params.RespDurationWin);
-        vsR.ResponseWindow('overwrite',params.overwriteResponse,'durationWindow',params.RespDurationWin);
-        vsBr.ResponseWindow('overwrite',params.overwriteResponse,'durationWindow',params.RespDurationWin);
-        vsG.ResponseWindow('overwrite',params.overwriteResponse,'durationWindow',params.RespDurationWin);
-        vsNI.ResponseWindow('overwrite',params.overwriteResponse,'durationWindow',params.RespDurationWin);
-        vsNV.ResponseWindow('overwrite',params.overwriteResponse,'durationWindow',params.RespDurationWin);
-        vsFFF.ResponseWindow('overwrite',params.overwriteResponse,'durationWindow',params.RespDurationWin);
+        vs.ResponseWindow('overwrite',params.overwriteResponse,'durationWindow',RespDurationE);
+        vsR.ResponseWindow;
+        vsBr.ResponseWindow;
+        vsG.ResponseWindow;
+        vsNI.ResponseWindow;
+        vsNV.ResponseWindow;
+        vsFFF.ResponseWindow;
 
-        vs.ShufflingAnalysis('overwrite',params.overwriteResponse,"N_bootstrap", params.shuffles);
+        vs.ShufflingAnalysis;
         statsMB = vs.ShufflingAnalysis;
 
-        vsR.ShufflingAnalysis('overwrite',params.overwriteResponse,"N_bootstrap", params.shuffles);
+        vsR.ShufflingAnalysis;
         statsRG =  vsR.ShufflingAnalysis;
 
 
-        vsBr.ShufflingAnalysis('overwrite',params.overwriteResponse,"N_bootstrap", params.shuffles);
+        vsBr.ShufflingAnalysis;
         statsMBR =  vsBr.ShufflingAnalysis;
 
-        vsG.ShufflingAnalysis('overwrite',params.overwriteResponse,"N_bootstrap", params.shuffles);
+        vsG.ShufflingAnalysis;
         statsSDG =  vsG.ShufflingAnalysis;
 
-        vsFFF.ShufflingAnalysis('overwrite',params.overwriteResponse,"N_bootstrap", params.shuffles);
+        vsFFF.ShufflingAnalysis;
         statsFFF =  vsFFF.ShufflingAnalysis;
 
-        vsNI.ShufflingAnalysis('overwrite',params.overwriteResponse,"N_bootstrap", params.shuffles);
+        vsNI.ShufflingAnalysis;
         statsNI =  vsNI.ShufflingAnalysis;
 
-        vsNV.ShufflingAnalysis('overwrite',params.overwriteResponse,"N_bootstrap", params.shuffles);
+        vsNV.ShufflingAnalysis;
         statsNV =  vsNV.ShufflingAnalysis;
 
 
@@ -660,9 +657,9 @@ BarVals = [cell2mat(RespNeurCount)];
 
 bar([AllRespNeurs BarVals],'FaceColor','k','FaceAlpha',0.7)
 
-xticklabels({'Total resp. neurons',Stims2Comp{:}})
+xticklabels({'Resp. neurons',Stims2Comp{:}})
 
-ylabel('Responsive neuron count')
+ylabel('Neuron count')
 
 
 end

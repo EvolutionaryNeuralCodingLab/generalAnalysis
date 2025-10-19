@@ -699,7 +699,7 @@ classdef (Abstract) VStimAnalysis < handle
                                 
                                 [firstCross, idx]= min([DiodeCrosses{1,i}(1),DiodeCrosses{2,i}(1)]);
 
-                                if firstCross > t_msS(1) + trialOn(1) + (obj.VST.static_time*1000)/2 %Add first frame that might not be read brcsuse of no diode change
+                                if firstCross > t_msS(1) + trialOn(1) + (obj.VST.static_time*1000)/2 %Add first frame that might not be read because of no diode change
                                     if idx ==1
                                         DiodeCrosses{2,i} = [50+trialOn(i) DiodeCrosses{2,i}];
                                     else
@@ -715,6 +715,18 @@ classdef (Abstract) VStimAnalysis < handle
 
                                 DiodeCrosses{1,i} =  ups;
                                 DiodeCrosses{2,i} = downs;
+
+                                diodeAll = sort([DiodeCrosses{1,i} DiodeCrosses{2,i}]);
+
+                                %DiodeInterp = linspace(diodeAll(1),diodeAll(end),framesNspeed(2,i));
+                                DiodeInterp = [diodeAll(1) diodeAll(2):1000/obj.VST.fps: min([diodeAll(2) + (framesNspeed(2,i)-1)*(1000/obj.VST.fps), trialOff(i)])];
+                                if ind == 2 %Trial starts with down cross
+                                    DiodeCrosses{2,i} = DiodeInterp(1:2:end);
+                                    DiodeCrosses{1,i} = DiodeInterp(2:2:end);
+                                else
+                                    DiodeCrosses{2,i} = DiodeInterp(2:2:end);
+                                    DiodeCrosses{1,i} = DiodeInterp(1:2:end);
+                                end
                             end
 
 
@@ -791,13 +803,8 @@ classdef (Abstract) VStimAnalysis < handle
 
                             if length(upTimes) <1 || length(downTimes)<1
                                 
-                                if isempty(upTimes)
-                                    trialOn(i)+10;
-                                end
-
-                                if isempty(downTimesTimes)
-                                    trialOff(i)+10;
-                                end
+                                    upTimes = trialOn(i)+10;
+                                    downTimes = trialOff(i)+10;
                             end
 
                             DiodeCrosses{1,i} = upTimes;
