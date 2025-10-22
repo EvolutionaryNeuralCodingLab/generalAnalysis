@@ -79,6 +79,8 @@ classdef linearlyMovingBarAnalysis < VStimAnalysis
 
             stimInter = obj.VST.interTrialDelay*1000;
 
+            bin = params.binRaster;
+
             speeds = sort(unique(A(:,3)));
 
             x = length(speeds);
@@ -104,9 +106,10 @@ classdef linearlyMovingBarAnalysis < VStimAnalysis
 
                 [Coff indexSo] = sortrows(Bt,[2 3 4]);
 
+
                 stimOnT = At(:,1);
                 stimOffT = Bt(:,1);
-               
+
                 stimDur = mean(-stimOnT+stimOffT);
 
                 preBase = round(stimInter-params.preBase);
@@ -117,54 +120,77 @@ classdef linearlyMovingBarAnalysis < VStimAnalysis
 
                 %4. Sort directions:
                 directimesSorted = C(:,1)';
-                Mr = BuildBurstMatrix(goodU,round(p.t/params.binRaster),round(directimesSorted/params.binRaster),round((stimDur+ params.durationWindow)/params.binRaster)); %response matrix
+
+                trialDivision = numel(directimesSorted)/numel(unique(C(:,2)))/numel(unique(C(:,3)))/numel(unique(C(:,4)));
+                duration = params.durationWindow; %window in ms, same as in MB
+                Mr = BuildBurstMatrix(goodU,round(p.t/bin),round((directimesSorted)/bin),round((stimDur+duration)/bin)); %response matrix
                 [MrC]=ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
 
-                [nT,nN,nB] = size(Mr);
+                %Normalize trials
+                MrNorm = MrC./(sum(MrC,3));
+                MrNorm(isnan(MrNorm)) = 0;
 
-                window_size = [1, round(params.durationWindow/params.binRaster)];
-                trialDivision = numel(directimesSorted)/numel(unique(C(:,2)))/numel(unique(C(:,3)))/numel(unique(C(:,4)));
+                [nT,nN,nB] = size(MrC);
+
+                window_size = [1, round(params.durationWindow /bin)];
 
                 %5. Initialize the maximum mean value and its position
+
                 max_position = zeros(nN,2);
                 max_mean_value = zeros(1,nN);
                 max_mean_valueB = zeros(1,nN);
-                NeuronVals = zeros(nN,nT/trialDivision,7);
+
+
+                NeuronVals = zeros(nN,nT/trialDivision,8); %Each neuron, which has a matrix where the first column is maxVal of bins, 2nd and 3rd position of window in matrix...
+                % 4th Z-score.
+                % responsive compared to the baseline.
+
+                %[1, 2, 3, 7, 8, 9, 10, 11, 12, 13, 17, 20, 22, 23, 24, 28, 32, 34, 36]
+
+                mergeTrials = trialDivision;
 
                 %Baseline = size window
+                preBase = params.preBase;
 
-                [Mbd] = BuildBurstMatrix(goodU,round(p.t/params.binRaster),round((directimesSorted-preBase)/params.binRaster),round(preBase/params.binRaster)); %Baseline matrix plus
+                [Mbd] = BuildBurstMatrix(goodU,round(p.t/bin),round((directimesSorted-preBase)/bin),round(preBase/bin)); %Baseline matrix plus
+
+                [MbdC]=ConvBurstMatrix(Mbd,fspecial('gaussian',[1 params.GaussianLength],3),'same');
+                MbNorm = MbdC./(sum(MbdC,3));
+                MbNorm(isnan(MbNorm)) = 0;
+
+                %Merge trials:
+
+                Bd = reshape(MbNorm, [mergeTrials, size(Mbd, 1)/mergeTrials, size(Mbd, 2), size(Mbd,3)]);
+
+                Mbd2 = squeeze(mean(Bd, 1));
 
                 %Merge trials:
 
                 mergeTrials = trialDivision;
 
-                Bd = reshape(Mbd, [mergeTrials, size(Mbd, 1)/mergeTrials, size(Mbd, 2), size(Mbd,3)]);
-
-                Mbd2 = squeeze(mean(Bd, 1));
-
-                Ba = reshape(MrC, [mergeTrials, size(Mr, 1)/mergeTrials, size(Mr, 2), size(Mr,3)]);
+                B = reshape(MrNorm, [mergeTrials, size(Mr, 1)/mergeTrials, size(Mr, 2), size(Mr,3)]);
 
                 % Take the mean across the first dimension (rows)
-                Mr2 = squeeze(mean(Ba, 1));
+                Mr2 = squeeze(mean(B, 1));
+
                 [nT,nN,nB] = size(Mr2);
-                %Real data:
+
                 for u =1:nN
                     % Slide the window over the matrix
                     %unit matrix
                     max_mean_value(u) = -Inf; %General max? not needed
                     max_mean_valueB(u)=-Inf;
-                    NeuronRespProfile = zeros(nT,7); %4 columns plus: ofsett, dir, size, speed, lum.
+                    NeuronRespProfile = zeros(nT,8); %4 columns plus: ofsett, dir, size, speed, frec.
 
                     k =1;
                     max_position_Trial = zeros(nT,2); %Create 2 matrices, for mean inside max window, and for position of window, for each trial category
+                    max_position_TrialB = zeros(nT,2);
                     max_mean_value_Trial = zeros(1,nT);
                     max_mean_value_TrialB = zeros(1,nT);
+
                     for i = 1:nT %Iterate across trials
                         uM = squeeze(Mr2(i,u,:))';%Create matrix per unique trial conditions
-
                         uMB = squeeze(Mbd2(i,u,:))';%Create matrix per unique trial conditions
-                        %uMb = Mbd2(i,u);
 
                         max_mean_value_Trial(k) = -Inf;
                         max_mean_value_TrialB(k) = -Inf;
@@ -172,10 +198,12 @@ classdef linearlyMovingBarAnalysis < VStimAnalysis
                         for j = 1:2:size(uM, 2) - window_size(2) + 1 %Iterate across bins
                             % Extract the sub-matrix
                             sub_matrix = uM(j:min(j+window_size(2)-1,end)); %Create matrix of size window per bin
-                            sub_matrixB = uMB(j:min(j+window_size(2)-1,end));
+                            sub_matrixB = uMB(:,min(j,size(uMB,2)-window_size(2)+1):min(j+window_size(2)-1,end));
+
                             % Compute the mean value
                             mean_value = mean(sub_matrix(:)); %Compute mean of each window
                             mean_valueB = mean(sub_matrixB(:)); %Compute mean of each window
+
                             % Update the maximum mean value and its position (a
                             % window is selected across each trial division
                             if mean_value >  max_mean_value_Trial(k)
@@ -185,6 +213,7 @@ classdef linearlyMovingBarAnalysis < VStimAnalysis
 
                             if mean_valueB >  max_mean_value_TrialB(k)
                                 max_mean_value_TrialB(k) = mean_valueB;
+                                max_position_TrialB(k,:) = [i j];
                             end
 
                         end
@@ -198,17 +227,25 @@ classdef linearlyMovingBarAnalysis < VStimAnalysis
                         %3%. WindowBin
                         NeuronRespProfile(k,3) = max_position_Trial(k,2);
 
+
+                        %4% real spike rate of response posTr*trialDivision-trialDivision+1:posTr*trialDivision
+                        NeuronRespProfile(k,4) = mean(Mr(max_position_Trial(k,1)*trialDivision-trialDivision+1:max_position_Trial(k,1)*trialDivision-1,u,...
+                            max_position_Trial(k,2):max_position_Trial(k,2)+window_size(2)-1),'all');%max_position_Trial(k,2);
+
+                        BaseResp = mean(Mbd(max_position_TrialB(k,1)*trialDivision-trialDivision+1:max_position_TrialB(k,1)*trialDivision-1,u,...
+                            max_position_TrialB(k,2):max_position_TrialB(k,2)+window_size(2)-1),'all');
+
                         %4%. Resp - Baseline
                         % NeuronRespProfile(i,4) = (max_mean_value_Trial(i) - (spkRateBM(u)+max_mean_value_Trial(i))/2)/denom(u); %Zscore
                         %NeuronRespProfile(k,4) = (max_mean_value_Trial(k) - spkRateBM(u))/denom(u); %Zscore
-                        NeuronRespProfile(k,4) = max_mean_value_Trial(k)-max_mean_value_TrialB(k);
+                        NeuronRespProfile(k,5) =  NeuronRespProfile(k,4)-BaseResp;
+
                         %Assign visual stats to last columns of NeuronRespProfile. Select
                         %according  to trial (d) the appropiate parameter > directions'offsets' sizes' speeds' freq'
-                        NeuronRespProfile(k,5) = C(i*mergeTrials,2);
-                        NeuronRespProfile(k,6) = C(i*mergeTrials,3);
-                        NeuronRespProfile(k,7) = C(i*mergeTrials,4);
-                        k = k+1;
-
+                        NeuronRespProfile(k,6) = C(i*mergeTrials,2);
+                        NeuronRespProfile(k,7) = C(i*mergeTrials,3);
+                        NeuronRespProfile(k,8) = C(i*mergeTrials,4);
+                        k=k+1;
                     end
 
                     %figure;imagesc(uM);xline(max_position_Trial(i,2));xline(max_position_Trial(i,2)+window_size(2))
@@ -313,7 +350,7 @@ classdef linearlyMovingBarAnalysis < VStimAnalysis
                 % Bootstrapping settings
                 boot_means = zeros(params.N_bootstrap, nN,'single');
                 resampled_indicesTr = single(randi(nT, [trialDivision, params.N_bootstrap]));% To store bootstrapped means
-                resampled_indicesTi = single(randi(nB, [duration, params.N_bootstrap]));
+                resampled_indicesTi = single(randi(nB, [preBase, params.N_bootstrap]));
                 kernel = ones(trialDivision, duration) / (trialDivision * duration); % Normalize for mean
 
 
@@ -326,8 +363,12 @@ classdef linearlyMovingBarAnalysis < VStimAnalysis
                         slice = resampled_trials(:, ui, :);
                         slice = squeeze(slice); % Result is t x b
 
+                        %Normalize slice trials
+                        Norm = slice./sum(slice,2);
+                        Norm(isnan(Norm)) = 0;
+
                         % Compute the mean using 2D convolution
-                        means = conv2(slice, kernel, 'valid'); % 'valid' ensures the window fits within bounds
+                        means = conv2(Norm, kernel, 'valid'); % 'valid' ensures the window fits within bounds
 
                         % Find the maximum mean in this slice
                         boot_means(i, ui) = max(means(:));

@@ -1,4 +1,4 @@
-classdef imageAnalysis < VStimAnalysis
+classdef fullFieldFlashAnalysis < VStimAnalysis
 
     properties
         Session
@@ -10,7 +10,7 @@ classdef imageAnalysis < VStimAnalysis
 
     methods (Hidden)
         %class constructor - name of class should be identical to the visual stimulation with the addition of Analysis
-        function [obj] = imageAnalysis(dataObj,params)
+        function [obj] = fullFieldFlashAnalysis(dataObj,params)
             arguments (Input) %ResponseWindow.mat
                 dataObj
                 params.Session = 1;
@@ -80,25 +80,20 @@ classdef imageAnalysis < VStimAnalysis
 
             stimDur = mean(-stimOn+stimOff);
 
-            imgOrder = obj.VST.imgSequence(obj.VST.order)';
-
-            A = [stimOn' imgOrder];
-            [C indexS] = sortrows(A,[2]);
-
-            B = [stimOff' imgOrder];
-            [Coff indexSo] = sortrows(B,[2]);
+            C = stimOn';
 
             directimesSorted = C(:,1)';
             bin = params.binRaster;
 
-            trialDivision = numel(directimesSorted)/numel(obj.VST.imgNames);
+            trialDivision = numel(directimesSorted);
 
             % Load Kilosort and phy results
             p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
             label = string(p.label');
             goodU = p.ic(:,label == 'good');
-            
+
             %%Create window to scan rasters and get the maximum response
+                   %%Create window to scan rasters and get the maximum response
             duration = params.durationWindow; %window in ms, same as in MB
             Mr = BuildBurstMatrix(goodU,round(p.t/bin),round((directimesSorted)/bin),round((stimDur+duration)/bin)); %response matrix
             [MrC]=ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
@@ -141,6 +136,9 @@ classdef imageAnalysis < VStimAnalysis
 
             Mbd2 = squeeze(mean(Bd, 1));
 
+            %Merge trials:
+
+            mergeTrials = trialDivision;
 
             B = reshape(MrNorm, [mergeTrials, size(Mr, 1)/mergeTrials, size(Mr, 2), size(Mr,3)]);
 
@@ -221,7 +219,7 @@ classdef imageAnalysis < VStimAnalysis
                 %figure;imagesc(uM);xline(max_position_Trial(i,2));xline(max_position_Trial(i,2)+window_size(2))
 
                 NeuronVals(u,:,:) = NeuronRespProfile;
-            end            
+            end                     
 
             colNames = {'Resp','MaxWinTrial','MaxWinBin','RespSubsBaseline','Position','Size','Luminosities'};
 
@@ -276,7 +274,7 @@ classdef imageAnalysis < VStimAnalysis
             goodU = NeuronResp.goodU;
             p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
 
-            trialDivision = numel(directimesSorted)/numel(obj.VST.imgNames);
+            trialDivision = numel(directimesSorted)/2;
 
             %Load same parameters used in response window calculation
             preBase = NeuronResp.params.preBase;
@@ -302,7 +300,6 @@ classdef imageAnalysis < VStimAnalysis
                     % Extract the slice for the current unit (t x b matrix)
                     slice = resampled_trials(:, ui, :);
                     slice = squeeze(slice); % Result is t x b
-
                     %Normalize slice trials
                     Norm = slice./sum(slice,2);
                     Norm(isnan(Norm)) = 0;

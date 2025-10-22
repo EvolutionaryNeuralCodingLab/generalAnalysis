@@ -13,6 +13,7 @@ arguments (Input)
     params.fixedWindow = false
     params.speed = 1
     params.MergeNtrials =1
+    params.oneTrial = false
 end
 
 fieldName =  sprintf('Speed%d',  params.speed);
@@ -120,6 +121,7 @@ for u = eNeuron
 
     if sum(Mr2,'all') ==0
         close
+        ur = ur+1;
         continue
     end
 
@@ -194,7 +196,7 @@ for u = eNeuron
         window = 500;
     else
         [maxResp,maxRespIn]= max(NeuronResp.(fieldName).NeuronVals(u,:,1));
-        start = NeuronResp.(fieldName).NeuronVals(u,maxRespIn,3)*NeuronResp.params.bin-20;  
+        start = NeuronResp.(fieldName).NeuronVals(u,maxRespIn,3)*NeuronResp.params.binRaster-20;  
         window = 500;
     end
 
@@ -286,7 +288,16 @@ for u = eNeuron
     typeData = "line"; %or heatmap
 
     spikes = squeeze(BuildBurstMatrix(goodU(:,u),round(p.t),round(startTimes),round((window))));
-    [fig, mx, mn] = PlotRawDataNP(obj,fig,chan,startTimes,window,freq,typeData,preBase,spikes');
+
+    % if params.oneTrial
+    %     [mx ind] = max(sum(spikes,2)); %select trial with most spikes
+    % else
+    %     ind = 1:size(spikes,1);
+    % end
+
+    [fig, mx, mn] = PlotRawDataNP(obj,fig = fig,chan = chan, startTimes = startTimes,...
+        window = window,spikeTimes = spikes);
+
     xlabel(string(chan))
     xline(-start/1000,'LineWidth',1.5)
     xticklabels([])
@@ -314,6 +325,7 @@ for u = eNeuron
     spikeLoc = find(spikes1 >0);
     if isempty(spikeLoc)
         close
+        ur = ur+1;
         continue
     end
     TrialM(TrialNumber,spikeLoc) = 1;

@@ -1,4 +1,4 @@
-classdef imageAnalysis < VStimAnalysis
+classdef rectGridAnalysis < VStimAnalysis
 
     properties
         Session
@@ -10,7 +10,7 @@ classdef imageAnalysis < VStimAnalysis
 
     methods (Hidden)
         %class constructor - name of class should be identical to the visual stimulation with the addition of Analysis
-        function [obj] = imageAnalysis(dataObj,params)
+        function [obj] = rectGridAnalysis(dataObj,params)
             arguments (Input) %ResponseWindow.mat
                 dataObj
                 params.Session = 1;
@@ -80,24 +80,20 @@ classdef imageAnalysis < VStimAnalysis
 
             stimDur = mean(-stimOn+stimOff);
 
-            imgOrder = obj.VST.imgSequence(obj.VST.order)';
+            A = [stimOn' obj.VST.pos' obj.VST.tilingRatios' obj.VST.rectLuminosity(obj.VST.luminosities)'];
 
-            A = [stimOn' imgOrder];
-            [C indexS] = sortrows(A,[2]);
-
-            B = [stimOff' imgOrder];
-            [Coff indexSo] = sortrows(B,[2]);
+            [C indRG]= sortrows(A,[2 3 4]);
 
             directimesSorted = C(:,1)';
             bin = params.binRaster;
 
-            trialDivision = numel(directimesSorted)/numel(obj.VST.imgNames);
+            trialDivision = numel(directimesSorted)/numel(unique(C(:,2)))/numel(unique(C(:,3)))/numel(unique(C(:,4)));
 
             % Load Kilosort and phy results
             p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
             label = string(p.label');
             goodU = p.ic(:,label == 'good');
-            
+
             %%Create window to scan rasters and get the maximum response
             duration = params.durationWindow; %window in ms, same as in MB
             Mr = BuildBurstMatrix(goodU,round(p.t/bin),round((directimesSorted)/bin),round((stimDur+duration)/bin)); %response matrix
@@ -105,7 +101,7 @@ classdef imageAnalysis < VStimAnalysis
 
             %Normalize trials
             MrNorm = MrC./(sum(MrC,3));
-            MrNorm(isnan(MrNorm)) = 0;
+            MrNorm(isnan(MbNorm)) = 0;
 
             [nT,nN,nB] = size(MrC);
 
@@ -118,7 +114,7 @@ classdef imageAnalysis < VStimAnalysis
             max_mean_valueB = zeros(1,nN);
 
 
-            NeuronVals = zeros(nN,nT/trialDivision,5); %Each neuron, which has a matrix where the first column is maxVal of bins, 2nd and 3rd position of window in matrix...
+            NeuronVals = zeros(nN,nT/trialDivision,7); %Each neuron, which has a matrix where the first column is maxVal of bins, 2nd and 3rd position of window in matrix...
             % 4th Z-score.
             % responsive compared to the baseline.
 
@@ -141,6 +137,9 @@ classdef imageAnalysis < VStimAnalysis
 
             Mbd2 = squeeze(mean(Bd, 1));
 
+            %Merge trials:
+
+            mergeTrials = trialDivision;
 
             B = reshape(MrNorm, [mergeTrials, size(Mr, 1)/mergeTrials, size(Mr, 2), size(Mr,3)]);
 
@@ -154,11 +153,10 @@ classdef imageAnalysis < VStimAnalysis
                 %unit matrix
                 max_mean_value(u) = -Inf; %General max? not needed
                 max_mean_valueB(u)=-Inf;
-                NeuronRespProfile = zeros(nT,5); %4 columns plus: ofsett, dir, size, speed, frec.
+                NeuronRespProfile = zeros(nT,7); %4 columns plus: ofsett, dir, size, speed, frec.
 
                 k =1;
                 max_position_Trial = zeros(nT,2); %Create 2 matrices, for mean inside max window, and for position of window, for each trial category
-                max_position_TrialB = zeros(nT,2);
                 max_mean_value_Trial = zeros(1,nT);
                 max_mean_value_TrialB = zeros(1,nT);
 
@@ -172,7 +170,7 @@ classdef imageAnalysis < VStimAnalysis
                     for j = 1:2:size(uM, 2) - window_size(2) + 1 %Iterate across bins
                         % Extract the sub-matrix
                         sub_matrix = uM(j:min(j+window_size(2)-1,end)); %Create matrix of size window per bin
-                        sub_matrixB = uMB(:,min(j,size(uMB,2)-window_size(2)+1):min(j+window_size(2)-1,end));
+                        sub_matrixB = uMB(j:min(j+window_size(2)-1,end));
 
                         % Compute the mean value
                         mean_value = mean(sub_matrix(:)); %Compute mean of each window
@@ -187,7 +185,6 @@ classdef imageAnalysis < VStimAnalysis
 
                         if mean_valueB >  max_mean_value_TrialB(k)
                             max_mean_value_TrialB(k) = mean_valueB;
-                             max_position_TrialB(k,:) = [i j];
                         end
 
                     end
@@ -212,7 +209,12 @@ classdef imageAnalysis < VStimAnalysis
                     %4%. Resp - Baseline
                     % NeuronRespProfile(i,4) = (max_mean_value_Trial(i) - (spkRateBM(u)+max_mean_value_Trial(i))/2)/denom(u); %Zscore
                     %NeuronRespProfile(k,4) = (max_mean_value_Trial(k) - spkRateBM(u))/denom(u); %Zscore
-                    NeuronRespProfile(k,5) =  NeuronRespProfile(k,4)-BaseResp;
+                    NeuronRespProfile(k,4) =  NeuronRespProfile(k,4)-BaseResp;
+                    %Assign visual stats to last columns of NeuronRespProfile. Select
+                    %according  to trial (d) the appropiate parameter > directions'offsets' sizes' speeds' freq'
+                    NeuronRespProfile(k,5) = C(i*mergeTrials,2);
+                    NeuronRespProfile(k,6) = C(i*mergeTrials,3);
+                    NeuronRespProfile(k,7) = C(i*mergeTrials,4);
 
                     k = k+1;
 
@@ -276,7 +278,8 @@ classdef imageAnalysis < VStimAnalysis
             goodU = NeuronResp.goodU;
             p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
 
-            trialDivision = numel(directimesSorted)/numel(obj.VST.imgNames);
+            trialDivision = numel(directimesSorted)/numel(unique(NeuronResp.C(:,2)))/numel(unique(NeuronResp.C(:,3)))/...
+                numel(unique(NeuronResp.C(:,4)));
 
             %Load same parameters used in response window calculation
             preBase = NeuronResp.params.preBase;
