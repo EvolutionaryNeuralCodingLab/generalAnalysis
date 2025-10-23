@@ -4058,7 +4058,7 @@ classdef sleepAnalysis < recAnalysis
             addParameter(parseObj,'h',0,@ishandle);
             addParameter(parseObj,'printLocalCopy',0,@isnumeric);
             addParameter(parseObj,'stim',0,@isnumeric); 
-            addParameter(parseObj,'stimCh',0,@isnumeric);
+            % addParameter(parseObj,'stimCh',0,@isnumeric);
             addParameter(parseObj,'inputParams',false,@isnumeric);
 
 
@@ -4103,14 +4103,18 @@ classdef sleepAnalysis < recAnalysis
             imagesc((1:size(chunks,1))*timeBin/1000/60,tLong,chunks',[0 estimateColorMapMax]);
             xlabel('Time [min]');ylabel('Time [hour]');
             hold on
-            if stim~=0 && stimCh ~=0
-                T = obj.getDigitalTriggers;
-                firstTrig=T.tTrig{stimCh}(1:8:end-2);
+            if stim~=0 %&& stimCh ~=0
+                T = obj.getStimTriggers;
+                firstTrig=T(1:8:end-2);
                 
                 for i=1:length(firstTrig)
                     curStim = firstTrig(i);
                     xTimes = (1:size(chunks,1))*timeBin/1000/60;
-                    xPos = xTimes(round(mod(curStim,chunksLength)/timeBin));
+                    xtimeind = round(mod(curStim,chunksLength)/timeBin);
+                    if xtimeind ==0
+                        xtimeind =1;
+                    end
+                    xPos = xTimes(xtimeind);
                     
                     yPosUp = tLong(floor(curStim/chunksLength))+0.08;
                     yPosDo = tLong(floor(curStim/chunksLength)+1)+0.08;
@@ -4210,7 +4214,7 @@ classdef sleepAnalysis < recAnalysis
             addParameter(parseObj,'printLocalCopy',0,@isnumeric);
             addParameter(parseObj,'h',0);
             addParameter(parseObj,'stim',0); % put non-zero to have light stimulations timings on
-            addParameter(parseObj,'stimCh',0, @isnumeric); %trigger channel
+            % addParameter(parseObj,'stimCh',0, @isnumeric); %trigger channel
             
             addParameter(parseObj,'inputParams',false,@isnumeric);
             parseObj.parse(varargin{:});
@@ -4232,13 +4236,30 @@ classdef sleepAnalysis < recAnalysis
             pt=find(tSlidingAC>=tStart & tSlidingAC<=(tStart+win+parDbAutocorr.movingAutoCorrWin/2));
             tSlidingAC=tSlidingAC-tSlidingAC(pt(1));
             
-            if h(1)==0
-                fSAC=figure('position',[200 200 550 600]);
-                h(1)=subaxis(fSAC,2,1,1,'S',0.05,'M',0.1);
-                h(2)=subaxis(fSAC,2,1,2,'S',0.05,'M',0.1);
+            if isequal(h,0) || (numel(h)==1 && ~ishandle(h))
+                % No valid axes provided,create new figure and subaxes
+                fSAC = figure('position',[200 200 550 600]);
+                h(1) = subaxis(fSAC,2,1,1,'S',0.05,'M',0.1);
+                h(2) = subaxis(fSAC,2,1,2,'S',0.05,'M',0.1);
+                singleAxesMode = false;
+            elseif numel(h)==1 && ishandle(h)
+                % Single axes handle provided (e.g. from nexttile)
+                saveFigures = 0;
+                singleAxesMode = true;
             else
-                saveFigures=0;
+                % Already has multiple axes
+                singleAxesMode = false;
+                saveFigures = 0;
             end
+
+            % if h(1)==0
+            %     fSAC=figure('position',[200 200 550 600]);
+            %     h(1)=subaxis(fSAC,2,1,1,'S',0.05,'M',0.1);
+            %     h(2)=subaxis(fSAC,2,1,2,'S',0.05,'M',0.1);
+            % else
+            %     saveFigures=0;
+            % 
+            % end
             
             axes(h(1));
             h(3)=imagesc(tSlidingAC(pt)/1000/60/60,autocorrTimes/1000,real(acf(:,pt)),corrCLim);
@@ -4251,10 +4272,10 @@ classdef sleepAnalysis < recAnalysis
             set(h(1),'XTickLabel',[]);
             hold on;
             
-            if stim ~=0 && stimCh ~=0
-                T = obj.getDigitalTriggers;
-                stimStartT = T.tTrig{stimCh}(1);
-                stimEndT = T.tTrig{stimCh}(end);
+            if stim ~=0 %&& stimCh ~=0
+                T = obj.getStimTriggers;
+                stimStartT = T(1);
+                stimEndT = T(end);
                 
                 %plot x-lines
                 xline([stimStartT, stimEndT]/(1000*60*60),'LineWidth',2,'Color','r')
@@ -4273,26 +4294,28 @@ classdef sleepAnalysis < recAnalysis
                 disp('sleep time was not determined and not shown in plot!');
             end
 
-            axes(h(2));
+            if ~singleAxesMode
+                axes(h(2));
 
-            h(5)=scatter(tSlidingAC(pSleepSlidingAC)/1000/60/60,acfPeriodAll(pSleepSlidingAC)/1000,5,[0.8 0.8 1],'filled');hold on;
-            if ~isempty(tFilteredSlidingPeriod)
-                h(6)=plot((tFilteredSlidingPeriod-tStart)/1000/60/60,filteredSlidingPeriod/1000,'-','lineWidth',3);
+                h(5)=scatter(tSlidingAC(pSleepSlidingAC)/1000/60/60,acfPeriodAll(pSleepSlidingAC)/1000,5,[0.8 0.8 1],'filled');hold on;
+                if ~isempty(tFilteredSlidingPeriod)
+                    h(6)=plot((tFilteredSlidingPeriod-tStart)/1000/60/60,filteredSlidingPeriod/1000,'-','lineWidth',3);
+                end
+                ylabel('Period [s]');
+                xlabel('Time [h]');
+                set(h(2),'Box','on');
+                axis tight;
+                xlim(xl);
+                yl=ylim;
+                marg=diff(yl)*0.02;
+                ylim([yl(1)-marg,yl(2)+marg]);
+                h(8:9)=line([parDbAutocorr.tStart parDbAutocorr.tStart;parDbAutocorr.tStart+parDbAutocorr.win parDbAutocorr.tStart+parDbAutocorr.win]'/1000/60/60,[yl;yl]','color',[0.8 1 0.8]);
+                if ~isempty(bestSleepTime)
+                    h(10)=line([bestSleepTime/1000/60/60,bestSleepTime/1000/60/60],yl,'color','k');
+                end
+                linkaxes(h(1:2),'x');
             end
-            ylabel('Period [s]');
-            xlabel('Time [h]');
-            set(h(2),'Box','on');
-            axis tight;
-            xlim(xl);
-            yl=ylim;
-            marg=diff(yl)*0.02;
-            ylim([yl(1)-marg,yl(2)+marg]);
-            h(8:9)=line([parDbAutocorr.tStart parDbAutocorr.tStart;parDbAutocorr.tStart+parDbAutocorr.win parDbAutocorr.tStart+parDbAutocorr.win]'/1000/60/60,[yl;yl]','color',[0.8 1 0.8]);
-            if ~isempty(bestSleepTime)
-                h(10)=line([bestSleepTime/1000/60/60,bestSleepTime/1000/60/60],yl,'color','k');
-            end
-            linkaxes(h(1:2),'x');
-
+            
             if saveFigures
                 set(fSAC,'PaperPositionMode','auto');
                 fileName=[obj.currentPlotFolder filesep 'dbSAC_ch' num2str(parDbAutocorr.ch) '_t' num2str(parDbAutocorr.tStart) '_w' num2str(parDbAutocorr.win)];
