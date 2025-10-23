@@ -1729,7 +1729,7 @@ classdef sleepAnalysis < recAnalysis
             addParameter(parseObj,'frameForEyePosExtraction',[],@isnumeric);
             addParameter(parseObj,'fractionOfBoxJumpThreshold',0.25,@isnumeric);
             addParameter(parseObj,'manuallyUpdatePoints',true,@isnumeric);
-            addParameter(parseObj,'opticFlowNoiseThreshold',[],@isnumeric)
+            addParameter(parseObj,'opticFlowNoiseThreshold',0.0039,@isnumeric)
             addParameter(parseObj,'saveFullOFMatrices',false,@isnumeric);
             addParameter(parseObj,'loadInitialConditions',true,@isnumeric);
             addParameter(parseObj,'skipFramesBoundingBox',30,@isnumeric);
