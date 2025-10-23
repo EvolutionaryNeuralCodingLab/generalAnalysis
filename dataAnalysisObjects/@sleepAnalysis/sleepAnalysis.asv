@@ -1738,11 +1738,7 @@ classdef sleepAnalysis < recAnalysis
             addParameter(parseObj,'frameForEyePosExtraction',[],@isnumeric);
             addParameter(parseObj,'fractionOfBoxJumpThreshold',0.25,@isnumeric);
             addParameter(parseObj,'manuallyUpdatePoints',true,@isnumeric);
-<<<<<<< HEAD
-            addParameter(parseObj,'opticFlowNoiseThreshold',0.0039,@isnumeric)
-=======
             addParameter(parseObj,'opticFlowNoiseThreshold',0.035,@isnumeric)
->>>>>>> origin/main
             addParameter(parseObj,'saveFullOFMatrices',false,@isnumeric);
             addParameter(parseObj,'loadInitialConditions',true,@isnumeric);
             addParameter(parseObj,'skipFramesBoundingBox',30,@isnumeric);
@@ -3839,7 +3835,6 @@ classdef sleepAnalysis < recAnalysis
             % real frames, creating triggers after 12 and then 5 ms (30
             % fps). generaly, if there aren't any extra triggers this
             % should nt matter. can be put in "if" in case of problems. 
-            fprintf('\n');
             
             dt = diff(camTrigs);% Step 1: check small diffs
             thresh = 15; % 15 ms between frames. the camera can't go bellow that. 
@@ -4115,11 +4110,7 @@ classdef sleepAnalysis < recAnalysis
                 for i=1:length(firstTrig)
                     curStim = firstTrig(i);
                     xTimes = (1:size(chunks,1))*timeBin/1000/60;
-                    xtimeind = round(mod(curStim,chunksLength)/timeBin);
-                    if xtimeind ==0
-                        xtimeind =1;
-                    end
-                    xPos = xTimes(xtimeind);
+                    xPos = xTimes(round(mod(curStim,chunksLength)/timeBin));
                     
                     yPosUp = tLong(floor(curStim/chunksLength))+0.08;
                     yPosDo = tLong(floor(curStim/chunksLength)+1)+0.08;
@@ -4302,25 +4293,24 @@ classdef sleepAnalysis < recAnalysis
             if ~singleAxesMode
                 axes(h(2));
 
-                h(5)=scatter(tSlidingAC(pSleepSlidingAC)/1000/60/60,acfPeriodAll(pSleepSlidingAC)/1000,5,[0.8 0.8 1],'filled');hold on;
-                if ~isempty(tFilteredSlidingPeriod)
-                    h(6)=plot((tFilteredSlidingPeriod-tStart)/1000/60/60,filteredSlidingPeriod/1000,'-','lineWidth',3);
-                end
-                ylabel('Period [s]');
-                xlabel('Time [h]');
-                set(h(2),'Box','on');
-                axis tight;
-                xlim(xl);
-                yl=ylim;
-                marg=diff(yl)*0.02;
-                ylim([yl(1)-marg,yl(2)+marg]);
-                h(8:9)=line([parDbAutocorr.tStart parDbAutocorr.tStart;parDbAutocorr.tStart+parDbAutocorr.win parDbAutocorr.tStart+parDbAutocorr.win]'/1000/60/60,[yl;yl]','color',[0.8 1 0.8]);
-                if ~isempty(bestSleepTime)
-                    h(10)=line([bestSleepTime/1000/60/60,bestSleepTime/1000/60/60],yl,'color','k');
-                end
-                linkaxes(h(1:2),'x');
+            h(5)=scatter(tSlidingAC(pSleepSlidingAC)/1000/60/60,acfPeriodAll(pSleepSlidingAC)/1000,5,[0.8 0.8 1],'filled');hold on;
+            if ~isempty(tFilteredSlidingPeriod)
+                h(6)=plot((tFilteredSlidingPeriod-tStart)/1000/60/60,filteredSlidingPeriod/1000,'-','lineWidth',3);
             end
-            
+            ylabel('Period [s]');
+            xlabel('Time [h]');
+            set(h(2),'Box','on');
+            axis tight;
+            xlim(xl);
+            yl=ylim;
+            marg=diff(yl)*0.02;
+            ylim([yl(1)-marg,yl(2)+marg]);
+            h(8:9)=line([parDbAutocorr.tStart parDbAutocorr.tStart;parDbAutocorr.tStart+parDbAutocorr.win parDbAutocorr.tStart+parDbAutocorr.win]'/1000/60/60,[yl;yl]','color',[0.8 1 0.8]);
+            if ~isempty(bestSleepTime)
+                h(10)=line([bestSleepTime/1000/60/60,bestSleepTime/1000/60/60],yl,'color','k');
+            end
+            linkaxes(h(1:2),'x');
+
             if saveFigures
                 set(fSAC,'PaperPositionMode','auto');
                 fileName=[obj.currentPlotFolder filesep 'dbSAC_ch' num2str(parDbAutocorr.ch) '_t' num2str(parDbAutocorr.tStart) '_w' num2str(parDbAutocorr.win)];
