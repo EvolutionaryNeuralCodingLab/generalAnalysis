@@ -3835,6 +3835,7 @@ classdef sleepAnalysis < recAnalysis
             % real frames, creating triggers after 12 and then 5 ms (30
             % fps). generaly, if there aren't any extra triggers this
             % should nt matter. can be put in "if" in case of problems. 
+            fprintf('\n');
             
             dt = diff(camTrigs);% Step 1: check small diffs
             thresh = 15; % 15 ms between frames. the camera can't go bellow that. 
