@@ -72,7 +72,12 @@ classdef fullFieldFlashAnalysis < VStimAnalysis
 
             ST = obj.getSessionTime;
 
-            DiodeCrossings = obj.getSyncedDiodeTriggers;
+            try
+                DiodeCrossings = obj.getSyncedDiodeTriggers;
+            catch
+                obj.getDiodeTriggers("extractionMethod",'digitalTriggerDiode','overwrite',true);
+                DiodeCrossings = obj.getSyncedDiodeTriggers;
+            end
             
             stimOn = DiodeCrossings.stimOnFlipTimes;
             stimOff = DiodeCrossings.stimOffFlipTimes;
