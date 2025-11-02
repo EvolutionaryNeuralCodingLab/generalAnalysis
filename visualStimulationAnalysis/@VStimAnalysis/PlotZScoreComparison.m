@@ -311,29 +311,34 @@ if forloop
         spkR_MBs =  spkR_MB(pvalsStimSelected<=params.threshold);
         spkDiff_MBs =  spkDiff_MB(pvalsStimSelected<=params.threshold);
         pvals_MB = pValuesMB(pvalsStimSelected<=params.threshold);
+        sumNeurMB = numel(zScores_MB);
 
         zScores_RGs = zScores_RG(pvalsStimSelected<=params.threshold);
         spkR_RGs = spkR_RG(pvalsStimSelected<=params.threshold);
         spkDiff_RGs = spkDiff_RG(pvalsStimSelected<=params.threshold);
         pvals_RG = pValuesRG(pvalsStimSelected<=params.threshold);
+        sumNeurRG = numel(zScores_RG);
 
         if isequal(params.StimsPresent{2},'') %Asign - inf values if stim is not present in recording
             zScores_RGs = zScores_RG-inf;
             spkR_RGs = zScores_RG-inf;
             spkDiff_RGs = zScores_RG-inf;
             pvals_RG = zScores_RG-inf;
+            sumNeurRG = 0;
         end
 
         zScores_MBRs = zScores_MBR(pvalsStimSelected<=params.threshold);
         spkR_MBRs = spkR_MBR(pvalsStimSelected<=params.threshold);
         spkDiff_MBRs = spkDiff_MBR(pvalsStimSelected<=params.threshold);
         pvals_MBR = pValuesMBR(pvalsStimSelected<=params.threshold);
+        sumNeurMBR = numel(zScores_MBR);
 
         if isequal(params.StimsPresent{3},'') %Asign - inf values if stim is not present in recording
             zScores_MBRs = zScores_MBRs-inf;
             spkR_MBRs = zScores_MBRs-inf;
             spkDiff_MBRs = zScores_MBRs-inf;
             pvals_MBR = zScores_MBRs-inf;
+            sumNeurMBR = 0;
         end
 
         zScores_SDGms = zScores_SDGm(pvalsStimSelected<=params.threshold);
@@ -345,6 +350,7 @@ if forloop
         spkR_SDGss = spkR_SDGs(pvalsStimSelected<=params.threshold);
         spkDiff_SDGss = spkDiff_SDGs(pvalsStimSelected<=params.threshold);
         pvals_SDGs = pValuesSDGs(pvalsStimSelected<=params.threshold);
+        sumNeurSDG = numel(zScores_SDGs);
 
         if isequal(params.StimsPresent{4},'') %Asign - inf values if stim is not present in recording
             zScores_SDGss = zScores_SDGss-inf;
@@ -356,24 +362,28 @@ if forloop
             spkR_SDGms = spkR_SDGms-inf;
             spkDiff_SDGms = spkDiff_SDGms-inf;
             pvals_SDGm = pvals_SDGm-inf;
+            sumNeurSDG = 0;
         end
 
         zScores_FFFs = zScores_FFF(pvalsStimSelected<=params.threshold);
         spkR_FFFs = spkR_FFF(pvalsStimSelected<=params.threshold);
         spkDiff_FFFs = spkDiff_FFF(pvalsStimSelected<=params.threshold);
         pvals_FFF = pValuesFFF(pvalsStimSelected<=params.threshold);
+        sumNeurFFF = numel(zScores_FFF);
 
         if isequal(params.StimsPresent{7},'') %Asign - inf values if stim is not present in recording
             zScores_FFFs = zScores_FFFs-inf;
             spkR_FFFs = spkR_FFFs-inf;
             spkDiff_FFFs = spkDiff_FFFs-inf;
             pvals_FFF = pvals_FFF-inf;
+            sumNeurFFF = 0;
         end
 
         zScores_NIs= zScores_NI(pvalsStimSelected<=params.threshold);
         spkR_NIs = spkR_NI(pvalsStimSelected<=params.threshold);
         spkDiff_NIs = spkDiff_NI(pvalsStimSelected<=params.threshold);
         pvals_NI = pValuesNI(pvalsStimSelected<=params.threshold);
+        sumNeurNI = numel(zScores_NI);
 
 
         if isequal(params.StimsPresent{5},'') %Asign - inf values if stim is not present in recording
@@ -381,18 +391,21 @@ if forloop
             spkR_NIs = spkR_NIs-inf;
             spkDiff_NIs = spkDiff_NIs-inf;
             pvals_NI = pvals_NI-inf;
+            sumNeurNI = 0;
         end
 
         zScores_NVs = zScores_NV(pvalsStimSelected<=params.threshold);
         spkR_NVs = spkR_NV(pvalsStimSelected<=params.threshold);
         spkDiff_NVs = spkDiff_NV(pvalsStimSelected<=params.threshold);
         pvals_NV = pValuesNV(pvalsStimSelected<=params.threshold);
+        sumNeurNV = numel(zScores_NV);
         
         if isequal(params.StimsPresent{6},'') %Asign - inf values if stim is not present in recording
             zScores_NVs = zScores_NV-inf;
             spkR_NVs = spkR_NVs-inf;
             spkDiff_NVs = spkDiff_NVs-inf;
             pvals_NV = pvals_NV-inf;
+            sumNeurNV = 0;
         end
         
 
@@ -458,7 +471,9 @@ if forloop
         zScoresMB{j} = zScores_MBs;
         zScoresRG{j} = zScores_RGs;
         pvalsRG{j} = pvals_RG;
+        sumNeurRGt{j} = sumNeurRG;
         pvalsMB{j} = pvals_MB;
+        sumNeurMBt{j} = sumNeurMB;
 
         spKrMB{j} = spkR_MBs';
         spKrRG{j} = spkR_RGs';
@@ -469,11 +484,13 @@ if forloop
         spKrFFF{j} = spkR_FFFs';
         diffSpkFFF{j} = spkDiff_FFFs;
         pvalsFFF{j} = pvals_FFF;
+        sumNeurFFFt{j} = sumNeurFFFt;
 
         zScoresMBR{j} = zScores_MBRs;
         spKrMBR{j} = spkR_MBRs';
         diffSpkMBR{j} = spkDiff_MBRs;
         pvalsMBR{j} = pvals_MBR;
+        sumNeurMBRt{j} = sumNeurMBR;
 
         zScoresSDGm{j} = zScores_SDGms;
         spKrSDGm{j} = spkR_SDGms';
@@ -484,16 +501,19 @@ if forloop
         spKrSDGs{j} = spkR_SDGss';
         diffSpkSDGs{j} = spkDiff_SDGss;
         pvalsSDGs{j} = pvals_SDGs;
+        sumNeurSDGt{j} = sumNeurSDG;
 
         zScoresNI{j} = zScores_NIs;
         spKrNI{j} = spkR_NIs';
         diffSpkNI{j} = spkDiff_NIs;
         pvalsNI{j} = pvals_NI;
+        sumNeurNIt{j} = sumNeurNI;
 
         zScoresNV{j} = zScores_NVs;
         spKrNV{j} = spkR_NVs';
         diffSpkNV{j} = spkDiff_NVs;
         pvalsNV{j} = pvals_NV;
+        sumNeurNVt{j} = sumNeurNV;
         
         %%% Responsive in general:
 
@@ -550,6 +570,8 @@ if forloop
     S.params = params;
     S.pvalsMB = pvalsMB;
     S.pvalsRG = pvalsRG;
+    S.sumNeurRG = sumNeurRGt;
+    S.sumNeurMB = sumNeurMBt;
 
     S.spKrMBR = spKrMBR;
     S.spKrFFF = spKrFFF;
@@ -559,6 +581,7 @@ if forloop
     S.zScoresFFF = zScoresFFF;
     S.pvalsFFF = pvalsFFF;
     S.pvalsMBR = pvalsMBR;
+    S.sumNeurMBR = sumNeurMBRt;
 
     S.spKrSDGm = spKrSDGm;
     S.spKrSDGs = spKrSDGs;
@@ -568,6 +591,7 @@ if forloop
     S.zScoresSDGs = zScoresSDGs;
     S.pvalsSDGm = pvalsSDGm;
     S.pvalsSDGs = pvalsSDGs;
+    S.sumNeurSDG = sumNeurSDGt;
 
     S.spKrNI = spKrNI;
     S.spKrNV = spKrNV;
@@ -577,6 +601,8 @@ if forloop
     S.zScoresNV = zScoresNV;
     S.pvalsNI = pvalsNI;
     S.pvalsNV = pvalsNV;
+    S.sumNeurNV = sumNeurNVt;
+    S.sumNeurNI = sumNeurNIt;
 
     S.zScoresMBg=zScoresMBg;
     S.spkRMBg=spkRMBg;
