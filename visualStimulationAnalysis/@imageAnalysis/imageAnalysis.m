@@ -55,7 +55,8 @@ classdef imageAnalysis < VStimAnalysis
                 params.binRaster = 1
                 params.durationWindow = 100
                 params.preBase = 200
-                params.GaussianLength =5;
+                params.GaussianLength =5
+                params.normBaseline = false
             end
             if params.inputParams,disp(params),return,end
 
@@ -247,7 +248,8 @@ classdef imageAnalysis < VStimAnalysis
                 params.analysisTime = datetime('now')
                 params.inputParams = false
                 params.trialThreshold = 0.6
-                params.N_bootstrap = 2000;
+                params.N_bootstrap = 2000
+                params.normBaseline = false
                 
             end
             if params.inputParams,disp(params),return,end
@@ -303,12 +305,14 @@ classdef imageAnalysis < VStimAnalysis
                     slice = resampled_trials(:, ui, :);
                     slice = squeeze(slice); % Result is t x b
 
-                    %Normalize slice trials
-                    Norm = slice./sum(slice,2);
-                    Norm(isnan(Norm)) = 0;
+                    if params.normBaseline
+                        %Normalize slice trials
+                        slice = slice./sum(slice,2);
+                        slice(isnan(Norm)) = 0;
+                    end
 
                     % Compute the mean using 2D convolution
-                    means = conv2(Norm, kernel, 'valid'); % 'valid' ensures the window fits within bounds
+                    means = conv2(slice, kernel, 'valid'); % 'valid' ensures the window fits within bounds
 
                     % Find the maximum mean in this slice
                     boot_means(i, ui) = max(means(:));
@@ -318,7 +322,12 @@ classdef imageAnalysis < VStimAnalysis
 
             %[bootstats] = get_bootstrapped_equalsamples(data,nruns,num_trials,param)
 
-            [respVal,respVali]= max(NeuronResp.NeuronVals(:,:,1),[],2);
+           
+            if params.normBaseline
+                [respVal,respVali]= max(NeuronResp.NeuronVals(:,:,1),[],2);
+            else
+                [respVal,respVali]= max(NeuronResp.NeuronVals(:,:,4),[],2);
+            end
 
             Mr = BuildBurstMatrix(goodU,round(p.t/bin),round((directimesSorted)/bin),round((NeuronResp.stimDur+duration)/bin)); %response matrix
 

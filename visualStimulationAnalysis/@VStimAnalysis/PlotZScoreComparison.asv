@@ -7,13 +7,14 @@ arguments
     params.threshold = 0.05;
     params.diffResp = false;
     params.overwrite = false;
-    params.StimsPresent = {'MB'}; %assumes that at list moving ball is present
+    params.StimsPresent = {'MB','RG'}; %assumes that at least moving ball is present
     params.StimsNotPresent = {};
-    params.StimsToCompare = {};
+    params.StimsToCompare = {}; %Select 2 stims to compare scatter plots (default: 1st and 2nd stim are compared from the Stims2Comp cell array)
     params.overwriteResponse = false;
     params.RespDurationWin = 100; %same as default
     params.shuffles = 2000; %same as default
-    params.ignoreNonSignif = false;
+    params.ignoreNonSignif = false; %when comparing first stim, ignore neurons non responsive to other stim
+    params.EachStimSignif = false; %resposnive neurons for each stim are selected (default: responsive neurons of first stime are selected)
 end
 
 % Compare z-scores and p-values between moving ball and rect grid analyses
@@ -73,49 +74,6 @@ if exist([saveDir nameOfFile],'file') == 2 && ~params.overwrite
 
     if isequal(expList2,expList)
 
-        % spKrMB = S.spKrMB;
-        % spKrRG = S.spKrRG;
-        % diffSpkMB = S.diffSpkMB;
-        % diffSpkRG = S.diffSpkRG;
-        % animalVector = S.animalVector;
-        % zScoresMB = S.zScoresMB;
-        % zScoresRG = S.zScoresRG;
-        % 
-        % if isfield(S,'spKrMBR')
-        %     spKrMBR = S.spKrMBR;
-        %     diffSpkMBR = S.diffSpkMBR;
-        %     zScoresMBR = S.zScoresMBR;
-        % end
-        % 
-        % if isfield(S,'spKrSDGm')
-        %     spKrSDGm = S.spKrSDGm; %Moving
-        %     diffSpkSDGm = S.diffSpkSDGm;
-        %     zScoresSDGm = S.zScoresSDGm;
-        % 
-        %     spKrSDGs = S.spKrSDGs; %Static
-        %     diffSpkSDGs = S.diffSpkSDGs;
-        %     zScoresSDGs = S.zScoresSDGs;
-        % end
-        % 
-        % 
-        % if isfield(S,'spKrFFF')
-        %     spKrFFF = S.spKrFFF;
-        %     diffSpkFFF = S.diffSpkFFF;
-        %     zScoresFFF = S.zScoresFFF;
-        % end
-        % 
-        % if isfield(S,'spKrNI')
-        %     spKrNI = S.spKrNI;
-        %     diffSpkNI = S.diffSpkNI;
-        %     zScoresNI = S.zScoresNI;
-        % end
-        % 
-        % if isfield(S,'spKrNV')
-        %     spKrNV = S.spKrNV;
-        %     diffSpkNV = S.diffSpkNV;
-        %     zScoresNV = S.zScoresNV;
-        % end
-
         forloop = false;
     else
         forloop = true;
@@ -127,9 +85,11 @@ end
 if forloop
     for ex = expList
 
+        fprintf('Processing recording: %s .\n',NP.recordingName)
         NP = loadNPclassFromTable(ex); %73 81
         vs = linearlyMovingBallAnalysis(NP);
         vsR = rectGridAnalysis(NP);
+
         try
             vsBr = linearlyMovingBarAnalysis(NP);
             params.StimsPresent{3} = 'MBR';
@@ -166,6 +126,9 @@ if forloop
         try
             vsNV = movieAnalysis(NP);
             params.StimsPresent{6} = 'NV';
+            if isempty(vsNV.VST)
+                error('Gratings stimulus not found.\n')
+            end
         catch
             params.StimsPresent{6} = '';
             fprintf('Natural video stimulus not found.\n')
@@ -173,8 +136,11 @@ if forloop
         end
 
         try
-            vsFFF = FullFieldFlashAnalysis(NP);
+            vsFFF = fullFieldFlashAnalysis(NP);
             params.StimsPresent{7} = 'FFF';
+            if isempty(vsFFF.VST)
+                error('Gratings stimulus not found.\n')
+            end
         catch
             params.StimsPresent{7} = '';
             fprintf('FFF stimulus not found.\n')
@@ -249,58 +215,74 @@ if forloop
         %Load stats of Moving Ball, select fastest speed if there are several
         zScores_MB = statsMB.Speed1.ZScoreU;
         pValuesMB = statsMB.Speed1.pvalsResponse;
-        spkR_MB = max(rwMB.Speed1.NeuronVals(:,:,1),[],2);
-        spkDiff_MB = max(rwMB.Speed1.NeuronVals(:,:,4),[],2);
+        spkR_MB = max(rwMB.Speed1.NeuronVals(:,:,4),[],2);
+        spkDiff_MB = max(rwMB.Speed1.NeuronVals(:,:,5),[],2);
 
         if isfield(statsMB, 'Speed2') %If
             zScores_MB = statsMB.Speed2.ZScoreU;
             pValuesMB = statsMB.Speed2.pvalsResponse;
-            spkR_MB = max(rwMB.Speed2.NeuronVals(:,:,1),[],2);
-            spkDiff_MB = max(rwMB.Speed2.NeuronVals(:,:,4),[],2);
+            spkR_MB = max(rwMB.Speed2.NeuronVals(:,:,4),[],2);
+            spkDiff_MB = max(rwMB.Speed2.NeuronVals(:,:,5),[],2);
         end
 
+        totalU{j} = numel(zScores_MB);
         %Load stats of Rect Grid.
         zScores_RG = statsRG.ZScoreU;
         pValuesRG = statsRG.pvalsResponse;
-        spkR_RG = max(rwRG.NeuronVals(:,:,1),[],2);
-        spkDiff_RG = max(rwRG.NeuronVals(:,:,4),[],2);
+        spkR_RG = max(rwRG.NeuronVals(:,:,4),[],2);
+        spkDiff_RG = max(rwRG.NeuronVals(:,:,5),[],2);
 
         %Load stats of Moving bar.
         zScores_MBR = statsMBR.Speed1.ZScoreU;
         pValuesMBR = statsMBR.Speed1.pvalsResponse;
-        spkR_MBR = max(rwMBR.Speed1.NeuronVals(:,:,1),[],2);
-        spkDiff_MBR = max(rwMBR.Speed1.NeuronVals(:,:,4),[],2);
+        spkR_MBR = max(rwMBR.Speed1.NeuronVals(:,:,4),[],2);
+        spkDiff_MBR = max(rwMBR.Speed1.NeuronVals(:,:,5),[],2);
 
         %Load stats of FFF
         zScores_FFF = statsFFF.ZScoreU;
         pValuesFFF = statsFFF.pvalsResponse;
-        spkR_FFF = max(rwFFF.NeuronVals(:,:,1),[],2);
-        spkDiff_FFF = max(rwFFF.NeuronVals(:,:,4),[],2);
+        spkR_FFF = max(rwFFF.NeuronVals(:,:,4),[],2);
+        spkDiff_FFF = max(rwFFF.NeuronVals(:,:,5),[],2);
 
         %Load stats of SDG moving
-        zScores_SDGm = statsSDG.Moving.ZScoreU;
-        pValuesSDGm = statsSDG.Moving.pvalsResponse;
-        spkR_SDGm = max(rwSDG.Moving.NeuronVals(:,:,1),[],2);
-        spkDiff_SDGm = max(rwSDG.Moving.NeuronVals(:,:,4),[],2);
 
-        %Load stats of SDG static
-        zScores_SDGs = statsSDG.Static.ZScoreU;
-        pValuesSDGs = statsSDG.Static.pvalsResponse;
-        spkR_SDGs = max(rwSDG.Static.NeuronVals(:,:,1),[],2);
-        spkDiff_SDGs = max(rwSDG.Static.NeuronVals(:,:,4),[],2);
+        if isequal(params.StimsPresent{4},'')
 
+            zScores_SDGm = statsSDG.ZScoreU;
+            pValuesSDGm = statsSDG.pvalsResponse;
+            spkR_SDGm = max(rwSDG.NeuronVals(:,:,4),[],2);
+            spkDiff_SDGm = max(rwSDG.NeuronVals(:,:,5),[],2);
+
+            %Load stats of SDG static
+            zScores_SDGs = statsSDG.ZScoreU;
+            pValuesSDGs = statsSDG.pvalsResponse;
+            spkR_SDGs = max(rwSDG.NeuronVals(:,:,4),[],2);
+            spkDiff_SDGs = max(rwSDG.NeuronVals(:,:,5),[],2);
+
+        else
+            zScores_SDGm = statsSDG.Moving.ZScoreU;
+            pValuesSDGm = statsSDG.Moving.pvalsResponse;
+            spkR_SDGm = max(rwSDG.Moving.NeuronVals(:,:,4),[],2);
+            spkDiff_SDGm = max(rwSDG.Moving.NeuronVals(:,:,5),[],2);
+
+            %Load stats of SDG static
+            zScores_SDGs = statsSDG.Static.ZScoreU;
+            pValuesSDGs = statsSDG.Static.pvalsResponse;
+            spkR_SDGs = max(rwSDG.Static.NeuronVals(:,:,4),[],2);
+            spkDiff_SDGs = max(rwSDG.Static.NeuronVals(:,:,5),[],2);
+        end
 
         %Load stats of Natural images
         zScores_NI = statsNI.ZScoreU;
         pValuesNI = statsNI.pvalsResponse;
-        spkR_NI = max(rwNI.NeuronVals(:,:,1),[],2);
-        spkDiff_NI = max(rwNI.NeuronVals(:,:,4),[],2);
+        spkR_NI = max(rwNI.NeuronVals(:,:,4),[],2);
+        spkDiff_NI = max(rwNI.NeuronVals(:,:,5),[],2);
 
         %Load stats of video
         zScores_NV = statsNV.ZScoreU;
         pValuesNV = statsNV.pvalsResponse;
-        spkR_NV = max(rwNV.NeuronVals(:,:,1),[],2);
-        spkDiff_NV = max(rwNV.NeuronVals(:,:,4),[],2);
+        spkR_NV = max(rwNV.NeuronVals(:,:,4),[],2);
+        spkDiff_NV = max(rwNV.NeuronVals(:,:,5),[],2);
 
         if params.ignoreNonSignif
 
@@ -324,6 +306,7 @@ if forloop
 
 
          %%% Responsive to one specific stimuli: 
+
         zScores_MBs = zScores_MB(pvalsStimSelected<=params.threshold);
         spkR_MBs =  spkR_MB(pvalsStimSelected<=params.threshold);
         spkDiff_MBs =  spkDiff_MB(pvalsStimSelected<=params.threshold);
@@ -334,10 +317,24 @@ if forloop
         spkDiff_RGs = spkDiff_RG(pvalsStimSelected<=params.threshold);
         pvals_RG = pValuesRG(pvalsStimSelected<=params.threshold);
 
+        if isequal(params.StimsPresent{2},'') %Asign - inf values if stim is not present in recording
+            zScores_RGs = zScores_RG-inf;
+            spkR_RGs = zScores_RG-inf;
+            spkDiff_RGs = zScores_RG-inf;
+            pvals_RG = zScores_RG-inf;
+        end
+
         zScores_MBRs = zScores_MBR(pvalsStimSelected<=params.threshold);
         spkR_MBRs = spkR_MBR(pvalsStimSelected<=params.threshold);
         spkDiff_MBRs = spkDiff_MBR(pvalsStimSelected<=params.threshold);
         pvals_MBR = pValuesMBR(pvalsStimSelected<=params.threshold);
+
+        if isequal(params.StimsPresent{3},'') %Asign - inf values if stim is not present in recording
+            zScores_MBRs = zScores_MBRs-inf;
+            spkR_MBRs = zScores_MBRs-inf;
+            spkDiff_MBRs = zScores_MBRs-inf;
+            pvals_MBR = zScores_MBRs-inf;
+        end
 
         zScores_SDGms = zScores_SDGm(pvalsStimSelected<=params.threshold);
         spkR_SDGms = spkR_SDGm(pvalsStimSelected<=params.threshold);
@@ -349,20 +346,55 @@ if forloop
         spkDiff_SDGss = spkDiff_SDGs(pvalsStimSelected<=params.threshold);
         pvals_SDGs = pValuesSDGs(pvalsStimSelected<=params.threshold);
 
+        if isequal(params.StimsPresent{4},'') %Asign - inf values if stim is not present in recording
+            zScores_SDGss = zScores_SDGss-inf;
+            spkR_SDGss = spkR_SDGss-inf;
+            spkDiff_SDGss = spkDiff_SDGss-inf;
+            pvals_SDGs = pvals_SDGs-inf;
+
+            zScores_SDGms = zScores_SDGms-inf;
+            spkR_SDGms = spkR_SDGms-inf;
+            spkDiff_SDGms = spkDiff_SDGms-inf;
+            pvals_SDGm = pvals_SDGm-inf;
+        end
+
         zScores_FFFs = zScores_FFF(pvalsStimSelected<=params.threshold);
         spkR_FFFs = spkR_FFF(pvalsStimSelected<=params.threshold);
         spkDiff_FFFs = spkDiff_FFF(pvalsStimSelected<=params.threshold);
         pvals_FFF = pValuesFFF(pvalsStimSelected<=params.threshold);
+
+        if isequal(params.StimsPresent{7},'') %Asign - inf values if stim is not present in recording
+            zScores_FFFs = zScores_FFFs-inf;
+            spkR_FFFs = spkR_FFFs-inf;
+            spkDiff_FFFs = spkDiff_FFFs-inf;
+            pvals_FFF = pvals_FFF-inf;
+        end
 
         zScores_NIs= zScores_NI(pvalsStimSelected<=params.threshold);
         spkR_NIs = spkR_NI(pvalsStimSelected<=params.threshold);
         spkDiff_NIs = spkDiff_NI(pvalsStimSelected<=params.threshold);
         pvals_NI = pValuesNI(pvalsStimSelected<=params.threshold);
 
+
+        if isequal(params.StimsPresent{5},'') %Asign - inf values if stim is not present in recording
+            zScores_NIs = zScores_NIs-inf;
+            spkR_NIs = spkR_NIs-inf;
+            spkDiff_NIs = spkDiff_NIs-inf;
+            pvals_NI = pvals_NI-inf;
+        end
+
         zScores_NVs = zScores_NV(pvalsStimSelected<=params.threshold);
         spkR_NVs = spkR_NV(pvalsStimSelected<=params.threshold);
         spkDiff_NVs = spkDiff_NV(pvalsStimSelected<=params.threshold);
         pvals_NV = pValuesNV(pvalsStimSelected<=params.threshold);
+        
+        if isequal(params.StimsPresent{6},'') %Asign - inf values if stim is not present in recording
+            zScores_NVs = zScores_NV-inf;
+            spkR_NVs = spkR_NVs-inf;
+            spkDiff_NVs = spkDiff_NVs-inf;
+            pvals_NV = pvals_NV-inf;
+        end
+        
 
 
         %%% Responsive in general:
@@ -411,6 +443,10 @@ if forloop
 
         %Check animal name
         Animal = string(regexp( vs.getAnalysisFileName, 'PV\d+', 'match', 'once'));
+
+        if isequal(Animal,"")
+              Animal = string(regexp( vs.getAnalysisFileName, 'SA\d+', 'match', 'once'));
+        end
 
         if Animal ~= AnimalI %wont work if you start with the first animal (noisy animal)
             animal = animal+1;
@@ -499,6 +535,8 @@ if forloop
 
         j = j +1;
 
+        fprintf('Finished recording: %s .\n',NP.recordingName)
+
     end
 
     S.spKrMB = spKrMB;
@@ -537,6 +575,7 @@ if forloop
     S.diffSpkNV = diffSpkNV;
     S.zScoresNI =zScoresNI;
     S.zScoresNV = zScoresNV;
+    S.pvalsNI = pvalsNI;
     S.pvalsNV = pvalsNV;
 
     S.zScoresMBg=zScoresMBg;
@@ -572,6 +611,7 @@ if forloop
     S.spkDiffNVg=spkDiffNVg;
 
     S.expList = expList;
+    S.totalUnits = totalU;
     S.params = params;
     S.responsiveNeurons = responsiveNeurons;
 
@@ -589,30 +629,67 @@ stimRSP = cell(numel(Stims2Comp),1);
 stimPvals = cell(numel(Stims2Comp),1);
 
 x = [];
+endingOpts = {'','g'};
+if params.EachStimSignif
+    ending2 = endingOpts{2};
+else
+    ending2 = endingOpts{1};
+end
 
+Stims2Comp2 = {};
 for i = 1:numel(Stims2Comp)
+    if strcmp(Stims2Comp{i}, 'SDG')
+        % Replace 'SDG' with two new elements
+        Stims2Comp2 = [Stims2Comp2, {'SDGs', 'SDGm'}];
+    else
+        Stims2Comp2 = [Stims2Comp2, Stims2Comp(i)];
+    end
+end
 
-    ending = Stims2Comp{i};
-    pattern = ['^zS.*' ending '$'];
+
+StimZS = cell(numel(Stims2Comp2),1);
+stimRSP = cell(numel(Stims2Comp2),1);
+stimPvals = cell(numel(Stims2Comp2),1);
+
+for i = 1:numel(Stims2Comp2)
+
+    ending = Stims2Comp2{i};
+    pattern = ['^zS.*' ending ending2 '$'];
     matches = fn(~cellfun('isempty', regexp(fn, pattern)));
 
     StimZS{i} = cell2mat(S.(matches{1}))';
 
     if  ~params.diffResp
-        pattern = ['^spKr.*' ending '$'];
+        pattern = ['^spKr.*' ending ending2 '$'];
     else
-        pattern = ['^diffSpk.*' ending '$'];
+        pattern = ['^diffSpk.*' ending ending2 '$'];
     end
     
     matches = fn(~cellfun('isempty', regexp(fn, pattern)));
-    stimRSP{i} = cell2mat(S.(matches{1}))';
+
+    if params.EachStimSignif
+        matches = fn(~cellfun('isempty', regexp(fn, pattern,'ignorecase')));
+        C = S.(matches{1});
+        C = cellfun(@(x) x', C, 'UniformOutput', false);
+        stimRSP{i} = cell2mat(C);
+    else
+        try
+            stimRSP{i} =  cell2mat(S.(matches{1})');
+        catch
+            try
+                stimRSP{i} =  cell2mat(S.(matches{1}));
+            catch
+                stimRSP{i} =  cell2mat(S.(matches{1})');
+            end
+        end
+    end
 
     pattern = ['^pvals.*' ending '$'];
 
     matches = fn(~cellfun('isempty', regexp(fn, pattern)));
     stimPvals{i} = cell2mat(S.(matches{1}))';
 
-    x = [x;ones(size(cell2mat(S.(matches{1}))'))*i];
+    x = [x;ones(size(StimZS{i}))*i];
 
 end
 % 
@@ -639,24 +716,23 @@ y = cell2mat(StimZS);
 % end
 
 % Combine all color indices
-allColorIndices = repmat(AnIndex,numel(Stims2Comp)+1,1);
+allColorIndices = repmat(AnIndex,numel(Stims2Comp),1);
 
 % ---- Swarmchart (Larger Left Subplot) ----
 nexttile % Takes most of the space
 swarmchart(x, y, 5, [colormapUsed(allColorIndices,:)], 'filled','MarkerFaceAlpha',0.7); % Marker size 50
-xticks(1:7);
-xticklabels(Stims2Comp);
+xticks(1:8);
+xticklabels(Stims2Comp2);
 ylabel('Z-score');
 set(fig,'Color','w')
 %set(gca, 'YScale', 'log')
 yline([0],'LineWidth',2)
-ylim([-0.1 0.1])
+ylim([-5 40])
 
 
 nexttile
 %stims to compare
-
-boxplot(y2,'Labels',Stims2Comp)
+% boxplot(y2,'Labels',Stims2Comp)
 
 
 if isempty(params.StimsToCompare)
@@ -675,9 +751,10 @@ scatter(ValsToCompare{1},ValsToCompare{2},10,AnIndex,"filled","MarkerFaceAlpha",
 colormap(colormapUsed)
 hold on
 axis equal
-%lims = [0 40];
+
 lims =[min(y) max(y)]; 
 plot(lims, lims, 'k--', 'LineWidth', 1.5)
+lims = [-5 40];
 ylim(lims)
 xlim(lims)
 xlabel(Stims2Comp(ind1))
@@ -686,13 +763,13 @@ ylabel(Stims2Comp(ind2))
 %%% Spike rate comparison
 
 
-y = cell2mat(stimRSP);
+y = cell2mat(stimRSP');
 
 % ---- Swarmchart (Larger Left Subplot) ----
 nexttile % Takes most of the space
 swarmchart(x, y, 5, [colormapUsed(allColorIndices,:)], 'filled','MarkerFaceAlpha',0.7); % Marker size 50
-xticks(1:7);
-xticklabels(Stims2Comp);
+xticks(1:8);
+xticklabels(Stims2Comp2);
 ylabel('Spike Rate');
 set(fig,'Color','w')
 %set(gca, 'YScale', 'log')
@@ -715,9 +792,9 @@ ylabel(Stims2Comp(ind2))
 %%Number of responsive units:
 
 
-for i = 1:numel(Stims2Comp)
+for i = 1:numel(Stims2Comp2)
 
-    ending = [Stims2Comp{i} 'g'];
+    ending = [Stims2Comp2{i} 'g'];
     pattern = ['^zS.*' ending '$'];
     matches = fn(~cellfun('isempty', regexp(fn, pattern)));
 
@@ -733,7 +810,7 @@ BarVals = [cell2mat(RespNeurCount)];
 
 bar([AllRespNeurs BarVals],'FaceColor','k','FaceAlpha',0.7)
 
-xticklabels({'Total resp. neurons',Stims2Comp{:}})
+xticklabels({'Total resp. neurons',Stims2Comp2{:}})
 
 ylabel('Responsive neuron count')
 
