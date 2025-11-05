@@ -127,7 +127,7 @@ for u = eNeuron
             %print(figRF, sprintf('%s-MovBall-ReceptiveField-eNeuron-%d.pdf',NP.recordingName,u), '-dpdf', '-r300', '-vector');
             if params.overwrite,obj.printFig(figRF,sprintf('%s-rectGrid-ReceptiveField-eNeuron-%d',obj.dataObj.recordingName,u)),end
         end
-        close
+        
 
     end
 
@@ -226,8 +226,9 @@ for u = eNeuron
                 obj.dataObj.recordingName,fieldName, strjoin(params.RFsDivision, '&'),u)),end
     end
 
-   
-   close
+    if u ~= eNeuron(end)
+        close
+    end
 
 end %%%End onDir
 

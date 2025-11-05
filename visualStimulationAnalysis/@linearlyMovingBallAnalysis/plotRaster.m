@@ -14,6 +14,8 @@ arguments (Input)
     params.speed = 1
     params.MergeNtrials =1
     params.oneTrial = false
+    params.GaussianLength = 20
+    params.MaxVal_1 =false
 end
 
 fieldName =  sprintf('Speed%d',  params.speed);
@@ -67,6 +69,8 @@ end
 
 [Mr] = BuildBurstMatrix(goodU(:,eNeuron),round(p.t/params.bin),round((directimesSorted-preBase)/params.bin),round((stimDur+preBase*2)/params.bin));
 
+[Mr]=ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
+
 [nT,nN,nB] = size(Mr);
 
 Mr2 = [];
@@ -103,21 +107,21 @@ for u = eNeuron
         Mr2 = Mr(:,ur,:);
     end
 
-    [nT,nB] = size(Mr2);
+    [nT,nN,nB] = size(Mr2);
 
-    if nB>300
-
-        MergeBins = 3;
-
-        for i = 1:MergeBins:nB
-
-            meanb = mean(squeeze(Mr2(:,i:min(i+MergeBins-1, end))),2);
-
-            Mr2(:,i:i+MergeBins-1) = repmat(meanb,[1 MergeBins]);
-
-        end
-
-    end
+    % if nB>300 %
+    % 
+    %     MergeBins = 3;
+    % 
+    %     for i = 1:MergeBins:nB
+    % 
+    %         meanb = mean(squeeze(Mr2(:,:,i:min(i+MergeBins-1, end))),3);
+    % 
+    %         Mr2(:,:,i:i+MergeBins-1) = repmat(meanb,[1 MergeBins]);
+    % 
+    %     end
+    % 
+    % end
 
     if sum(Mr2,'all') ==0
         close
@@ -134,7 +138,9 @@ for u = eNeuron
     xline(stimDur/params.bin+preBase/params.bin,'k',LineWidth=1.5)
 
 
-    caxis([0 1])
+    if params.MaxVal_1
+        caxis([0 1])
+    end
     dirStart = C(1,2);
     offStart = C(1,3);
     lumStart = C(1,6);

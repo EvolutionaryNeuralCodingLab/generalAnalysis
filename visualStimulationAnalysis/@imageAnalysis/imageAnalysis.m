@@ -81,13 +81,15 @@ classdef imageAnalysis < VStimAnalysis
 
             stimDur = mean(-stimOn+stimOff);
 
-            imgOrder = obj.VST.imgSequence(obj.VST.order)';
+            imgOrder = obj.VST.imgSequence(obj.VST.order)'; %Images are organized such that the shuffled ones have an even index within the list. 
 
-            A = [stimOn' imgOrder];
-            [C indexS] = sortrows(A,[2]);
+            shuffled = ~mod(imgOrder,2);
 
-            B = [stimOff' imgOrder];
-            [Coff indexSo] = sortrows(B,[2]);
+            A = [stimOn' imgOrder shuffled];
+            [C indexS] = sortrows(A,[3 2]);
+
+            B = [stimOff' imgOrder shuffled];
+            [Coff indexSo] = sortrows(B,[3 2]);
 
             directimesSorted = C(:,1)';
             bin = params.binRaster;
@@ -119,7 +121,7 @@ classdef imageAnalysis < VStimAnalysis
             max_mean_valueB = zeros(1,nN);
 
 
-            NeuronVals = zeros(nN,nT/trialDivision,5); %Each neuron, which has a matrix where the first column is maxVal of bins, 2nd and 3rd position of window in matrix...
+            NeuronVals = zeros(nN,nT/trialDivision,7); %Each neuron, which has a matrix where the first column is maxVal of bins, 2nd and 3rd position of window in matrix...
             % 4th Z-score.
             % responsive compared to the baseline.
 
@@ -155,7 +157,7 @@ classdef imageAnalysis < VStimAnalysis
                 %unit matrix
                 max_mean_value(u) = -Inf; %General max? not needed
                 max_mean_valueB(u)=-Inf;
-                NeuronRespProfile = zeros(nT,5); %4 columns plus: ofsett, dir, size, speed, frec.
+                NeuronRespProfile = zeros(nT,7); %4 columns plus: ofsett, dir, size, speed, frec.
 
                 k =1;
                 max_position_Trial = zeros(nT,2); %Create 2 matrices, for mean inside max window, and for position of window, for each trial category
@@ -214,6 +216,9 @@ classdef imageAnalysis < VStimAnalysis
                     % NeuronRespProfile(i,4) = (max_mean_value_Trial(i) - (spkRateBM(u)+max_mean_value_Trial(i))/2)/denom(u); %Zscore
                     %NeuronRespProfile(k,4) = (max_mean_value_Trial(k) - spkRateBM(u))/denom(u); %Zscore
                     NeuronRespProfile(k,5) =  NeuronRespProfile(k,4)-BaseResp;
+
+                    NeuronRespProfile(k,6) = C(i*mergeTrials,2);
+                    NeuronRespProfile(k,7) = C(i*mergeTrials,3);
 
                     k = k+1;
 

@@ -13,6 +13,7 @@ arguments (Input)
     params.typeD = "line"
     params.multFactor = 1
     params.stdMult = 2
+    params.plotSpikeLine = false
 
 end
 
@@ -87,10 +88,12 @@ for tr = 1:size(raw_signal,1)
 
         %else
         %%Improve with plot function for several trials
-        try
-            xline(spikeTimesIndex,'LineWidth',1.5,'Color','b','Alpha',0.3) %Plot spikes.
-        catch
-            fprintf('Selected trial has no spikes')
+        if params.plotSpikeLine
+            try
+                xline(spikeTimesIndex,'LineWidth',1.5,'Color','b','Alpha',0.3) %Plot spikes.
+            catch
+                fprintf('Selected trial has no spikes')
+            end
         end
         %end
         
