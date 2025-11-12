@@ -1472,6 +1472,8 @@ classdef sleepAnalysis < recAnalysis
             addParameter(parseObj,'nFramesRemoveAfterROIShift',3,@isnumeric);
             addParameter(parseObj,'inputParams',false,@isnumeric);
             addParameter(parseObj,'isPreyTouch',true,@isnumeric);
+            addParameter(parseObj,'stimCyclesOnly',0,@isnumeric);
+            
             parseObj.parse(varargin{:});
             if parseObj.Results.inputParams
                 disp(parseObj.Results);
@@ -1564,6 +1566,19 @@ classdef sleepAnalysis < recAnalysis
             tMovement=tAnalyzedFrames(validmOF>(mOFmed+nStd*mOFMAD));
             tMovAmp=validmOF(validmOF>(mOFmed+nStd*mOFMAD));
 
+            if stimCyclesOnly
+                stimFile=[obj.currentAnalysisFolder filesep 'stimTrigger.mat'];
+                obj.checkFileRecording(stimFile,'stimulation file missing, please first run getStimTriggers');
+                load(stimFile); %load data
+
+                stimStart = stimTriggers(1);
+                stimEnd =stimTriggers(end);
+                cycTmp = TcycleOnset>stimStart&TcycleOnset<stimEnd;
+                TcycleOnset = TcycleOnset(cycTmp);
+                TcycleMid = TcycleMid(cycTmp);
+                TcycleOffset = TcycleOffset(cycTmp);
+            end
+
             %plot(tAnalyzedFrames/3600000,validmOF);hold on;plot(tAnalyzedFrames/3600000,mOFmed+nStd*mOFMAD);
             for i=1:numel(TcycleOnset)
                 cycleDuration=TcycleOffset(i)-TcycleOnset(i);
@@ -1597,7 +1612,9 @@ classdef sleepAnalysis < recAnalysis
             mPhaseDB=angle(mean(mean(resampledTemplate).*exp(1i.*binCenters*2*pi))); %Mean of circular quantities - wiki
 
             save(obj.files.syncDBEye,'phaseMov','mPhaseDB','mPhaseMov','phaseAll','phaseAllRand','phaseRand','resampledTemplate','validmOF','tAnalyzedFrames','tFrames','tMovement','tMovAmp','parSyncDBEye','pFramesValid','mOFmed','mOFMAD');
-
+            if nargout ==1
+                data=load(obj.files.syncDBEye);
+            end
         end
 
 
