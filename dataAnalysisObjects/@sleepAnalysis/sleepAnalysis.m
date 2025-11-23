@@ -1123,10 +1123,10 @@ classdef sleepAnalysis < recAnalysis
             if saveFigures
                 set(fH,'PaperPositionMode','auto');
                 fileName=[obj.currentPlotFolder filesep 'syncEye_' videoFileName];
-                print(fileName,'-djpeg',['-r' num2str(obj.figResJPG)]);
+                print(fileName,'-dpdf',['-r' num2str(obj.figResJPG)]);
                 if printLocalCopy
                     fileName=[cd filesep obj.recTable.Animal{obj.currentPRec} '_Rec' num2str(obj.currentPRec) '_syncEyeDB_' videoFileName];
-                    print(fileName,'-djpeg',['-r' num2str(obj.figResJPG)]);
+                    print(fileName,'-dpdf',['-r' num2str(obj.figResJPG)]);
                 end
             end
 
