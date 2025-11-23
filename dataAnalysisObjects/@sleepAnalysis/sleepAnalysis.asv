@@ -5871,7 +5871,7 @@ classdef sleepAnalysis < recAnalysis
             obj.checkFileRecording;
 
             parseObj = inputParser;
-            parseObj.FunctionName='sleepAnalysis\plotLizardMovementRaster';
+            parseObj.FunctionName='sleepAnalysis\plotDBtwitchesRaster';
             addParameter(parseObj,'ch',obj.recTable.defaulLFPCh(obj.currentPRec),@isnumeric);
             addParameter(parseObj,'nBins',18,@isnumeric);
             addParameter(parseObj,'videoFile',[obj.recTable.VideoFiles{obj.currentPRec}],@(x) exist(x,'file'));
@@ -5992,7 +5992,7 @@ classdef sleepAnalysis < recAnalysis
                 set(h(3),'YTickLabel',[],'XTickLabel',[]);
                 p=cell2mat(cellfun(@(x) ~isempty(x),phaseAllRand,'UniformOutput',0));
                 for i=find(p)
-                    plot(phaseAllRand{i}*nBins,i*ones(size(phaseAllRand{i})),'*r','MarkerSize',2);
+                    plot(phaseAllRand{i}*nBins,i*ones(size(phaseAllRand{i})),'*r','MarkerSize',10);
                 end
                 phaseRand=cell2mat(phaseAllRand);
                 I=histc(phaseRand,edges);
