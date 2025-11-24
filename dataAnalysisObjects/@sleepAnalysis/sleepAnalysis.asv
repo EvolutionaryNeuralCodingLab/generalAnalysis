@@ -5718,6 +5718,169 @@ classdef sleepAnalysis < recAnalysis
             end
         end
 
+%% plotDBtwitchesRaster
+        function hOut= plotLizardMovementRaster(obj,varargin)
+            %% parameter and settings
+            hOut=[];
+            obj.checkFileRecording;
+
+            parseObj = inputParser;
+            parseObj.FunctionName='sleepAnalysis\plotLizardMovementRaster';
+            addParameter(parseObj,'ch',obj.recTable.defaulLFPCh(obj.currentPRec),@isnumeric);
+            addParameter(parseObj,'nBins',18,@isnumeric);
+            addParameter(parseObj,'videoFile',[obj.recTable.VideoFiles{obj.currentPRec}],@(x) exist(x,'file'));
+            addParameter(parseObj,'saveFigures',1,@isnumeric);
+            addParameter(parseObj,'printLocalCopy',0,@isnumeric);
+            addParameter(parseObj,'h',0,@ishandle);
+            addParameter(parseObj,'inputParams',false,@isnumeric);
+            addParameter(parseObj,'stim',0,@isnumeric);
+            addParameter(parseObj,'part',1,@isnumeric);
+
+            
+            parseObj.parse(varargin{:});
+            if parseObj.Results.inputParams
+                disp(parseObj.Results);
+                return;
+            end
+
+            %evaluate all input parameters in workspace
+            for i=1:numel(parseObj.Parameters)
+                eval([parseObj.Parameters{i} '=' 'parseObj.Results.(parseObj.Parameters{i});']);
+            end
+
+            %make parameter structure
+            parPlotDBTwitch=parseObj.Results;
+
+            % [~,videoFileName]=fileparts(videoFile);
+            
+            lizardMovement=[obj.currentAnalysisFolder filesep 'lizMov.mat'];
+            obj.checkFileRecording(lizardMovement,'Lizard movement analysis missing, please first run getLizardMovements');
+            load(lizardMovement); %load data
+
+            dbRatioFile=[obj.currentAnalysisFolder filesep 'dbRatio_ch' num2str(ch) '.mat'];
+            obj.checkFileRecording(dbRatioFile,'delta to beta file missing, please first run getDBRatio');
+            load(dbRatioFile); %load data
+
+            slowCyclesFile=[obj.currentAnalysisFolder filesep 'slowCycles_ch' num2str(ch) '.mat'];
+            obj.checkFileRecording(slowCyclesFile,'slow cycles file missing, please first run getSlowCycles');
+            load(slowCyclesFile); %load data
+
+            if stim ==1
+                stimFile=[obj.currentAnalysisFolder filesep 'stimTrigger.mat'];
+                obj.checkFileRecording(stimFile,'slow cycles file missing, please first run getSlowCycles');
+                load(stimFile); %load data
+            if stim ==1 && part==1
+                pCyc = find(TcycleOnset<tStartStim); %take only the cycle before the start of stimulations
+
+            elseif stim ==1 && part==2
+                pCyc = find(TcycleOnset>tStartStim & TcycleOnset<tEndStim);
+
+            elseif stim ==1 && part==3
+                pCyc = find(TcycleOnset>tEndStim);
+            end
+    elseif stim ==0
+                pCyc = 1:length(TcycleOnset);
+      
+            
+end
+            TcycleOnset = TcycleOnset(pCyc);
+            TcycleMid = TcycleMid(pCyc);
+            TcycleOffset = TcycleOffset(pCyc);
+
+            %calculate phase in db
+
+            for i=1:numel(TcycleOnset)
+                cycleDuration=TcycleOffset(i)-TcycleOnset(i);
+                pTmp=find(t_mov_ms>(TcycleMid(i)-cycleDuration/2) & t_mov_ms<(TcycleMid(i)+cycleDuration/2));
+                phaseAll{i}=(t_mov_ms(pTmp)-(TcycleMid(i)-cycleDuration/2))/cycleDuration;
+
+                shufTimes=rand(1,numel(pTmp))*cycleDuration;
+                phaseAllRand{i}=shufTimes/cycleDuration;
+
+                pTmp=find(t_ms>(TcycleMid(i)-cycleDuration/2) & t_ms<(TcycleMid(i)+cycleDuration/2));
+                resampledTemplate(i,:) = interp1((0:(numel(pTmp)-1))./(numel(pTmp)-1),bufferedDelta2BetaRatio(pTmp)',(0:(nBins-1))/(nBins-1),'spline');
+            end
+
+            if h==0
+                fH=figure;
+                h(1)=subaxis(fH,4,2,1,1,1,3,'S',0.01);
+                h(2)=subaxis(fH,4,2,1,4,1,1,'S',0.01);
+                h(3)=subaxis(fH,4,2,2,1,1,3,'S',0.01);
+                h(4)=subaxis(fH,4,2,2,4,1,1,'S',0.01);
+            else
+                saveFigures=0;
+            end
+
+            cLim=quantile(resampledTemplate(:),[0.01 0.99]);
+
+            if numel(h)>=1
+                edges=(0:nBins)/(nBins-0.0000001);
+                middles=(edges(1:end-1)+edges(2:end))/2;
+
+                axes(h(1));
+                hOut.imagesc=imagesc(0:nBins,1:size(resampledTemplate,1),resampledTemplate,cLim);hold on;
+                set(h(1),'XTickLabel',[]);
+                ylabel('# cycle');
+                p=cell2mat(cellfun(@(x) ~isempty(x),phaseAll,'UniformOutput',0));
+                for i=find(p)
+                    hOut.hP(i)=plot(phaseAll{i}*nBins,i*ones(size(phaseAll{i})),'.r');
+                end
+                phaseMov=cell2mat(phaseAll);
+                I=histc(phaseMov,edges);
+
+                if numel(h)==1
+                    xlabel('Phase');
+                    set(h,'XTick',[-0.5 nBins+0.5],'XTickLabel',{'0','2\pi'});
+                    xlim([-0.5 nBins+0.5])
+                end
+            end
+
+            if numel(h)>=2
+                axes(h(2));
+                hOut.p1=plot(middles,normZeroOne(mean(resampledTemplate)),'lineWidth',2);hold on;
+                hOut.p2=plot(middles,normZeroOne(I(1:end-1)),'r','lineWidth',2);
+                xlim([0 1]);
+                xlabel('Phase');
+                set(h(2),'XTick',[0 1],'XTickLabel',{'0','2\pi'});
+                hOut.l=legend('norm. \delta/\beta','norm. mov counts');
+                hOut.l.Box='off';
+                hOut.l.Position=[0.1    0.9061    0.2596    0.0812];
+            end
+
+            if numel(h)>=3
+                axes(h(3));
+                imagesc(resampledTemplate,cLim);hold on;
+                set(h(3),'YTickLabel',[],'XTickLabel',[]);
+                p=cell2mat(cellfun(@(x) ~isempty(x),phaseAllRand,'UniformOutput',0));
+                for i=find(p)
+                    plot(phaseAllRand{i}*nBins,i*ones(size(phaseAllRand{i})),'*r','MarkerSize',2);
+                end
+                phaseRand=cell2mat(phaseAllRand);
+                I=histc(phaseRand,edges);
+                title('Randomized');
+            end
+
+            if numel(h)>=4
+                axes(h(4));
+                hOut.p3=plot(middles,normZeroOne(mean(resampledTemplate)),'lineWidth',2);hold on;
+                hOut.p4=plot(middles,normZeroOne(I(1:end-1)),'r','lineWidth',2);
+                xlim([0 1]);
+                xlabel('Phase');
+                set(h(4),'XTick',[0 1],'XTickLabel',{'0','2\pi'},'YTickLabel',[])
+            end
+
+            if saveFigures
+                set(fH,'PaperPositionMode','auto');
+                fileName=[obj.currentPlotFolder filesep 'LizardMovRaster'];
+                print(fileName,'-dpdf',['-r' num2str(obj.figResJPG)]);
+                if printLocalCopy
+                    fileName=[cd filesep obj.recTable.Animal{obj.currentPRec} '_Rec' num2str(obj.currentPRec) '_LizardMovRaster'];
+                    print(fileName,'-dpdf',['-r' num2str(obj.figResJPG)]);
+                end
+            end
+
+        end
+
     end
 
     methods (Static)
@@ -5864,161 +6027,7 @@ classdef sleepAnalysis < recAnalysis
             end
             OFBox=[min(xInd),min(yInd);min(xInd),max(yInd);max(xInd),max(yInd);max(xInd),min(yInd)];
         end
-%% plotDBtwitchesRaster
-        function hOut= plotLizardMovementRaster(obj,varargin)
-            %% parameter and settings
-            hOut=[];
-            obj.checkFileRecording;
 
-            parseObj = inputParser;
-            parseObj.FunctionName='sleepAnalysis\plotDBtwitchesRaster';
-            addParameter(parseObj,'ch',obj.recTable.defaulLFPCh(obj.currentPRec),@isnumeric);
-            addParameter(parseObj,'nBins',18,@isnumeric);
-            addParameter(parseObj,'videoFile',[obj.recTable.VideoFiles{obj.currentPRec}],@(x) exist(x,'file'));
-            addParameter(parseObj,'saveFigures',1,@isnumeric);
-            addParameter(parseObj,'printLocalCopy',0,@isnumeric);
-            addParameter(parseObj,'h',0,@ishandle);
-            addParameter(parseObj,'inputParams',false,@isnumeric);
-            addParameter(parseObj,'stim',0,@isnumeric);
-            
-            parseObj.parse(varargin{:});
-            if parseObj.Results.inputParams
-                disp(parseObj.Results);
-                return;
-            end
-
-            %evaluate all input parameters in workspace
-            for i=1:numel(parseObj.Parameters)
-                eval([parseObj.Parameters{i} '=' 'parseObj.Results.(parseObj.Parameters{i});']);
-            end
-
-            %make parameter structure
-            parPlotDBTwitch=parseObj.Results;
-
-            % [~,videoFileName]=fileparts(videoFile);
-            
-            lizardMovement=[obj.currentAnalysisFolder filesep 'lizMov.mat'];
-            obj.checkFileRecording(lizardMovement,'Lizard movement analysis missing, please first run getLizardMovements');
-            load(lizardMovement); %load data
-
-            dbRatioFile=[obj.currentAnalysisFolder filesep 'dbRatio_ch' num2str(ch) '.mat'];
-            obj.checkFileRecording(dbRatioFile,'delta to beta file missing, please first run getDBRatio');
-            load(dbRatioFile); %load data
-
-            slowCyclesFile=[obj.currentAnalysisFolder filesep 'slowCycles_ch' num2str(ch) '.mat'];
-            obj.checkFileRecording(slowCyclesFile,'slow cycles file missing, please first run getSlowCycles');
-            load(slowCyclesFile); %load data
-
-            if stim ==1 && part==1
-                pCyc = find(TcycleOnset<tStartStim); %take only the cycle before the start of stimulations
-
-            elseif stim ==1 && part==2
-                pCyc = find(TcycleOnset>tStartStim & TcycleOnset<tEndStim);
-
-            elseif stim ==1 && part==3
-                pCyc = find(TcycleOnset>tEndStim);
-            elseif stim ==0
-                pCyc = 1:length(TcycleOnset);
-      
-            end
-      
-            TcycleOnset = TcycleOnset(pCyc);
-            TcycleMid = TcycleMid(pCyc);
-            TcycleOffset = TcycleOffset(pCyc);
-
-            %calculate phase in db
-
-            for i=1:numel(TcycleOnset)
-                cycleDuration=TcycleOffset(i)-TcycleOnset(i);
-                pTmp=find(t_mov_ms>(TcycleMid(i)-cycleDuration/2) & t_mov_ms<(TcycleMid(i)+cycleDuration/2));
-                phaseAll{i}=(t_mov_ms(pTmp)-(TcycleMid(i)-cycleDuration/2))/cycleDuration;
-
-                shufTimes=rand(1,numel(pTmp))*cycleDuration;
-                phaseAllRand{i}=shufTimes/cycleDuration;
-
-                pTmp=find(t_ms>(TcycleMid(i)-cycleDuration/2) & t_ms<(TcycleMid(i)+cycleDuration/2));
-                resampledTemplate(i,:) = interp1((0:(numel(pTmp)-1))./(numel(pTmp)-1),bufferedDelta2BetaRatio(pTmp)',(0:(nBins-1))/(nBins-1),'spline');
-            end
-
-            if h==0
-                fH=figure;
-                h(1)=subaxis(fH,4,2,1,1,1,3,'S',0.01);
-                h(2)=subaxis(fH,4,2,1,4,1,1,'S',0.01);
-                h(3)=subaxis(fH,4,2,2,1,1,3,'S',0.01);
-                h(4)=subaxis(fH,4,2,2,4,1,1,'S',0.01);
-            else
-                saveFigures=0;
-            end
-
-            cLim=quantile(resampledTemplate(:),[0.01 0.99]);
-
-            if numel(h)>=1
-                edges=(0:nBins)/(nBins-0.0000001);
-                middles=(edges(1:end-1)+edges(2:end))/2;
-
-                axes(h(1));
-                hOut.imagesc=imagesc(0:nBins,1:size(resampledTemplate,1),resampledTemplate,cLim);hold on;
-                set(h(1),'XTickLabel',[]);
-                ylabel('# cycle');
-                p=cell2mat(cellfun(@(x) ~isempty(x),phaseAll,'UniformOutput',0));
-                for i=find(p)
-                    hOut.hP(i)=plot(phaseAll{i}*nBins,i*ones(size(phaseAll{i})),'.r');
-                end
-                phaseMov=cell2mat(phaseAll);
-                I=histc(phaseMov,edges);
-
-                if numel(h)==1
-                    xlabel('Phase');
-                    set(h,'XTick',[-0.5 parSyncDBEye.nBins+0.5],'XTickLabel',{'0','2\pi'});
-                    xlim([-0.5 parSyncDBEye.nBins+0.5])
-                end
-            end
-
-            if numel(h)>=2
-                axes(h(2));
-                hOut.p1=plot(middles,normZeroOne(mean(resampledTemplate)),'lineWidth',2);hold on;
-                hOut.p2=plot(middles,normZeroOne(I(1:end-1)),'r','lineWidth',2);
-                xlim([0 1]);
-                xlabel('Phase');
-                set(h(2),'XTick',[0 1],'XTickLabel',{'0','2\pi'});
-                hOut.l=legend('norm. \delta/\beta','norm. mov counts');
-                hOut.l.Box='off';
-                hOut.l.Position=[0.1    0.9061    0.2596    0.0812];
-            end
-
-            if numel(h)>=3
-                axes(h(3));
-                imagesc(resampledTemplate,cLim);hold on;
-                set(h(3),'YTickLabel',[],'XTickLabel',[]);
-                p=cell2mat(cellfun(@(x) ~isempty(x),phaseAllRand,'UniformOutput',0));
-                for i=find(p)
-                    plot(phaseAllRand{i}*nBins,i*ones(size(phaseAllRand{i})),'*r','MarkerSize',10);
-                end
-                phaseRand=cell2mat(phaseAllRand);
-                I=histc(phaseRand,edges);
-                title('Randomized');
-            end
-
-            if numel(h)>=4
-                axes(h(4));
-                hOut.p3=plot(middles,normZeroOne(mean(resampledTemplate)),'lineWidth',2);hold on;
-                hOut.p4=plot(middles,normZeroOne(I(1:end-1)),'r','lineWidth',2);
-                xlim([0 1]);
-                xlabel('Phase');
-                set(h(4),'XTick',[0 1],'XTickLabel',{'0','2\pi'},'YTickLabel',[])
-            end
-
-            if saveFigures
-                set(fH,'PaperPositionMode','auto');
-                fileName=[obj.currentPlotFolder filesep 'LizardMovRaster'];
-                print(fileName,'-dpdf',['-r' num2str(obj.figResJPG)]);
-                if printLocalCopy
-                    fileName=[cd filesep obj.recTable.Animal{obj.currentPRec} '_Rec' num2str(obj.currentPRec) '_LizardMovRaster'];
-                    print(fileName,'-dpdf',['-r' num2str(obj.figResJPG)]);
-                end
-            end
-
-        end
 
     end
 
