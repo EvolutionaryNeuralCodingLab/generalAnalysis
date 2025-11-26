@@ -93,7 +93,7 @@ classdef rectGridAnalysis < VStimAnalysis
             p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
             label = string(p.label');
             goodU = p.ic(:,label == 'good');
-
+            bin = 10;
             %%Create window to scan rasters and get the maximum response
             duration = params.durationWindow; %window in ms, same as in MB
             Mr = BuildBurstMatrix(goodU,round(p.t/bin),round((directimesSorted)/bin),round((stimDur+duration)/bin)); %response matrix
@@ -101,7 +101,6 @@ classdef rectGridAnalysis < VStimAnalysis
             
             [MrC]=ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
 
-            MrC = Mr;
             %Normalize trials
             MrNorm = MrC./(sum(MrC,3));
             MrNorm(isnan(MrNorm)) = 0;

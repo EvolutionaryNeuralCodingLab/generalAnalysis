@@ -54,6 +54,7 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
             try
                 DiodeCrossings = obj.getSyncedDiodeTriggers;
             catch
+                obj.getSessionTime("overwrite",true);
                 obj.getDiodeTriggers("extractionMethod",'digitalTriggerDiode','overwrite',true);
                 DiodeCrossings = obj.getSyncedDiodeTriggers;
             end

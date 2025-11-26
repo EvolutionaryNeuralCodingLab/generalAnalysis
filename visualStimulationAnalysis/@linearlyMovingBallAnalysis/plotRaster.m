@@ -14,6 +14,7 @@ arguments (Input)
     params.speed = 1
     params.MergeNtrials =1
     params.oneTrial = false
+    params.Categories = {'All'}
     params.GaussianLength = 20
     params.MaxVal_1 =false
 end
@@ -70,6 +71,26 @@ end
 [Mr] = BuildBurstMatrix(goodU(:,eNeuron),round(p.t/params.bin),round((directimesSorted-preBase)/params.bin),round((stimDur+preBase*2)/params.bin));
 
 [Mr]=ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
+
+for i = numel(params.Categories)
+
+    if isequal(params.Categories{i}, 'All')
+
+        continue
+
+    elseif isequal(params.Categories{i}, 'directions')
+
+        Mr = Mr()
+
+    elseif isequal(params.Categories{i}, 'offsets')
+
+    elseif isequal(params.Categories{i}, 'luminosities')
+
+    elseif isequal(params.Categories{i}, 'sizes')
+
+    end
+
+end
 
 [nT,nN,nB] = size(Mr);
 
