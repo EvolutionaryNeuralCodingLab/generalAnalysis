@@ -5767,26 +5767,22 @@ classdef sleepAnalysis < recAnalysis
 
             if stim ==1
                 stimFile=[obj.currentAnalysisFolder filesep 'stimTrigger.mat'];
-                obj.checkFileRecording(stimFile,'stim file missing, please first run getStimTriggers');
+                obj.checkFileRecording(stimFile,'slow cycles file missing, please first run getSlowCycles');
                 load(stimFile); %load data
-                
-                tStartStim = stimTriggers(1);
-                tEndStim = stimTriggers(end);
+            if stim ==1 && part==1
+                pCyc = find(TcycleOnset<tStartStim); %take only the cycle before the start of stimulations
 
-                if stim ==1 && part==1
-                    pCyc = find(TcycleOnset<tStartStim); %take only the cycle before the start of stimulations
+            elseif stim ==1 && part==2
+                pCyc = find(TcycleOnset>tStartStim & TcycleOnset<tEndStim);
 
-                elseif stim ==1 && part==2
-                    pCyc = find(TcycleOnset>tStartStim & TcycleOnset<tEndStim);
-
-                elseif stim ==1 && part==3
-                    pCyc = find(TcycleOnset>tEndStim);
-                end
-            elseif stim ==0
+            elseif stim ==1 && part==3
+                pCyc = find(TcycleOnset>tEndStim);
+            end
+    elseif stim ==0
                 pCyc = 1:length(TcycleOnset);
       
             
-            end
+end
             TcycleOnset = TcycleOnset(pCyc);
             TcycleMid = TcycleMid(pCyc);
             TcycleOffset = TcycleOffset(pCyc);
