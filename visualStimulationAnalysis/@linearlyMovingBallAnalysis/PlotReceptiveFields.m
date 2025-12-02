@@ -5,7 +5,7 @@ arguments (Input)
     params.overwrite logical = false
     params.analysisTime = datetime('now')
     params.inputParams = false
-    params.exNeurons = 1;
+    params.exNeurons = nan;
     params.AllSomaticNeurons = false;
     params.AllResponsiveNeurons = true;
     params.fixedWindow = false;
@@ -35,15 +35,17 @@ uSize = unique(responses.(fieldName).C(:,4));
 uLum = unique(responses.(fieldName).C(:,6));
 
 
-if params.AllSomaticNeurons
-    eNeuron = 1:numel(pvals);
-    pvals = [eNeuron;pvals(eNeuron)];
-elseif params.AllResponsiveNeurons
-    eNeuron = find(pvals<0.05);
-    pvals = [eNeuron;pvals(eNeuron)];% Select all good neurons if not specified
-    if isempty(eNeuron)
-        fprintf('No responsive neurons.\n')
-        return
+if isnan(params.exNeurons)
+    if params.AllSomaticNeurons
+        eNeuron = 1:numel(pvals);
+        pvals = [eNeuron;pvals(eNeuron)];
+    elseif params.AllResponsiveNeurons
+        eNeuron = find(pvals<0.05);
+        pvals = [eNeuron;pvals(eNeuron)];% Select all good neurons if not specified
+        if isempty(eNeuron)
+            fprintf('No responsive neurons.\n')
+            return
+        end
     end
 else
     eNeuron = params.exNeurons;
@@ -112,7 +114,7 @@ for u = eNeuron
             %print(figRF, sprintf('%s-MovBall-ReceptiveField-eNeuron-%d.pdf',NP.recordingName,u), '-dpdf', '-r300', '-vector');
             if params.overwrite,obj.printFig(figRF,sprintf('%s-MovBall-ReceptiveField-eNeuron-%d',obj.dataObj.recordingName,u)),end
         end
-        close
+        
 
     end
 
@@ -222,8 +224,10 @@ for u = eNeuron
                 obj.dataObj.recordingName,fieldName, strjoin(params.RFsDivision, '&'),u)),end
     end
 
-   
-   close
+    if u ~= eNeuron(end)
+        close
+    end
+
 
 end %%%End onDir
 

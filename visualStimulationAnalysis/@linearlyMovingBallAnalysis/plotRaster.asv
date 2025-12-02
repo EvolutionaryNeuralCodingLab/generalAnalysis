@@ -284,13 +284,9 @@ for u = eNeuron
     xlabel('Seconds','FontSize',10);
     xlim([0 round((stimDur+preBase*2)/100)*100])
 
-    try %zero spiking in selection
-        ylim([0 max(psthRate)+std(psthRate)])
-    catch
-        ur = ur+1;
-        close
-        continue
-    end
+    tr
+  
+    ylim([0 max(psthRate)+std(psthRate)])
 
     xticks([0 preBase:300:(stimDur+preBase*2) round((stimDur+preBase*2)/100)*100])
 

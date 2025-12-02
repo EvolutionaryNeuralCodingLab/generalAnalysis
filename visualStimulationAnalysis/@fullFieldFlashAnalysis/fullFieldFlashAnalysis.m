@@ -1,4 +1,4 @@
-classdef rectGridAnalysis < VStimAnalysis
+classdef fullFieldFlashAnalysis < VStimAnalysis
 
     properties
         Session
@@ -10,7 +10,7 @@ classdef rectGridAnalysis < VStimAnalysis
 
     methods (Hidden)
         %class constructor - name of class should be identical to the visual stimulation with the addition of Analysis
-        function [obj] = rectGridAnalysis(dataObj,params)
+        function [obj] = fullFieldFlashAnalysis(dataObj,params)
             arguments (Input) %ResponseWindow.mat
                 dataObj
                 params.Session = 1;
@@ -72,7 +72,12 @@ classdef rectGridAnalysis < VStimAnalysis
 
             ST = obj.getSessionTime;
 
-            DiodeCrossings = obj.getSyncedDiodeTriggers;
+            try
+                DiodeCrossings = obj.getSyncedDiodeTriggers;
+            catch
+                obj.getDiodeTriggers("extractionMethod",'digitalTriggerDiode','overwrite',true);
+                DiodeCrossings = obj.getSyncedDiodeTriggers;
+            end
             
             stimOn = DiodeCrossings.stimOnFlipTimes;
             stimOff = DiodeCrossings.stimOffFlipTimes;
@@ -80,14 +85,12 @@ classdef rectGridAnalysis < VStimAnalysis
 
             stimDur = mean(-stimOn+stimOff);
 
-            A = [stimOn' obj.VST.pos' obj.VST.tilingRatios' obj.VST.rectLuminosity(obj.VST.luminosities)'];
-
-            [C indRG]= sortrows(A,[2 3 4]);
+            C = stimOn';
 
             directimesSorted = C(:,1)';
             bin = params.binRaster;
 
-            trialDivision = numel(directimesSorted)/numel(unique(C(:,2)))/numel(unique(C(:,3)))/numel(unique(C(:,4)));
+            trialDivision = numel(directimesSorted);
 
             % Load Kilosort and phy results
             p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
@@ -95,13 +98,11 @@ classdef rectGridAnalysis < VStimAnalysis
             goodU = p.ic(:,label == 'good');
 
             %%Create window to scan rasters and get the maximum response
+            %%Create window to scan rasters and get the maximum response
             duration = params.durationWindow; %window in ms, same as in MB
             Mr = BuildBurstMatrix(goodU,round(p.t/bin),round((directimesSorted)/bin),round((stimDur+duration)/bin)); %response matrix
-            
-            
             [MrC]=ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
 
-            MrC = Mr;
             %Normalize trials
             MrNorm = MrC./(sum(MrC,3));
             MrNorm(isnan(MrNorm)) = 0;
@@ -117,19 +118,19 @@ classdef rectGridAnalysis < VStimAnalysis
             max_mean_valueB = zeros(1,nN);
 
 
-            NeuronVals = zeros(nN,nT/trialDivision,8); %Each neuron, which has a matrix where the first column is maxVal of bins, 2nd and 3rd position of window in matrix...
+            NeuronVals = zeros(nN,nT/(trialDivision/2),5); %Each neuron, which has a matrix where the first column is maxVal of bins, 2nd and 3rd position of window in matrix...
             % 4th Z-score.
             % responsive compared to the baseline.
 
             %[1, 2, 3, 7, 8, 9, 10, 11, 12, 13, 17, 20, 22, 23, 24, 28, 32, 34, 36]
 
-            mergeTrials = trialDivision;
+            mergeTrials = round(trialDivision/2);
 
             %Baseline = size window
             preBase = params.preBase;
 
             [Mbd] = BuildBurstMatrix(goodU,round(p.t/bin),round((directimesSorted-preBase)/bin),round(preBase/bin)); %Baseline matrix plus
-            
+
             [MbdC]=ConvBurstMatrix(Mbd,fspecial('gaussian',[1 params.GaussianLength],3),'same');
             MbNorm = MbdC./(sum(MbdC,3));
             MbNorm(isnan(MbNorm)) = 0;
@@ -140,9 +141,6 @@ classdef rectGridAnalysis < VStimAnalysis
 
             Mbd2 = squeeze(mean(Bd, 1));
 
-            %Merge trials:
-
-            mergeTrials = trialDivision;
 
             B = reshape(MrNorm, [mergeTrials, size(Mr, 1)/mergeTrials, size(Mr, 2), size(Mr,3)]);
 
@@ -156,7 +154,7 @@ classdef rectGridAnalysis < VStimAnalysis
                 %unit matrix
                 max_mean_value(u) = -Inf; %General max? not needed
                 max_mean_valueB(u)=-Inf;
-                NeuronRespProfile = zeros(nT,8); %4 columns plus: ofsett, dir, size, speed, frec.
+                NeuronRespProfile = zeros(nT,5); %4 columns plus: ofsett, dir, size, speed, frec.
 
                 k =1;
                 max_position_Trial = zeros(nT,2); %Create 2 matrices, for mean inside max window, and for position of window, for each trial category
@@ -189,7 +187,7 @@ classdef rectGridAnalysis < VStimAnalysis
 
                         if mean_valueB >  max_mean_value_TrialB(k)
                             max_mean_value_TrialB(k) = mean_valueB;
-                             max_position_TrialB(k,:) = [i j];
+                            max_position_TrialB(k,:) = [i j];
                         end
 
                     end
@@ -205,22 +203,16 @@ classdef rectGridAnalysis < VStimAnalysis
 
 
                     %4% real spike rate of response posTr*trialDivision-trialDivision+1:posTr*trialDivision
-                    NeuronRespProfile(k,4) = mean(Mr(max_position_Trial(k,1)*trialDivision-trialDivision+1:max_position_Trial(k,1)*trialDivision-1,u,...
+                    NeuronRespProfile(k,4) = mean(Mr(max_position_Trial(k,1)*mergeTrials-mergeTrials+1:max_position_Trial(k,1)*mergeTrials-1,u,...
                         max_position_Trial(k,2):max_position_Trial(k,2)+window_size(2)-1),'all');%max_position_Trial(k,2);
 
-                    BaseResp = mean(Mbd(max_position_TrialB(k,1)*trialDivision-trialDivision+1:max_position_TrialB(k,1)*trialDivision-1,u,...
+                    BaseResp = mean(Mbd(max_position_TrialB(k,1)*mergeTrials-mergeTrials+1:max_position_TrialB(k,1)*mergeTrials-1,u,...
                         max_position_TrialB(k,2):max_position_TrialB(k,2)+window_size(2)-1),'all');
 
                     %4%. Resp - Baseline
                     % NeuronRespProfile(i,4) = (max_mean_value_Trial(i) - (spkRateBM(u)+max_mean_value_Trial(i))/2)/denom(u); %Zscore
                     %NeuronRespProfile(k,4) = (max_mean_value_Trial(k) - spkRateBM(u))/denom(u); %Zscore
                     NeuronRespProfile(k,5) =  NeuronRespProfile(k,4)-BaseResp;
-
-                    %Assign visual stats to last columns of NeuronRespProfile. Select
-                    %according  to trial (d) the appropiate parameter > directions'offsets' sizes' speeds' freq'
-                    NeuronRespProfile(k,6) = C(i*mergeTrials,2);
-                    NeuronRespProfile(k,7) = C(i*mergeTrials,3);
-                    NeuronRespProfile(k,8) = C(i*mergeTrials,4);
 
                     k = k+1;
 
@@ -229,7 +221,7 @@ classdef rectGridAnalysis < VStimAnalysis
                 %figure;imagesc(uM);xline(max_position_Trial(i,2));xline(max_position_Trial(i,2)+window_size(2))
 
                 NeuronVals(u,:,:) = NeuronRespProfile;
-            end            
+            end
 
             colNames = {'Resp','MaxWinTrial','MaxWinBin','RespSubsBaseline','Position','Size','Luminosities'};
 
@@ -255,8 +247,8 @@ classdef rectGridAnalysis < VStimAnalysis
                 params.analysisTime = datetime('now')
                 params.inputParams = false
                 params.trialThreshold = 0.6
-                params.N_bootstrap = 5000;
-                params.normTrials = false
+                params.N_bootstrap = 2000;
+                params.normBaseline = false
                 
             end
             if params.inputParams,disp(params),return,end
@@ -285,8 +277,7 @@ classdef rectGridAnalysis < VStimAnalysis
             goodU = NeuronResp.goodU;
             p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
 
-            trialDivision = numel(directimesSorted)/numel(unique(NeuronResp.C(:,2)))/numel(unique(NeuronResp.C(:,3)))/...
-                numel(unique(NeuronResp.C(:,4)));
+            trialDivision = numel(directimesSorted)/2;
 
             %Load same parameters used in response window calculation
             preBase = NeuronResp.params.preBase;
@@ -312,12 +303,11 @@ classdef rectGridAnalysis < VStimAnalysis
                     % Extract the slice for the current unit (t x b matrix)
                     slice = resampled_trials(:, ui, :);
                     slice = squeeze(slice); % Result is t x b
-
-                    if params.normTrials
+                    
+                    if params.normBaseline
                         %Normalize slice trials
                         slice = slice./sum(slice,2);
                         slice(isnan(Norm)) = 0;
-
                     end
 
                     % Compute the mean using 2D convolution
@@ -330,8 +320,8 @@ classdef rectGridAnalysis < VStimAnalysis
             toc
 
             %[bootstats] = get_bootstrapped_equalsamples(data,nruns,num_trials,param)
-
-            if params.normTrials
+      
+            if params.normBaseline
                 [respVal,respVali]= max(NeuronResp.NeuronVals(:,:,1),[],2);
             else
                 [respVal,respVali]= max(NeuronResp.NeuronVals(:,:,4),[],2);
