@@ -255,7 +255,7 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
                 params.N_bootstrap = 5000
                 params.speed = 0 %min =1, middle = 2, max=3;
                 params.AllSpeeds = true
-                params.normBaseline = false
+                params.normTrials = false
             end
             if params.inputParams,disp(params),return,end
 
@@ -337,7 +337,7 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
                         slice = squeeze(slice); % Result is t x b
 
 
-                        if params.normBaseline
+                        if params.normTrials
                             %Normalize slice trials
                             slice = slice./sum(slice,2);
                             slice(isnan(Norm)) = 0;
@@ -355,7 +355,7 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
 
                 %[bootstats] = get_bootstrapped_equalsamples(data,nruns,num_trials,param)
 
-                if params.normBaseline
+                if params.normTrials
                     [respVal,respVali]= max(NeuronResp.(fieldName).NeuronVals(:,:,1),[],2);
                 else
                     [respVal,respVali]= max(NeuronResp.(fieldName).NeuronVals(:,:,4),[],2);

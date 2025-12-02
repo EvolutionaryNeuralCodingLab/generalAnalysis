@@ -256,7 +256,7 @@ classdef rectGridAnalysis < VStimAnalysis
                 params.inputParams = false
                 params.trialThreshold = 0.6
                 params.N_bootstrap = 5000;
-                params.normBaseline = false
+                params.normTrials = false
                 
             end
             if params.inputParams,disp(params),return,end
@@ -313,7 +313,7 @@ classdef rectGridAnalysis < VStimAnalysis
                     slice = resampled_trials(:, ui, :);
                     slice = squeeze(slice); % Result is t x b
 
-                    if params.normBaseline
+                    if params.normTrials
                         %Normalize slice trials
                         slice = slice./sum(slice,2);
                         slice(isnan(Norm)) = 0;
@@ -331,7 +331,7 @@ classdef rectGridAnalysis < VStimAnalysis
 
             %[bootstats] = get_bootstrapped_equalsamples(data,nruns,num_trials,param)
 
-            if params.normBaseline
+            if params.normTrials
                 [respVal,respVali]= max(NeuronResp.NeuronVals(:,:,1),[],2);
             else
                 [respVal,respVali]= max(NeuronResp.NeuronVals(:,:,4),[],2);
