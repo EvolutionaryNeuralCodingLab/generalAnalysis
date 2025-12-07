@@ -3822,7 +3822,8 @@ classdef sleepAnalysis < recAnalysis
             % 2. Check if camTrig.mat already exists
             if exist(filename, 'file') && ~overwrite
                 if nargout > 0
-                    camTrigs = load(filename);
+                    load(filename);
+                    return
                 else
                     return
                 end
