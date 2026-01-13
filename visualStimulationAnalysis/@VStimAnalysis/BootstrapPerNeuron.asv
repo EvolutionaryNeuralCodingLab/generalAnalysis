@@ -199,28 +199,20 @@ for s=1:x
         % S.(fieldName).BootBaseline = baseBoot;
         S.(fieldName).BootDiff = bootDiff;
         S.(fieldName).pvalsResponse = pVal;
-        S.(fieldName).ZScoreU = z; 
-        S.(fieldName).ObsDiff = Diff;
-        S.(fieldName).ObsReponse = responses;
-        S.(fieldName).ObsBaseline = baselines;
+        S.(fieldName).ZScoreU = z;  
+        S.(fieldName).ObsDiff = mean(diff);
     elseif isequal(obj.stimName,'StaticDriftingGrating')
         % S.(fieldName).BootResponse = respBoot;
         % S.(fieldName).BootBaseline = baseBoot;
         S.(fieldName).BootDiff = bootDiff;
         S.(fieldName).pvalsResponse = pVal;
         S.(fieldName).ZScoreU = z;
-        S.(fieldName).ObsDiff = Diff;
-        S.(fieldName).ObsReponse = responses;
-        S.(fieldName).ObsBaseline = baselines;
     else
         % S.BootResponse = respBoot;
         % S.BootBaseline = baseBoot;
         S.BootDiff = bootDiff;
         S.pvalsResponse = pVal;
         S.ZScoreU = z; 
-        S.ObsDiff = Diff;
-        S.ObsReponse = responses;
-        S.ObsBaseline = baselines;
     end
 
     S.params = params;

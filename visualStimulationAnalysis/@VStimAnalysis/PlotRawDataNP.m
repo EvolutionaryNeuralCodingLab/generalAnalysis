@@ -79,11 +79,12 @@ for tr = 1:size(raw_signal,1)
         win = round(0.001* NP.samplingFrequency); %ms
         % Overlay red segments for each spike
 
-        %if size(raw_signal,1) >1
+        %Plot dot in red above spike 
         for i = 1:numel(spikeSamples)
             idx1 = max(1, spikeSamples(i)-win);
             idx2 = min(length(signal), spikeSamples(i)+win);
-            plot(t(idx1:idx2), signal(idx1:idx2)+offset*(j), 'r', 'LineWidth', 1.5);
+            % plot(t(idx1:idx2), signal(idx1:idx2)+offset*(j), 'r', 'LineWidth', 1.5);
+            plot(t(spikeSamples(i)),offset*(j)+max(signal)+10,'r*')
         end
 
         %else
@@ -115,6 +116,8 @@ end
 
 xlim([0 length(raw_signal)/NP.samplingFrequency]);
 lims = xlim;
+ylims = ylim;
+ylim([ylims(1),ylims(2)+30])
 
 if tr >1
     limsY = ylim;
