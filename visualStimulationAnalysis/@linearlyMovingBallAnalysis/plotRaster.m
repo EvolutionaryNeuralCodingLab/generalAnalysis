@@ -15,7 +15,7 @@ arguments (Input)
     params.MergeNtrials =1
     params.oneTrial = false
     params.GaussianLength = 10
-    params.MaxVal_1 =false
+    params.MaxVal_1 =true
     params.useNormTrialWindow = false
     params.OneDirection string = "all"
     params.OneLuminosity string = "all"
@@ -129,12 +129,27 @@ Mr2 = [];
 
 ur = 1;
 
+%Calculate size of ball in degrees:
+%Standard measurements for last set of experiments:
+eye_to_monitor_distance = 21.5000;
+pixel_size = 33;
+resolution = 1080;
+pixel_size =  pixel_size/resolution;
+monitor_resolution = [1920 1080];
+[theta_x,theta_y] = pixels2eyeDegrees(eye_to_monitor_distance,pixel_size,monitor_resolution);
+
+for i = 1:sizeN
+    sizeBall(i) = round(abs(abs(theta_x(1,uSize(i)))-abs(theta_x(1,1))),2);
+end
+
+sizesString = strjoin(string(sizeBall), "_");
+
 for u = eNeuron
 
 
     fig =  figure;
 
-    title(sprintf('U.%d-Unit-phy-%d-p-%d',u,phy_IDg(u),pvals(2,ur)));
+
 
     %sizeN=1;
 
@@ -168,7 +183,7 @@ for u = eNeuron
     end
 
 
-    subplot(20,1,[7 18]);
+    subplot(20,1,[9 16]);
     imagesc(squeeze(Mr2).*(1000/params.bin));colormap(flipud(gray(64)));
     %Plot stim start:
     xline(preBase/params.bin,'k', LineWidth=1.5)
@@ -236,11 +251,11 @@ for u = eNeuron
         
         %Find max trial category
         [maxTrialCat,maxRespIn]= max(meanMr);
-
-        X = Mr2(maxRespIn*trialDivision+1:maxRespIn*trialDivision + trialDivision,:);
-        window = 500;
+        maxRespIn = maxRespIn-1;
+        X = squeeze(Mr2(maxRespIn*trialDivision+1:maxRespIn*trialDivision + trialDivision,:,:));
+        window = 500; %in ms
         % Moving mean across 2nd dimension
-        mm = movmean(X, window, 2, 'Endpoints', 'discard');
+        mm = movmean(X, round(window/params.bin), 2, 'Endpoints', 'discard');
         % Average across rows to get kernel score
         score = mean(mm, 1);
         % Find max kernel location
@@ -257,28 +272,27 @@ for u = eNeuron
         end
         start = NeuronResp.(fieldName).NeuronVals(u,maxRespIn,3)*NeuronResp.params.binRaster-20;  
         window = 500;
+        maxRespIn = maxRespIn-1;
     end
 
-    maxRespIn = maxRespIn-1;
     trials = maxRespIn*trialDivision+1:maxRespIn*trialDivision + trialDivision;
-    y1 = maxRespIn*trialDivision + trialDivision;
-    y2 = maxRespIn*trialDivision;
-
+    y1 = maxRespIn*trialDivision + trialDivision+0.5;
+    y2 = maxRespIn*trialDivision+0.5;
 
   
     patch([(preBase+start)/params.bin (preBase+start+window)/params.bin (preBase+start+window)/params.bin (preBase+start)/params.bin],...
         [y2 y2 y1 y1],...
-        'b','FaceAlpha',0.3,'EdgeColor','none')
+        'r','FaceAlpha',0.2,'EdgeColor','none')
 
-    patch([1 (preBase*2+stimDur)/params.bin (preBase*2+stimDur)/params.bin 1],...
+    patch([0 (preBase*2+stimDur)/params.bin (preBase*2+stimDur)/params.bin 0],...
         [y2 y2 y1 y1],...
-        'b','FaceAlpha',0.2,'EdgeColor','b')
+        'k','FaceAlpha',0.1,'EdgeColor','none')
 
 
     %%%%%% Plot PSTH
     %%%%%% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-    subplot(20,1,[19 20])
+    subplot(20,1,[17 20])
 
     MRhist = BuildBurstMatrix(goodU(:,u),round(p.t),round((directimesSorted-preBase)),round((stimDur+preBase*2)));
 
@@ -303,7 +317,7 @@ for u = eNeuron
     psthRate = (psthCounts / (binWidth * nT2))*1000;
 
     b=bar(edges(1:end-1), psthRate,'histc');
-    b.FaceColor = 'b';
+    b.FaceColor = 'k';
     b.FaceAlpha = 0.3;
     b.MarkerEdgeColor = "none";
     ylabel('Spikes/sec','FontSize',10);
@@ -344,7 +358,7 @@ for u = eNeuron
 
     chan = goodU(1,u);
 
-    subplot(20,1,[1 3])
+    subplot(20,1,[1 4])
 
     startTimes = directimesSorted(RasterTrials)+start;
 
@@ -363,15 +377,16 @@ for u = eNeuron
     xticklabels([])
     xlabel([]);xticks([])
     ylabel('uV')
-    title(sprintf('U.%d-Unit-phy-%d-p-%d',u,phy_IDg(u),pvals(2,ur)));
+    title({sprintf('U.%d-Unit-phy-%d-p-%d',u,phy_IDg(u),pvals(2,ur)),...
+        sprintf('Ball-sizes-deg-%s',sizesString)});
 
     %%%%%%%%%%% Plot raster of selected trials
     %%%%%%%%%%% %%%%%%%%%%%%%%%%%%%%%%%%%%%
-    subplot(20,1,[4 5])
+    subplot(20,1,[5 7])
 
     RasterTrials =  trials;
 
-    bin3 = 2;
+    bin3 = 4;
     trialM = BuildBurstMatrix(goodU(:,u),round(p.t/bin3),round((directimesSorted+start)/bin3),round((window)/bin3));
 
     if numel(RasterTrials) == 1
@@ -380,7 +395,7 @@ for u = eNeuron
         TrialM = squeeze(trialM(trials,:,:));
     end
 
-    TrialM(TrialM~=0) = 0.3;
+    %TrialM(TrialM~=0) = 0.3;
     spikes1 = TrialM(TrialNumber,:);
     spikeLoc = find(spikes1 >0);
     if isempty(spikeLoc)
@@ -388,20 +403,20 @@ for u = eNeuron
         ur = ur+1;
         continue
     end
-    TrialM(TrialNumber,spikeLoc) = 1;
+    %TrialM(TrialNumber,spikeLoc) = 1;
 
     %Select offset in which selected trial belongs (10 trials)
     imagesc(TrialM);colormap(flipud(gray(64)));
-    %caxis([0 1])
+    caxis([0 1])
     xline([preBase stimDur+preBase],'LineWidth',1.5)
     ylabel([sprintf('%d trials',numel(trials))])
-    if params.fixedWindow
-        xticks([1 abs(start)/bin3:20/bin3:window/bin3])
-        xticklabels([start 0:20:window-abs(start)])
-    else
-        xticks([1:20/bin3:window/bin3])
-        xticklabels([start:20:window+abs(start)])
-    end
+
+    xticks([1:50/bin3:window/bin3+1])
+    xticklabels([0:50:window])
+
+    ax = gca;
+    ax.XRuler.TickDirection = 'out';   % ticks only outward (bottom)
+    ax.XAxisLocation = 'bottom';
 
     xlabel('Milliseconds')
     set(gca,'FontSize',7)
