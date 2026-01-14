@@ -10,47 +10,95 @@ arguments (Input)
     params.exNeurons = 1
     params.AllSomaticNeurons = false
     params.AllResponsiveNeurons = false
-    params.fixedWindow = false
-    params.speed = 1
+    params.SelectedWindow = true
+    params.speed string = "max" %or "1", "2", etc
     params.MergeNtrials =1
     params.oneTrial = false
-    params.Categories = {'All'}
     params.GaussianLength = 10
-    params.MaxVal_1 =false
+    params.MaxVal_1 =true
     params.useNormTrialWindow = false
+    params.OneDirection string = "all"
+    params.OneLuminosity string = "all"
     
 end
-
-fieldName =  sprintf('Speed%d',  params.speed);
 
 NeuronResp = obj.ResponseWindow;
 Stats = obj.ShufflingAnalysis;
 
-C = NeuronResp.(fieldName).C;
+if params.speed ~= "max"
+    fieldName =  sprintf('Speed%d',  str2double(params.speed));
+else
+    fn = fieldnames(NeuronResp);
 
-[C indexS] = sortrows(C,[2 6 3 4 5]);
+    % Extract numbers from field names
+    nums = nan(numel(fn),1);
+    for i = 1:numel(fn)
+        tok = regexp(fn{i}, '\d+', 'match');
+        if ~isempty(tok)
+            nums(i) = str2double(tok{end}); % use last number if multiple
+        end
+    end
 
+    % Find field with highest number
+    [~, idx] = max(nums);
+    fieldName = fn{idx};
 
-directimesSorted = C(:,1)';
+end
+
 goodU = NeuronResp.goodU;
 p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
 phy_IDg = p.phy_ID(string(p.label') == 'good');
 pvals = Stats.(fieldName).pvalsResponse;
-
 stimDur = NeuronResp.(fieldName).stimDur;
 stimInter = NeuronResp.stimInter;
 
+C = NeuronResp.(fieldName).C;
+
+if params.OneDirection ~= "all"
+    switch params.OneDirection
+        case "up"
+            C = NeuronResp.(fieldName).C(round(C(:,2), 2)==0,:);
+        case "left"
+            C = NeuronResp.(fieldName).C(round(C(:,2), 2)==1.57,:);
+        case "down"
+            C = NeuronResp.(fieldName).C(round(C(:,2), 2)==3.14,:);
+        case "right"
+            C = NeuronResp.(fieldName).C(round(C(:,2), 2)==4.71,:);
+        otherwise
+            error("Unknown inputPa value: %s", params.OneDirection)
+    end
+end
+
+if params.OneLuminosity ~= "all"
+    switch params.OneLuminosity
+        case "black"
+            C = NeuronResp.(fieldName).C(round(C(:,6), 2)==1,:);
+        case "white"
+            C = NeuronResp.(fieldName).C(round(C(:,6), 2)==255,:);
+        otherwise
+            error("Unknown inputPa value: %s", params.OneLuminosity)
+    end
+end
+
+
+[C indexS] = sortrows(C,[2 6 3 4 5]);
+directimesSorted = C(:,1)';
+
+%Unique parmeters of the different categories
 uDir = unique(C(:,2));
-direcN = length(uDir);
 uOffset = unique(C(:,3));
-offsetN = length(uOffset);
 uSize = unique(C(:,4));
-sizeN = length(uSize);
 uSpeed = unique(C(:,5));
-speedN = length(uSpeed);
 uLums= unique(C(:,6));
-lumsN = length(uLums);
+
+
+%Number of unique parameters per category
+offsetN = length(uOffset);
+direcN = length(uDir);
+sizeN = length(uSize);
+speedN = length(uSpeed);
 nT = numel(C(:,1));
+lumsN = length(uLums);
 trialDivision = nT/(offsetN*direcN*speedN*sizeN*lumsN); %Number of trials per unique conditions
 
 preBase = round(stimInter-stimInter/4);
@@ -74,25 +122,6 @@ end
 
 [Mr]=ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
 
-for i = numel(params.Categories)
-
-    if isequal(params.Categories{i}, 'All')
-
-        continue
-
-    elseif isequal(params.Categories{i}, 'directions')
-
-        Mr = Mr()
-
-    elseif isequal(params.Categories{i}, 'offsets')
-
-    elseif isequal(params.Categories{i}, 'luminosities')
-
-    elseif isequal(params.Categories{i}, 'sizes')
-
-    end
-
-end
 
 [nT,nN,nB] = size(Mr);
 
@@ -100,12 +129,27 @@ Mr2 = [];
 
 ur = 1;
 
+%Calculate size of ball in degrees:
+%Standard measurements for last set of experiments:
+eye_to_monitor_distance = 21.5000;
+pixel_size = 33;
+resolution = 1080;
+pixel_size =  pixel_size/resolution;
+monitor_resolution = [1920 1080];
+[theta_x,theta_y] = pixels2eyeDegrees(eye_to_monitor_distance,pixel_size,monitor_resolution);
+
+for i = 1:sizeN
+    sizeBall(i) = round(abs(abs(theta_x(1,uSize(i)))-abs(theta_x(1,1))),2);
+end
+
+sizesString = strjoin(string(sizeBall), "_");
+
 for u = eNeuron
 
 
     fig =  figure;
 
-    title(sprintf('U.%d-Unit-phy-%d-p-%d',u,phy_IDg(u),pvals(2,ur)));
+
 
     %sizeN=1;
 
@@ -132,20 +176,6 @@ for u = eNeuron
 
     [nT,nN,nB] = size(Mr2);
 
-    % if nB>300 %
-    % 
-    %     MergeBins = 3;
-    % 
-    %     for i = 1:MergeBins:nB
-    % 
-    %         meanb = mean(squeeze(Mr2(:,:,i:min(i+MergeBins-1, end))),3);
-    % 
-    %         Mr2(:,:,i:i+MergeBins-1) = repmat(meanb,[1 MergeBins]);
-    % 
-    %     end
-    % 
-    % end
-
     if sum(Mr2,'all') ==0
         close
         ur = ur+1;
@@ -153,7 +183,7 @@ for u = eNeuron
     end
 
 
-    subplot(20,1,[7 18]);
+    subplot(20,1,[9 16]);
     imagesc(squeeze(Mr2).*(1000/params.bin));colormap(flipud(gray(64)));
     %Plot stim start:
     xline(preBase/params.bin,'k', LineWidth=1.5)
@@ -211,7 +241,7 @@ for u = eNeuron
     ax.YAxis.FontSize = 7; % Change font size of y-axis tick labels
 
 
-    if params.fixedWindow  %%Select highest window stim type
+    if params.SelectedWindow  %%Select highest window stim type
         j =1;
         meanMr = zeros(1,nT/trialDivision);
         for i = 1:trialDivision:nT
@@ -219,10 +249,21 @@ for u = eNeuron
             j = j+1;
         end
         
-        [maxResp,maxRespIn]= max(meanMr);
-        %Figure paper
-        start = -50;
-        window = 500;
+        %Find max trial category
+        [maxTrialCat,maxRespIn]= max(meanMr);
+        maxRespIn = maxRespIn-1;
+        X = squeeze(Mr2(maxRespIn*trialDivision+1:maxRespIn*trialDivision + trialDivision,:,:));
+        window = 500; %in ms
+        % Moving mean across 2nd dimension
+        mm = movmean(X, round(window/params.bin), 2, 'Endpoints', 'discard');
+        % Average across rows to get kernel score
+        score = mean(mm, 1);
+        % Find max kernel location
+        [maxVal, idx] = max(score);
+
+        % Kernel column range
+        start = idx;
+
     else
         if params.useNormTrialWindow
             [maxResp,maxRespIn]= max(NeuronResp.(fieldName).NeuronVals(u,:,1));
@@ -231,28 +272,27 @@ for u = eNeuron
         end
         start = NeuronResp.(fieldName).NeuronVals(u,maxRespIn,3)*NeuronResp.params.binRaster-20;  
         window = 500;
+        maxRespIn = maxRespIn-1;
     end
 
-    maxRespIn = maxRespIn-1;
     trials = maxRespIn*trialDivision+1:maxRespIn*trialDivision + trialDivision;
-    y1 = maxRespIn*trialDivision + trialDivision;
-    y2 = maxRespIn*trialDivision;
-
+    y1 = maxRespIn*trialDivision + trialDivision+0.5;
+    y2 = maxRespIn*trialDivision+0.5;
 
   
     patch([(preBase+start)/params.bin (preBase+start+window)/params.bin (preBase+start+window)/params.bin (preBase+start)/params.bin],...
         [y2 y2 y1 y1],...
-        'b','FaceAlpha',0.3,'EdgeColor','none')
+        'r','FaceAlpha',0.2,'EdgeColor','none')
 
-    patch([1 (preBase*2+stimDur)/params.bin (preBase*2+stimDur)/params.bin 1],...
+    patch([0 (preBase*2+stimDur)/params.bin (preBase*2+stimDur)/params.bin 0],...
         [y2 y2 y1 y1],...
-        'b','FaceAlpha',0.2,'EdgeColor','b')
+        'k','FaceAlpha',0.1,'EdgeColor','none')
 
 
     %%%%%% Plot PSTH
     %%%%%% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-    subplot(20,1,[19 20])
+    subplot(20,1,[17 20])
 
     MRhist = BuildBurstMatrix(goodU(:,u),round(p.t),round((directimesSorted-preBase)),round((stimDur+preBase*2)));
 
@@ -277,7 +317,7 @@ for u = eNeuron
     psthRate = (psthCounts / (binWidth * nT2))*1000;
 
     b=bar(edges(1:end-1), psthRate,'histc');
-    b.FaceColor = 'b';
+    b.FaceColor = 'k';
     b.FaceAlpha = 0.3;
     b.MarkerEdgeColor = "none";
     ylabel('Spikes/sec','FontSize',10);
@@ -318,7 +358,7 @@ for u = eNeuron
 
     chan = goodU(1,u);
 
-    subplot(20,1,[1 3])
+    subplot(20,1,[1 4])
 
     startTimes = directimesSorted(RasterTrials)+start;
 
@@ -328,11 +368,6 @@ for u = eNeuron
 
     spikes = squeeze(BuildBurstMatrix(goodU(:,u),round(p.t),round(startTimes),round((window))));
 
-    % if params.oneTrial
-    %     [mx ind] = max(sum(spikes,2)); %select trial with most spikes
-    % else
-    %     ind = 1:size(spikes,1);
-    % end
 
     [fig, mx, mn] = PlotRawDataNP(obj,fig = fig,chan = chan, startTimes = startTimes,...
         window = window,spikeTimes = spikes);
@@ -342,15 +377,16 @@ for u = eNeuron
     xticklabels([])
     xlabel([]);xticks([])
     ylabel('uV')
-    title(sprintf('U.%d-Unit-phy-%d-p-%d',u,phy_IDg(u),pvals(2,ur)));
+    title({sprintf('U.%d-Unit-phy-%d-p-%d',u,phy_IDg(u),pvals(2,ur)),...
+        sprintf('Ball-sizes-deg-%s',sizesString)});
 
     %%%%%%%%%%% Plot raster of selected trials
     %%%%%%%%%%% %%%%%%%%%%%%%%%%%%%%%%%%%%%
-    subplot(20,1,[4 5])
+    subplot(20,1,[5 7])
 
     RasterTrials =  trials;
 
-    bin3 = 2;
+    bin3 = 4;
     trialM = BuildBurstMatrix(goodU(:,u),round(p.t/bin3),round((directimesSorted+start)/bin3),round((window)/bin3));
 
     if numel(RasterTrials) == 1
@@ -359,7 +395,7 @@ for u = eNeuron
         TrialM = squeeze(trialM(trials,:,:));
     end
 
-    TrialM(TrialM~=0) = 0.3;
+    %TrialM(TrialM~=0) = 0.3;
     spikes1 = TrialM(TrialNumber,:);
     spikeLoc = find(spikes1 >0);
     if isempty(spikeLoc)
@@ -367,29 +403,29 @@ for u = eNeuron
         ur = ur+1;
         continue
     end
-    TrialM(TrialNumber,spikeLoc) = 1;
+    %TrialM(TrialNumber,spikeLoc) = 1;
 
     %Select offset in which selected trial belongs (10 trials)
     imagesc(TrialM);colormap(flipud(gray(64)));
-    %caxis([0 1])
+    caxis([0 1])
     xline([preBase stimDur+preBase],'LineWidth',1.5)
     ylabel([sprintf('%d trials',numel(trials))])
-    if params.fixedWindow
-        xticks([1 abs(start)/bin3:20/bin3:window/bin3])
-        xticklabels([start 0:20:window-abs(start)])
-    else
-        xticks([1:20/bin3:window/bin3])
-        xticklabels([start:20:window+abs(start)])
-    end
+
+    xticks([1:50/bin3:window/bin3+1])
+    xticklabels([0:50:window])
+
+    ax = gca;
+    ax.XRuler.TickDirection = 'out';   % ticks only outward (bottom)
+    ax.XAxisLocation = 'bottom';
 
     xlabel('Milliseconds')
     set(gca,'FontSize',7)
 
     xline(-start/bin3,'LineWidth',1.5)
 
-    xline(spikeLoc,'LineWidth',1,'Color','b','Alpha',0.3)
+    xline(spikeLoc,'LineWidth',1,'Color','r','Alpha',0.3)
 
-    yline(TrialNumber,'LineWidth',3,'Color','b','Alpha',0.3) %Mark trial
+    yline(TrialNumber,'LineWidth',3,'Color','r','Alpha',0.3) %Mark trial
 
     fig.Position = [680     5   296   9734];
 
