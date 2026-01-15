@@ -3475,28 +3475,27 @@ classdef sleepAnalysis < recAnalysis
                 return;
             end
 
-
+            arenaCSVs = [];
             % getting the videos data (csv of the triggers):
             videoPath = obj.recTable.VideoFiles(obj.currentPRec);
             [videosFolderPath,vidName,~] = fileparts(videoPath{1});
             videoCSVpath = strcat(videosFolderPath,filesep,'frames_timestamps/',vidName,'.csv');
-            videoFrames = readmatrix(videoCSVpath,"NumHeaderLines",1); % timestamps - seconds from 1.1.1970
+            arenaCSVs.videoFrames = readmatrix(videoCSVpath,"NumHeaderLines",1); % timestamps - seconds from 1.1.1970
 
             % getting the data of the oe recording: triggers times in oe
             camTrigCh = obj.recTable.camTriggerCh(obj.currentPRec);% ch can be change according to the setup.
             oeCamTrig = obj.currentDataObj.getCamerasTrigger(camTrigCh)';
-
-
+            arenaCSVs.oeCamTrig = oeCamTrig;
 
             % check trigger synchrony:
-            if length(oeCamTrig) == length(videoFrames)
+            if length(oeCamTrig) == length(arenaCSVs.videoFrames)
                 disp('Triggers num match video frames.')
             else
-                framediff = length(videoFrames)-length(oeCamTrig);
+                framediff = length(arenaCSVs.videoFrames)-length(oeCamTrig);
                 fprintf('Triggers num dont match video frames. Diff is %d. \n',framediff)
             end
 
-            videoFPS = 1/mean(diff(videoFrames(:,2)));
+            arenaCSVs.videoFPS = 1/mean(diff(arenaCSVs.videoFrames(:,2)));
 
             % get block data:
             if all(cellfun(@isempty,obj.recTable.blockPath(obj.currentPRec)))
@@ -3506,7 +3505,7 @@ classdef sleepAnalysis < recAnalysis
                 blockPath = bloPath{1};
             end
             blockLog = readtable(strcat(blockPath,'/block.log'), "Delimiter",' - ');
-
+            arenaCSVs.blockLog=blockLog;
             % get the IR trigger timings, from the OE system:
             irTrigCh = obj.recTable.IrtrigCh(obj.currentPRec);
             obj.getDigitalTriggers;
@@ -3522,35 +3521,43 @@ classdef sleepAnalysis < recAnalysis
             blockLog.Timestamps = posixtime(blockLog.DateTime);
             trigLogInd = find(startsWith(blockLog{:,5},'Trigger was off')); %index for the trigger annoncment
             irTimestamp = blockLog.Timestamps(trigLogInd)+ 1; %adding 1 second to the posixtime
-            arenaIRFrame = getVideoFrames(obj,videoFrames,irTimestamp);
+            arenaIRFrame = getVideoFrames(obj,arenaCSVs.videoFrames,irTimestamp);
             %             oeIrTrig = OEcamTrig(arenairFrame);
             IRframeShift = arenaIRFrame-oeIRFrame;
-            IRdata = [IRframeShift, oeIRFrame, arenaIRFrame];
+            arenaCSVs.IRFrames = [IRframeShift, oeIRFrame, arenaIRFrame];
+
 
             % get the bug location into a table and add timestamps (S):
             %notice - if yu need the timestamps in ms the code needs to change.
             bugs_path = strcat(blockPath,'/bug_trajectory.csv');
-            bugs = readtable(bugs_path);
-            bugs.DateTime = datetime(bugs.time, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSSSSSXXX','TimeZone','Asia/Jerusalem');
-            bugs.Timestamps = posixtime(bugs.DateTime);
+            if exist(bugs_path,'file') ==2 
+                bugs = readtable(bugs_path);
+                arenaCSVs.bugs=bugs;
+                bugs.DateTime = datetime(bugs.time, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSSSSSXXX','TimeZone','Asia/Jerusalem');
+                bugs.Timestamps = posixtime(bugs.DateTime);
 
-            % getting the trials start and end times in OE times:
-            bugStops = find(diff(bugs.Timestamps)>15)+1;
-            firstInd = 1;
-            startTrials = bugs.Timestamps([firstInd,bugStops.']);
-            endTrials = bugs.Timestamps([(bugStops.')-1,end]);
-            % change to frame number:
-            sTrialFrame = obj.getVideoFrames(videoFrames,startTrials);
-            eTrialFrame = obj.getVideoFrames(videoFrames,endTrials);
-            % change to frame time stamp in OE:
-            oeStartTrig = oeCamTrig(sTrialFrame); % this is the trigs for the start of trials.
-            oeEndTrig = oeCamTrig(eTrialFrame);
+                % getting the trials start and end times in OE times:
+                bugStops = find(diff(bugs.Timestamps)>15)+1;
+                firstInd = 1;
+                startTrials = bugs.Timestamps([firstInd,bugStops.']);
+                endTrials = bugs.Timestamps([(bugStops.')-1,end]);
+                % change to frame number:
+                sTrialFrame = obj.getVideoFrames(videoFrames,startTrials);
+                eTrialFrame = obj.getVideoFrames(videoFrames,endTrials);
+                % add the IR shift:
+                arenaCSVs.startFrameSh = sTrialFrame - IRframeShift;
+                arenaCSVs.endFramSh  = eTrialFrame - IRframeShift;
+                % change to frame time stamp in OE:
+                arenaCSVs.startTrigSh = oeCamTrig(startFrameSh) ;
+                arenaCSVs.endTrigSh = oeCamTrig(endFramSh) ;
+            end
 
             % strikes:
             % get the strikes loginto a table and add timestamps:
             screenTouchFile = strcat(blockPath,'/screen_touches.csv');
             if exist(screenTouchFile,'file') ==2 %make sure there were screen touches:
                 screenTouch = readtable(screenTouchFile);
+                arenaCSVs.screenTouch = screenTouch;
                 screenTouch.DateTime = datetime(screenTouch.time, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSSSSSXXX', 'TimeZone', 'Asia/Jerusalem');
                 screenTouch.Timestamps = posixtime(screenTouch.DateTime);
                 % taking the strike time from the strike plots
@@ -3558,38 +3565,21 @@ classdef sleepAnalysis < recAnalysis
                 hitsIdx = strcmpi(screenTouch.is_hit,'true');
                 strikesTimes = screenTouch.Timestamps(hitsIdx);
                 strikesFrame = obj.getVideoFrames(videoFrames,strikesTimes); % theres a 15 frames difference.
-                strikeTrialNum = screenTouch.in_block_trial_id(hitsIdx);
+                arenaCSVs.strikeTrialNum = screenTouch.in_block_trial_id(hitsIdx);
+                arenaCSVs.strikeFrameSh = strikesFrame - IRframeShift;
+                % switch to oe times:
+                arenaCSVs.strikeTrigSh = oeCamTrig(strikeFrameSh);
+
             else
                 disp('No screen touchs preformed for this session')
-                screenTouch = [];
-                strikesFrame = [];
-                strikeTrialNum = [];
+                % arenaCSVs.screenTouch = [];
+                % arenaCSVs.strikeFrameSh = [];
+                % arenaCSVs.strikeTrialNum = [];
+                % arenaCSVs.strikeTrigSh =[];
             end
-
-            startFrameSh = sTrialFrame - IRframeShift;
-            endFramSh  = eTrialFrame - IRframeShift;
-            strikeFrameSh = strikesFrame - IRframeShift;
-
-            startTrigSh = oeCamTrig(startFrameSh) ;
-            endTrigSh = oeCamTrig(endFramSh) ;
-            strikeTrigSh = oeCamTrig(strikeFrameSh ) ;
+            
 
             % save the data
-            arenaCSVs.videoFrames = videoFrames;
-            arenaCSVs.bugs = bugs;
-            arenaCSVs.blockLog = blockLog;
-            arenaCSVs.screenTouch = screenTouch;
-            arenaCSVs.startFrameSh = startFrameSh;
-            arenaCSVs.endFramSh = endFramSh;
-            arenaCSVs.strikeFrameSh = strikeFrameSh;
-            arenaCSVs.startTrigSh = startTrigSh;
-            arenaCSVs.endTrigSh = endTrigSh;
-            arenaCSVs.strikeTrigSh = strikeTrigSh;
-            arenaCSVs.videoFPS = videoFPS;
-            arenaCSVs.oeCamTrigs = oeCamTrig;
-            arenaCSVs.IRFrames = IRdata;
-            arenaCSVs.strikeTrialNum = strikeTrialNum;
-
             save(obj.files.arenaCSV,"arenaCSVs");
         end
         %% get video frames:
