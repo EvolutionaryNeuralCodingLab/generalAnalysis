@@ -4,19 +4,21 @@ arguments
     expList  (1,:) double  %%Number of experiment from excel list
     Stims2Comp cell %% Comparison order {'MB','RG','MBR'} would select neurons responsive to moving ball and 
     % compare this neurons responses to other stimuli. 
-    params.threshold = 0.05;
-    params.diffResp = false;
-    params.overwrite = false;
-    params.StimsPresent = {'MB','RG'}; %assumes that at least moving ball is present
-    params.StimsNotPresent = {};
-    params.StimsToCompare = {}; %Select 2 stims to compare scatter plots (default: 1st and 2nd stim are compared from the Stims2Comp cell array)
-    params.overwriteResponse = false;
-    params.overwriteStats = false;
+    params.threshold = 0.05
+    params.diffResp = false
+    params.overwrite = false
+    params.StimsPresent = {'MB','RG'} %assumes that at least moving ball is present
+    params.StimsNotPresent = {}
+    params.StimsToCompare = {} %Select 2 stims to compare scatter plots (default: 1st and 2nd stim are compared from the Stims2Comp cell array)
+    params.overwriteResponse = false
+    params.overwriteStats = false
+    params.overwriteGroupStats = false
     params.RespDurationWin = 100; %same as default
     params.shuffles = 2000; %same as default
-    params.StatMethod = {'ObsWindow'};
-    params.ignoreNonSignif = false; %when comparing first stim, ignore neurons non responsive to other stim
-    params.EachStimSignif = false; %resposnive neurons for each stim are selected (default: responsive neurons of first stime are selected)
+    params.StatMethod = {'ObsWindow'}
+    params.ignoreNonSignif = false %when comparing first stim, ignore neurons non responsive to other stim
+    params.EachStimSignif = false %resposnive neurons for each stim are selected (default: responsive neurons of first stime are selected)
+    params.ComparePairs = {};
 end
 
 % Compare z-scores and p-values between moving ball and rect grid analyses
@@ -87,6 +89,14 @@ else
     forloop = true;
 end
 
+longTable = table( ...
+    categorical.empty(0,1), ...
+    categorical.empty(0,1), ...
+    categorical.empty(0,1), ...
+    double.empty(0,1), ...
+    double.empty(0,1), ...
+    'VariableNames', {'animal','insertion','stimulus','respNeur','totalSomaticN'} );
+
 if forloop
     for ex = expList
 
@@ -94,12 +104,20 @@ if forloop
         NP = loadNPclassFromTable(ex); %73 81
         vs = linearlyMovingBallAnalysis(NP);
         vsR = rectGridAnalysis(NP);
+        
+        %Assumes that RG and MB are present in all insertions
+        Animal = string(regexp( vs.getAnalysisFileName, 'PV\d+', 'match', 'once'));
+        longTable(end+1,:) = {categorical(Animal),categorical(j), categorical("MB"), 0,0};
+        longTable(end+1,:) = {categorical(Animal),categorical(j), categorical("RG"), 0,0};
 
         try
             vsBr = linearlyMovingBarAnalysis(NP);
             params.StimsPresent{3} = 'MBR';
+
             if isempty(vsBr.VST)
                 error('Moving Bar stimulus not found.\n')
+            else
+                longTable(end+1,:) = {categorical(Animal),categorical(j), categorical("MBR"), 0,0};
             end
         catch
             params.StimsPresent{3} = '';
@@ -109,9 +127,13 @@ if forloop
         try
             vsG = StaticDriftingGratingAnalysis(NP);
             params.StimsPresent{4} = 'SDG';
-             if isempty(vsG.VST)
-                error('Gratings stimulus not found.\n')
-            end
+
+            if isempty(vsG.VST)
+                 error('Gratings stimulus not found.\n')               
+             else
+                 longTable(end+1,:) = {categorical(Animal),categorical(j), categorical("SDGm"), 0,0};
+                 longTable(end+1,:) = {categorical(Animal),categorical(j), categorical("SDGs"), 0,0};
+             end
         catch
            params.StimsPresent{4} = '';
             fprintf('Gratings stimulus not found.\n')
@@ -120,9 +142,12 @@ if forloop
         try
             vsNI = imageAnalysis(NP);
             params.StimsPresent{5} = 'NI';
+            
              if isempty(vsNI.VST)
                 error('Gratings stimulus not found.\n')
-            end
+             else
+                longTable(end+1,:) = {categorical(Animal),categorical(j), categorical("NI"), 0,0};
+             end
         catch
             params.StimsPresent{5} = '';
             fprintf('Natural images stimulus not found.\n')
@@ -131,8 +156,11 @@ if forloop
         try
             vsNV = movieAnalysis(NP);
             params.StimsPresent{6} = 'NV';
+            
             if isempty(vsNV.VST)
                 error('Gratings stimulus not found.\n')
+            else
+                longTable(end+1,:) = {categorical(Animal),categorical(j), categorical("NV"), 0,0};
             end
         catch
             params.StimsPresent{6} = '';
@@ -143,8 +171,11 @@ if forloop
         try
             vsFFF = fullFieldFlashAnalysis(NP);
             params.StimsPresent{7} = 'FFF';
+            
             if isempty(vsFFF.VST)
-                error('Gratings stimulus not found.\n')
+                error('FFF stimulus not found.\n')
+            else
+                longTable(end+1,:) = {categorical(Animal),categorical(j), categorical("FFF"), 0,0};
             end
         catch
             params.StimsPresent{7} = '';
@@ -354,8 +385,6 @@ if forloop
                 spkR_MB = mean(statsMB.Speed1.ObsReponse);
             end
 
-
-
         end
 
         if params.ignoreNonSignif
@@ -386,15 +415,22 @@ if forloop
         spkR_MBs =  spkR_MB(pvalsStimSelected<=params.threshold);
         spkDiff_MBs =  spkDiff_MB(pvalsStimSelected<=params.threshold);
         pvals_MB = pValuesMB(pvalsStimSelected<=params.threshold);
-        sumNeurMB = numel(zScores_MB);
-
+       
 
         %%% Responsive in general:
         respIndexes = [];
         zScores_MBg = zScores_MB(pValuesMB<=params.threshold);
+        sumNeurMB = numel(zScores_MBg);
         spkR_MBg =  spkR_MB(pValuesMB<=params.threshold);
         spkDiff_MBg =  spkDiff_MB(pValuesMB<=params.threshold);
         respIndexes = [respIndexes find(pValuesMB<=params.threshold)];
+
+        try
+            idx = (longTable.insertion == categorical(j)) & ...
+                (longTable.stimulus  == categorical("MB")); %%%
+            longTable.respNeur(idx) = sumNeurMB; 
+            longTable.totalSomaticN(idx) = numel(pValuesMB);
+        end
 
         %%%%%%%%%%% Rect Grid %%%%%%%%%%
 
@@ -402,12 +438,19 @@ if forloop
         spkR_RGs = spkR_RG(pvalsStimSelected<=params.threshold);
         spkDiff_RGs = spkDiff_RG(pvalsStimSelected<=params.threshold);
         pvals_RG = pValuesRG(pvalsStimSelected<=params.threshold);
-        sumNeurRG = numel(zScores_RG);
-
+       
         zScores_RGg = zScores_RG(pValuesRG<=params.threshold);
+        sumNeurRG = numel(zScores_RGg);
         spkR_RGg = spkR_RG(pValuesRG<=params.threshold);
         spkDiff_RGg = spkDiff_RG(pValuesRG<=params.threshold);
         respIndexes = [respIndexes find(pValuesRG<=params.threshold)];
+
+        try
+            idx = (longTable.insertion == categorical(j)) & ...
+                (longTable.stimulus  == categorical("RG")); %%%
+            longTable.respNeur(idx) = sumNeurRG;
+            longTable.totalSomaticN(idx) = numel(pValuesMB);
+        end
 
         if isequal(params.StimsPresent{2},'') %Asign - inf values if stim is not present in recording
             zScores_RGs = zScores_RG-inf;
@@ -427,12 +470,19 @@ if forloop
         spkR_MBRs = spkR_MBR(pvalsStimSelected<=params.threshold);
         spkDiff_MBRs = spkDiff_MBR(pvalsStimSelected<=params.threshold);
         pvals_MBR = pValuesMBR(pvalsStimSelected<=params.threshold);
-        sumNeurMBR = numel(zScores_MBR);
-
+        
         zScores_MBRg = zScores_MBR(pValuesMBR<=params.threshold);
+        sumNeurMBR = numel(zScores_MBRg);
         spkR_MBRg = spkR_MBR(pValuesMBR<=params.threshold);
         spkDiff_MBRg = spkDiff_MBR(pValuesMBR<=params.threshold);
         respIndexes = [respIndexes find(pValuesMBR<=params.threshold)];
+
+        try
+            idx = (longTable.insertion == categorical(j)) & ...
+                (longTable.stimulus  == categorical("MBR")); %%%
+            longTable.respNeur(idx) = sumNeurMBR;
+            longTable.totalSomaticN(idx) = numel(pValuesMB);
+        end
 
 
         if isequal(params.StimsPresent{3},'') %Asign - inf values if stim is not present in recording
@@ -458,17 +508,33 @@ if forloop
         spkR_SDGss = spkR_SDGs(pvalsStimSelected<=params.threshold);
         spkDiff_SDGss = spkDiff_SDGs(pvalsStimSelected<=params.threshold);
         pvals_SDGs = pValuesSDGs(pvalsStimSelected<=params.threshold);
-        sumNeurSDG = numel(zScores_SDGs);
+       
 
         zScores_SDGmg = zScores_SDGm(pValuesSDGm<=params.threshold);
+        sumNeurSDGm = numel(zScores_SDGmg);
         spkR_SDGmg = spkR_SDGm(pValuesSDGm<=params.threshold);
         spkDiff_SDGmg = spkDiff_SDGm(pValuesSDGm<=params.threshold);
         respIndexes = [respIndexes find(pValuesSDGm<=params.threshold)];
 
         zScores_SDGsg = zScores_SDGs(pValuesSDGs<=params.threshold);
+        sumNeurSDGs = numel(zScores_SDGsg);
         spkR_SDGsg = spkR_SDGs(pValuesSDGs<=params.threshold);
         spkDiff_SDGsg = spkDiff_SDGs(pValuesSDGs<=params.threshold);
         respIndexes = [respIndexes find(pValuesSDGs<=params.threshold)];
+
+        try
+            idx = (longTable.insertion == categorical(j)) & ...
+                (longTable.stimulus  == categorical("SDGm")); %%%
+            longTable.respNeur(idx) = sumNeurSDGm;
+            longTable.totalSomaticN(idx) = numel(pValuesMB);
+        end
+
+        try
+            idx = (longTable.insertion == categorical(j)) & ...
+                (longTable.stimulus  == categorical("SDGs")); %%%
+            longTable.respNeur(idx) = sumNeurSDGs;
+            longTable.totalSomaticN(idx) = numel(pValuesMB);
+        end
 
         if isequal(params.StimsPresent{4},'') %Asign - inf values if stim is not present in recording
             zScores_SDGss = zScores_SDGss-inf;
@@ -495,14 +561,20 @@ if forloop
         zScores_FFFs = zScores_FFF(pvalsStimSelected<=params.threshold);
         spkR_FFFs = spkR_FFF(pvalsStimSelected<=params.threshold);
         spkDiff_FFFs = spkDiff_FFF(pvalsStimSelected<=params.threshold);
-        pvals_FFF = pValuesFFF(pvalsStimSelected<=params.threshold);
-        sumNeurFFF = numel(zScores_FFF);
-
+        pvals_FFF = pValuesFFF(pvalsStimSelected<=params.threshold);     
 
         zScores_FFFg = zScores_FFF(pValuesFFF<=params.threshold);
+        sumNeurFFF = numel(zScores_FFFg);
         spkR_FFFg = spkR_FFF(pValuesFFF<=params.threshold);
         spkDiff_FFFg = spkDiff_FFF(pValuesFFF<=params.threshold);
         respIndexes = [respIndexes find(pValuesFFF<=params.threshold)];
+
+        try
+            idx = (longTable.insertion == categorical(j)) & ...
+                (longTable.stimulus  == categorical("FFF")); %%%
+            longTable.respNeur(idx) = sumNeurFFF;
+            longTable.totalSomaticN(idx) = numel(pValuesMB);
+        end
 
         if isequal(params.StimsPresent{7},'') %Asign - inf values if stim is not present in recording
             zScores_FFFs = zScores_FFFs-inf;
@@ -520,13 +592,20 @@ if forloop
         zScores_NIs= zScores_NI(pvalsStimSelected<=params.threshold);
         spkR_NIs = spkR_NI(pvalsStimSelected<=params.threshold);
         spkDiff_NIs = spkDiff_NI(pvalsStimSelected<=params.threshold);
-        pvals_NI = pValuesNI(pvalsStimSelected<=params.threshold);
-        sumNeurNI = numel(zScores_NI);
+        pvals_NI = pValuesNI(pvalsStimSelected<=params.threshold);  
 
         zScores_NIg = zScores_NI(pValuesNI<=params.threshold);
+        sumNeurNI = numel(zScores_NIg);
         spkR_NIg = spkR_NI(pValuesNI<=params.threshold);
         spkDiff_NIg = spkDiff_NI(pValuesNI<=params.threshold);
         respIndexes = [respIndexes find(pValuesNI<=params.threshold)];
+
+        try
+            idx = (longTable.insertion == categorical(j)) & ...
+                (longTable.stimulus  == categorical("NI")); %%%
+            longTable.respNeur(idx) = sumNeurNI;
+            longTable.totalSomaticN(idx) = numel(pValuesMB);
+        end
 
 
         if isequal(params.StimsPresent{5},'') %Asign - inf values if stim is not present in recording
@@ -546,13 +625,21 @@ if forloop
         spkR_NVs = spkR_NV(pvalsStimSelected<=params.threshold);
         spkDiff_NVs = spkDiff_NV(pvalsStimSelected<=params.threshold);
         pvals_NV = pValuesNV(pvalsStimSelected<=params.threshold);
-        sumNeurNV = numel(zScores_NV);
+        
 
         zScores_NVg = zScores_NV(pValuesNV<=params.threshold);
+        sumNeurNV = numel(zScores_NVg);
         spkR_NVg = spkR_NV(pValuesNV<=params.threshold);
         spkDiff_NVg = spkDiff_NV(pValuesNV<=params.threshold);
         respIndexes = [respIndexes find(pValuesNV<=params.threshold)];
-        
+
+        try
+            idx = (longTable.insertion == categorical(j)) & ...
+                (longTable.stimulus  == categorical("NV")); %%%
+            longTable.respNeur(idx) = sumNeurNV;
+            longTable.totalSomaticN(idx) = numel(pValuesMB);
+        end
+
         if isequal(params.StimsPresent{6},'') %Asign - inf values if stim is not present in recording
             zScores_NVs = zScores_NVs-inf;
             spkR_NVs = spkR_NVs-inf;
@@ -616,15 +703,16 @@ if forloop
         spKrSDGm{j} = spkR_SDGms';
         diffSpkSDGm{j} = spkDiff_SDGms;
         pvalsSDGm{j} = pvals_SDGm;
+        sumNeurSDGmt{j} = sumNeurSDGm;
 
         zScoresSDGs{j} = zScores_SDGss;
         spKrSDGs{j} = spkR_SDGss';
         diffSpkSDGs{j} = spkDiff_SDGss;
         pvalsSDGs{j} = pvals_SDGs;
-        sumNeurSDGt{j} = sumNeurSDG;
+        sumNeurSDGst{j} = sumNeurSDGs;
 
         zScoresNI{j} = zScores_NIs;
-        spKrNI{j} = spkR_NIs;
+        spKrNI{j} = spkR_NIs';
         diffSpkNI{j} = spkDiff_NIs;
         pvalsNI{j} = pvals_NI;
         sumNeurNIt{j} = sumNeurNI;
@@ -643,9 +731,13 @@ if forloop
         
         %%% Responsive in general:
 
+       % generalTableSection = 
+
         zScoresMBg{j} = zScores_MBg;
         spkRMBg{j} =  spkR_MBg;
         spkDiffMBg{j} =  spkDiff_MBg;
+
+
 
         zScoresRGg{j} = zScores_RGg;
         spkRRGg{j} = spkR_RGg;
@@ -685,99 +777,116 @@ if forloop
 
     end
 
-    S.spKrMB = spKrMB;
-    S.spKrRG = spKrRG;
-    S.diffSpkMB = diffSpkMB;
-    S.diffSpkRG = diffSpkRG;
-    S.zScoresMB =zScoresMB;
-    S.zScoresRG = zScoresRG;
+    %%Stim values of neruons signifficantly responsive to one selected
+    %%stimulues (first stim input)
+    S.stimValsSignif2oneStim.spKrMB = spKrMB;
+    S.stimValsSignif2oneStim.spKrRG = spKrRG;
+    S.stimValsSignif2oneStim.diffSpkMB = diffSpkMB;
+    S.stimValsSignif2oneStim.diffSpkRG = diffSpkRG;
+    S.stimValsSignif2oneStim.zScoresMB =zScoresMB;
+    S.stimValsSignif2oneStim.zScoresRG = zScoresRG;
+
+    S.pvals.pvalsMB = pvalsMB;
+    S.pvals.pvalsRG = pvalsRG; 
+
+    S.stimValsSignif2oneStim.spKrMBR = spKrMBR;
+    S.stimValsSignif2oneStim.spKrFFF = spKrFFF;
+    S.stimValsSignif2oneStim.diffSpkMBR = diffSpkMBR;
+    S.stimValsSignif2oneStim.diffSpkFFF = diffSpkFFF;
+    S.stimValsSignif2oneStim.zScoresMBR =zScoresMBR;
+    S.stimValsSignif2oneStim.zScoresFFF = zScoresFFF;
+    S.pvals.pvalsFFF = pvalsFFF;
+    S.pvals.pvalsMBR = pvalsMBR;
+  
+
+    S.stimValsSignif2oneStim.spKrSDGm = spKrSDGm;
+    S.stimValsSignif2oneStim.spKrSDGs = spKrSDGs;
+    S.stimValsSignif2oneStim.diffSpkSDGm = diffSpkSDGm;
+    S.stimValsSignif2oneStim.diffSpkSDGs = diffSpkSDGs;
+    S.stimValsSignif2oneStim.zScoresSDGm =zScoresSDGm;
+    S.stimValsSignif2oneStim.zScoresSDGs = zScoresSDGs;
+    S.pvals.pvalsSDGm = pvalsSDGm;
+    S.pvals.pvalsSDGs = pvalsSDGs;
+
+    S.stimValsSignif2oneStim.spKrNI = spKrNI;
+    S.stimValsSignif2oneStim.spKrNV = spKrNV;
+    S.stimValsSignif2oneStim.diffSpkNI= diffSpkNI;
+    S.stimValsSignif2oneStim.diffSpkNV = diffSpkNV;
+    S.stimValsSignif2oneStim.zScoresNI =zScoresNI;
+    S.stimValsSignif2oneStim.zScoresNV = zScoresNV;
+    S.pvals.pvalsNI = pvalsNI;
+    S.pvals.pvalsNV = pvalsNV;
+    
+
+    %%Stim values of neruons signifficantly responsive to each stimulus
+    S.stimValsSignif.zScoresMBg=zScoresMBg;
+    S.stimValsSignif.spkRMBg=spkRMBg;
+    S.stimValsSignif.spkDiffMBg=spkDiffMBg;
+    S.stimValsSignif.sumNeurRG = sumNeurRGt;
+    S.stimValsSignif.sumNeurMB = sumNeurMBt;
+
+    S.stimValsSignif.zScoresRGg=zScoresRGg;
+    S.stimValsSignif.spkRRGg=spkRRGg;
+    S.stimValsSignif.spkDiffRGg=spkDiffRGg;
+
+    S.stimValsSignif.zScoresMBRg=zScoresMBRg;
+    S.stimValsSignif.spkRMBRg=spkRMBRg;
+    S.stimValsSignif.spkDiffMBRg=spkDiffMBRg;
+    S.stimValsSignif.sumNeurMBR = sumNeurMBRt;
+
+    S.stimValsSignif.zScoresSDGmg=zScoresSDGmg;
+    S.stimValsSignif.spkRSDGmg=spkRSDGmg;
+    S.stimValsSignif.spkDiffSDGmg=spkDiffSDGmg;
+
+    S.stimValsSignif.zScoresSDGsg=zScoresSDGsg;
+    S.stimValsSignif.spkRSDGsg=spkRSDGsg;
+    S.stimValsSignif.spkDiffSDGsg=spkDiffSDGsg;
+
+    S.stimValsSignif.sumNeurSDGs = sumNeurSDGst;
+    S.stimValsSignif.sumNeurSDGm = sumNeurSDGmt;
+
+    S.stimValsSignif.zScoresFFFg=zScoresFFFg;
+    S.stimValsSignif.spkRFFFg=spkRFFFg;
+    S.stimValsSignif.spkDiffFFFg=spkDiffFFFg;
+    S.stimValsSignif.sumNeurFFF = sumNeurFFFt;
+
+    S.stimValsSignif.zScoresNIg=zScoresNIg;
+    S.stimValsSignif.spkRNIg=spkRNIg;
+    S.stimValsSignif.spkDiffNIg=spkDiffNIg;
+
+    S.stimValsSignif.zScoresNVg=zScoresNVg;
+    S.stimValsSignif.spkRNVg=spkRNVg;
+    S.stimValsSignif.spkDiffNVg=spkDiffNVg;
+
+    S.stimValsSignif.sumNeurNV = sumNeurNVt;
+    S.stimValsSignif.sumNeurNI = sumNeurNIt;
+
+    %General parameters
     S.expList = expList;
     S.animalVector = animalVector;
     S.insertionVector = insertionVector;
-    S.params = params;
-    S.pvalsMB = pvalsMB;
-    S.pvalsRG = pvalsRG;
-    S.sumNeurRG = sumNeurRGt;
-    S.sumNeurMB = sumNeurMBt;
-
-    S.spKrMBR = spKrMBR;
-    S.spKrFFF = spKrFFF;
-    S.diffSpkMBR = diffSpkMBR;
-    S.diffSpkFFF = diffSpkFFF;
-    S.zScoresMBR =zScoresMBR;
-    S.zScoresFFF = zScoresFFF;
-    S.pvalsFFF = pvalsFFF;
-    S.pvalsMBR = pvalsMBR;
-    S.sumNeurMBR = sumNeurMBRt;
-    S.sumNeurFFF = sumNeurFFFt;
-
-    S.spKrSDGm = spKrSDGm;
-    S.spKrSDGs = spKrSDGs;
-    S.diffSpkSDGm = diffSpkSDGm;
-    S.diffSpkSDGs = diffSpkSDGs;
-    S.zScoresSDGm =zScoresSDGm;
-    S.zScoresSDGs = zScoresSDGs;
-    S.pvalsSDGm = pvalsSDGm;
-    S.pvalsSDGs = pvalsSDGs;
-    S.sumNeurSDG = sumNeurSDGt;
-
-    S.spKrNI = spKrNI;
-    S.spKrNV = spKrNV;
-    S.diffSpkNI= diffSpkNI;
-    S.diffSpkNV = diffSpkNV;
-    S.zScoresNI =zScoresNI;
-    S.zScoresNV = zScoresNV;
-    S.pvalsNI = pvalsNI;
-    S.pvalsNV = pvalsNV;
-    S.sumNeurNV = sumNeurNVt;
-    S.sumNeurNI = sumNeurNIt;
-
-    S.zScoresMBg=zScoresMBg;
-    S.spkRMBg=spkRMBg;
-    S.spkDiffMBg=spkDiffMBg;
-
-    S.zScoresRGg=zScoresRGg;
-    S.spkRRGg=spkRRGg;
-    S.spkDiffRGg=spkDiffRGg;
-
-    S.zScoresMBRg=zScoresMBRg;
-    S.spkRMBRg=spkRMBRg;
-    S.spkDiffMBRg=spkDiffMBRg;
-
-    S.zScoresSDGmg=zScoresSDGmg;
-    S.spkRSDGmg=spkRSDGmg;
-    S.spkDiffSDGmg=spkDiffSDGmg;
-
-    S.zScoresSDGsg=zScoresSDGsg;
-    S.spkRSDGsg=spkRSDGsg;
-    S.spkDiffSDGsg=spkDiffSDGsg;
-
-    S.zScoresFFFg=zScoresFFFg;
-    S.spkRFFFg=spkRFFFg;
-    S.spkDiffFFFg=spkDiffFFFg;
-
-    S.zScoresNIg=zScoresNIg;
-    S.spkRNIg=spkRNIg;
-    S.spkDiffNIg=spkDiffNIg;
-
-    S.zScoresNVg=zScoresNVg;
-    S.spkRNVg=spkRNVg;
-    S.spkDiffNVg=spkDiffNVg;
-
-    S.expList = expList;
     S.totalUnits = totalU;
     S.params = params;
     S.responsiveNeurons = responsiveNeurons;
+    S.TableRespNeurs = longTable;
 
     save([saveDir nameOfFile],'-struct', 'S');
 
 end
 
+%%% Create Figure
+
 fig=figure;
 
 tiledlayout(2,2,"TileSpacing","compact");
 
-fn = fieldnames(S);
+if ~params.EachStimSignif
+    fn = fieldnames(S.stimValsSignif2oneStim);
+else
+    fn = fieldnames(S.stimValsSignif);
+end
+
+fnp = fieldnames(S.pvals);
 
 StimZS = cell(numel(Stims2Comp),1);
 stimRSP = cell(numel(Stims2Comp),1);
@@ -791,6 +900,7 @@ else
     ending2 = endingOpts{1};
 end
 
+%%% Separate gratings into moving and static. 
 Stims2Comp2 = {};
 for i = 1:numel(Stims2Comp)
     if strcmp(Stims2Comp{i}, 'SDG')
@@ -801,6 +911,7 @@ for i = 1:numel(Stims2Comp)
     end
 end
 
+%%% Given the stimuli to be analyzed, assign it to variables
 
 StimZS = cell(numel(Stims2Comp2),1);
 stimRSP = cell(numel(Stims2Comp2),1);
@@ -812,7 +923,11 @@ for i = 1:numel(Stims2Comp2)
     pattern = ['^zS.*' ending ending2 '$'];
     matches = fn(~cellfun('isempty', regexp(fn, pattern)));
 
-    StimZS{i} = cell2mat(S.(matches{1}))';
+    if ~params.EachStimSignif
+        StimZS{i} = cell2mat(S.stimValsSignif2oneStim.(matches{1}))';
+    else
+        StimZS{i} = cell2mat(S.stimValsSignif.(matches{1}))';
+    end
 
     if  ~params.diffResp
         pattern = ['^spKr.*' ending ending2 '$'];
@@ -824,17 +939,17 @@ for i = 1:numel(Stims2Comp2)
 
     if params.EachStimSignif
         matches = fn(~cellfun('isempty', regexp(fn, pattern,'ignorecase')));
-        C = S.(matches{1});
+        C = S.stimValsSignif.(matches{1});
         C = cellfun(@(x) x', C, 'UniformOutput', false);
         stimRSP{i} = cell2mat(C');
     else
         try
-            stimRSP{i} =  cell2mat(S.(matches{1})');
+            stimRSP{i} =  cell2mat(S.stimValsSignif2oneStim.(matches{1})');
         catch
             try
-                stimRSP{i} =  cell2mat(S.(matches{1}));
+                stimRSP{i} =  cell2mat(S.stimValsSignif2oneStim.(matches{1}));
             catch
-                Ccol = cellfun(@(x) x(:), S.(matches{1}), 'UniformOutput', false);
+                Ccol = cellfun(@(x) x(:), S.stimValsSignif2oneStim.(matches{1}), 'UniformOutput', false);
                 v_col = vertcat(Ccol{:});
                 stimRSP{i} = v_col';
             end
@@ -843,41 +958,30 @@ for i = 1:numel(Stims2Comp2)
 
     pattern = ['^pvals.*' ending '$'];
 
-    matches = fn(~cellfun('isempty', regexp(fn, pattern)));
-    stimPvals{i} = cell2mat(S.(matches{1}))';
+    matches = fnp(~cellfun('isempty', regexp(fnp, pattern)));
+    stimPvals{i} = cell2mat(S.pvals.(matches{1}))';
+
+    %Create x labels for swarm plots
 
     x = [x;ones(size(StimZS{i}))*i];
 
 end
-% 
-% MB = cell2mat(zScoresMB)';
-% RG = cell2mat(zScoresRG)';
+
 AnIndex = cell2mat(S.animalVector)';
-InsIndex = cell2mat(S.animalVector)';
+InsIndex = cell2mat(S.insertionVector)';
 colormapUsed = parula(max(AnIndex)).*0.6;
 
-% eMB = cell2mat(EntropMB);
-% eRG = cell2mat(EntropRG);
 
-%y =log10([MB; RG; SDGm; SDGs; MB-RG; MB-SDGm; MB-SDGs]);
+%%%%%% Z-SCORE ANALYSIS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%y =([MB; RG; MB-RG]);
-% StimZS{numel(StimZS)+1} = [StimZS{1}-StimZS{2}];
 y = cell2mat(StimZS);
-
-% x = [x;ones(size(cell2mat(S.(matches{1}))'))*i+1];
-
-% x =[];
-% % Combine data
-% for i =1:length(y)/length(MB)
-%     x = [x;ones(size(MB))*i];
-% end
 
 % Combine all color indices
 allColorIndices = repmat(AnIndex,numel(Stims2Comp2),1);
 
-% ---- Swarmchart (Larger Left Subplot) ----
-nexttile % Takes most of the space
+% ---- Swarmchart ----
+nexttile 
+
 if ~params.EachStimSignif
     swarmchart(x, y, 5, [colormapUsed(allColorIndices,:)], 'filled','MarkerFaceAlpha',0.7); % Marker size 50
 else
@@ -891,27 +995,36 @@ set(fig,'Color','w')
 yline([0],'LineWidth',2)
 ylim([-5 40])
 
+
+
 %%HIERARCHICAL BOOTSTRAPPING Z-SCORE
-FirstStim = y(x==1);
+if params.overwriteGroupStats || ~isfield(S, 'groupStats')
+    FirstStim = y(x==1);
 
-BootFirst = hierBootMatchFreq(FirstStim(~isnan(FirstStim)),10000,InsIndex(~isnan(FirstStim)),AnIndex(~isnan(FirstStim)));
+    BootFirst = hierBoot(FirstStim(~isnan(FirstStim)),10000,InsIndex(~isnan(FirstStim)),AnIndex(~isnan(FirstStim)));
 
-j=1;
-for i = 2:numel(Stims2Comp2)
-    secondaryStim = y(x==i);
-    secondaryStim(isnan(secondaryStim)) =0;
-    secondaryStim = secondaryStim(secondaryStim~=-inf);
-    BootSec= hierBootMatchFreq(secondaryStim,10000,InsIndex(secondaryStim~=-inf),AnIndex(secondaryStim~=-inf));
-    probs{j} = get_direct_prob(BootFirst,BootSec); %
-    ps{j} = mean(BootSec>=BootFirst);
-    j = j+1;
+    j=1;
+    for i = 2:numel(Stims2Comp2)
+        secondaryStim = y(x==i);
+        secondaryStim(isnan(secondaryStim)) =0;
+        secondaryStim = secondaryStim(secondaryStim~=-inf);
+        BootSec= hierBoot(secondaryStim,10000,InsIndex(secondaryStim~=-inf),AnIndex(secondaryStim~=-inf));
+        probs{j} = get_direct_prob(BootFirst,BootSec); %
+        ps{j} = mean(BootSec>=BootFirst);
+        j = j+1;
+    end
+
+    %%Calculate probabilities
+
+    S.groupStats.Bayes_ZscoreCompare = probs;
+    S.groupStatsP_ZscoreCompare = ps;
+
+    save([saveDir nameOfFile],'-struct', 'S');
+
 end
 
-S.Bayes_ZscoreCompare = probs;
-S.P_ZscoreCompare = ps;
 
-save([saveDir nameOfFile],'-struct', 'S');
-
+%%%Scatter plot comparison for 2 stimuli Z-score (first and second input)
 nexttile
 %stims to compare
 % boxplot(y2,'Labels',Stims2Comp)
@@ -946,10 +1059,11 @@ if numel(ValsToCompare{1}) == numel(ValsToCompare{2})
 
 end
 
-%%% Spike rate comparison
+%%%%%% SPIKE RATE ANALYSIS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
 y = cell2mat(stimRSP);
+%y = cell2mat(StimZS);
 
 
 % ---- Swarmchart (Larger Left Subplot) ----
@@ -965,30 +1079,33 @@ xticklabels(Stims2Comp2);
 ylabel('Spike Rate');
 set(fig,'Color','w')
 
-%%HIERARCHICAL BOOTSTRAPPING SpikeRate
-FirstStim = y(x==1);
+%%HIERARCHICAL BOOTSTRAPPING SpikeRate hierBoot
+if params.overwriteGroupStats || ~isfield(S, 'groupStats')
+    FirstStim = y(x==1);
 
-BootFirst = hierBootMatchFreq(FirstStim',10000,InsIndex,AnIndex);
+    BootFirst = hierBoot(FirstStim(~isnan(FirstStim)),10000,InsIndex(~isnan(FirstStim)),AnIndex(~isnan(FirstStim)));
+    j=1;
+    for i = 2:numel(Stims2Comp2)
+        secondaryStim = y(x==i);
+        secondaryStim(isnan(secondaryStim)) =0;
+        secondaryStim = secondaryStim(secondaryStim~=-inf);
+        BootSec= hierBoot(secondaryStim,10000,InsIndex(secondaryStim~=-inf),AnIndex(secondaryStim~=-inf));
+        probs{j} = get_direct_prob(BootFirst,BootSec); %
+        ps{j} = mean(BootSec>=BootFirst);
+        j = j+1;
+    end
 
-j=1;
-for i = 2:numel(Stims2Comp2)
-    secondaryStim = y(x==i);
-    BootSec= hierBootMatchFreq(secondaryStim',10000,InsIndex,AnIndex);
-    probs{j} = get_direct_prob(BootFirst,BootSec); %
-    ps{j} = mean(BootSec>=BootFirst);
-    j = j+1;
+    S.groupStats.Bayes_SpikeRateCompare = probs;
+    S.groupStats.P_SpikeRateCompare = ps;
 end
 
-S.Bayes_SpikeRateCompare = probs;
-S.P_SpikeRateCompare = ps;
-
-%set(gca, 'YScale', 'log')
-%yline([0],'LineWidth',2)
+%%%Scatter plot comparison for 2 stimuli Z-score (first and second input)
+nexttile
 ValsToCompare = {stimRSP{ind1},stimRSP{ind2}};
 
 if numel(ValsToCompare{1}) == numel(ValsToCompare{2})
   
-    nexttile
+    
     scatter(ValsToCompare{1},ValsToCompare{2},10,AnIndex,"filled","MarkerFaceAlpha",0.5)
     colormap(colormapUsed)
     hold on
@@ -1001,26 +1118,81 @@ if numel(ValsToCompare{1}) == numel(ValsToCompare{2})
     ylabel(Stims2Comp(ind2))
 end
 
-%%Number of responsive units:
 
-AllNeur =0;
-for i = 1:numel(Stims2Comp2)
+%%%%%% ANALYSIS OF QUANTITIES OF RESPONSIVE NEURONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%Run until here, check insertion list to create bootstrapping of neuronal
+%quantities that are responsive to each stim
+% AllNeur =0;
+% fn =   fieldnames(S.stimValsSignif);
+% for i = 1:numel(Stims2Comp2)
+% 
+%     ending = [Stims2Comp2{i} 'g'];
+%     pattern = ['^zS.*' ending '$'];
+%     matches = fn(~cellfun('isempty', regexp(fn, pattern)));
+% 
+%     if isequal(Stims2Comp2{i},'SDGm')
+%         matches2 = fn(~cellfun('isempty', regexp(fn, ['^sumNeur.*' 'SDGm' '$'])));
+%     elseif isequal(Stims2Comp2{i},'SDGs')
+%         matches2 = fn(~cellfun('isempty', regexp(fn, ['^sumNeur.*' 'SDGm' '$'])));
+%     else
+%         matches2 = fn(~cellfun('isempty', regexp(fn, ['^sumNeur.*' Stims2Comp2{i} '$'])));
+%     end
+% 
+%     matTemp = cell2mat(S.stimValsSignif.(matches{1}));
+%     matTemp = matTemp(matTemp>-inf);
+%     RespNeurCountFraction{i} = numel(matTemp)/(sum(cell2mat(S.stimValsSignif.(matches2{1}))));
+%     RespNeurCount{i} = numel(matTemp);
+%     AllNeur = AllNeur+sum(cell2mat(S.stimValsSignif.(matches2{1})));
+% 
+% end
 
-    ending = [Stims2Comp2{i} 'g'];
-    pattern = ['^zS.*' ending '$'];
-    matches = fn(~cellfun('isempty', regexp(fn, pattern)));
-    if isequal(Stims2Comp2{i},'SDGm')||isequal(Stims2Comp2{i},'SDGs')
-        matches2 = fn(~cellfun('isempty', regexp(fn, ['^sumNeur.*' 'SDG' '$'])));
-    else
-        matches2 = fn(~cellfun('isempty', regexp(fn, ['^sumNeur.*' Stims2Comp2{i} '$'])));
+
+%Stimuli pairs to compare
+
+if isempty(params.ComparePairs)
+    pairs = {Stims2Comp{1},Stims2Comp{2}};
+else
+    pairs = params.ComparePairs;
+end
+
+
+
+[G, insID] = findgroups(S.TableRespNeurs.insertion);
+hasAll = splitapply(@(s) all(ismember(unique(categorical(pairs)), s)), S.TableRespNeurs.stimulus, G);
+
+tempTable = S.TableRespNeurs(hasAll(G),:); tempTable = tempTable(tempTable.stimulus == unique(categorical(pairs(1))) )
+
+
+%pairs = {"SDGm","SDGs";"MB","MBR";"MB","RG";"NV","NI"};
+nBoot = 10000;
+j=1;
+
+
+ps = zeros(1,size(pairs,1));
+
+    for i = 1:size(pairs,1)
+
+        diffs = [];
+        for ins = unique(S.TableRespNeurs.insertion)'
+
+            idx1 = S.TableRespNeurs.insertion == categorical(ins) & S.TableRespNeurs.stimulus == pairs{j,1};
+            idx2 = S.TableRespNeurs.insertion == categorical(ins) & S.TableRespNeurs.stimulus == pairs{j,2};
+
+            if any(idx1) && any(idx2)
+                diffs(end+1,1) = S.TableRespNeurs.respNeur(idx1)/ S.TableRespNeurs.totalSomaticN(idx1) - S.TableRespNeurs.respNeur(idx2)/S.TableRespNeurs.totalSomaticN(idx1);
+            end
+        end
+
+        bootDiff = bootstrp(nBoot, @mean, diffs);
+        ps(j) = mean(bootDiff<=0);
+        j = j+1;
     end
 
-    matTemp = cell2mat(S.(matches{1}));
-    matTemp = matTemp(matTemp>-inf);
-    RespNeurCount{i} = numel(matTemp)/(sum(cell2mat(S.(matches2{1}))));
-    AllNeur = AllNeur+sum(cell2mat(S.(matches2{1})));
 
-end
+
+
+
+plotSwarmBootstrapWithComparisons(tempTable,pairs,ps,{'respNeur','totalSomaticN'},fraction = true, yLegend='Responsive/total units')
 
 fig2=figure;
 
