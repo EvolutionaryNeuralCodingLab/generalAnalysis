@@ -1160,7 +1160,7 @@ end
 [G, insID] = findgroups(S.TableRespNeurs.insertion);
 hasAll = splitapply(@(s) all(ismember(unique(categorical(pairs)), s)), S.TableRespNeurs.stimulus, G);
 
-tempTable = S.TableRespNeurs(hasAll(G),:); tempTable = tempTable(tempTable.stimulus == unique(categorical(pairs(1))) )
+tempTable = S.TableRespNeurs(hasAll(G) & ismember(S.TableRespNeurs.stimulus, unique(categorical(pairs))),:); 
 
 
 %pairs = {"SDGm","SDGs";"MB","MBR";"MB","RG";"NV","NI"};
@@ -1192,7 +1192,7 @@ ps = zeros(1,size(pairs,1));
 
 
 
-plotSwarmBootstrapWithComparisons(tempTable,pairs,ps,{'respNeur','totalSomaticN'},fraction = true, yLegend='Responsive/total units')
+plotSwarmBootstrapWithComparisons(tempTable,pairs,ps,{'respNeur','totalSomaticN'},fraction = true, yLegend='Responsive/total units',diff = diffs) 
 
 fig2=figure;
 

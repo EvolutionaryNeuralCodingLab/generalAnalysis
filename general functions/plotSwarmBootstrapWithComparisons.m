@@ -7,6 +7,7 @@ arguments
     params.nBoot (1,1) double = 10000
     params.fraction = false %If there are 2 value fields, then a fraction between the 1st and the 2nd is computed
     params.yLegend = 'value'
+    params.diff = [] %Plot differences in value of pairs. 
 end
 %% ----------------- PARAMETERS -----------------
 yMaxVis     = 1;   % visualization limit
@@ -23,12 +24,88 @@ else
     values = tbl.(valueField{1});
 end
 
+%% ----------------- CHANGE STIM NAMES -----------------
+
+stimuli     = unique(tbl.stimulus);
+experiments = unique(tbl.insertion);
+
+tbl.stimulus = removecats(tbl.stimulus);
+tbl.animal = removecats(tbl.animal);
+tbl.insertion = removecats(tbl.insertion);
+
+
+% Replace 'RG' with 'SB' 
+
+rgIdx = ismember(stimuli, categorical({'RG'}));
+if any(rgIdx)
+  tbl.stimulus(tbl.stimulus == 'RG') = 'SB';
+end
+
+rgIdx = ismember(stimuli, categorical({'SDGm'}));
+if any(rgIdx)
+     tbl.stimulus(tbl.stimulus == 'SDGm') = 'MG';
+end
+
+rgIdx = ismember(stimuli, categorical({'SDGs'}));
+if any(rgIdx)
+     tbl.stimulus(tbl.stimulus == 'SDGs') = 'SG';
+end
+tbl.stimulus = removecats(tbl.stimulus);
+stimuli = unique(tbl.stimulus);
+
+%% ----------------- ADD DIFF -----------------
+
+if ~isempty(params.diff)
+
+    tbl.diff = zeros(size(tbl,1),1);
+    % Required stimulus name
+    diffName = sprintf('%s-%s',stimuli(1),stimuli(2));
+
+    % --------------------------------------------------
+    % 1) Get unique insertions (one per group)
+    % --------------------------------------------------
+    ins = categories(tbl.insertion);
+    nIns = numel(ins);
+
+    % --------------------------------------------------
+    % 2) Safety check
+    % --------------------------------------------------
+    assert(numel(params.diff) == nIns, ...
+        'Length of vals must equal number of insertions');
+
+    % --------------------------------------------------
+    % 3) Ensure the new stimulus category exists
+    % --------------------------------------------------
+    if ~ismember(diffName, categories(tbl.stimulus))
+        tbl.stimulus = addcats(tbl.stimulus, diffName);
+    end
+
+    % --------------------------------------------------
+    % 4) Create one new row per insertion
+    % --------------------------------------------------
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
+
+    Tnew.insertion = categorical(ins, categories(tbl.insertion));
+    Tnew.stimulus    = categorical( ...
+        repmat({diffName}, nIns, 1),categories(tbl.stimulus));
+
+    uAnimals = unique(tbl.animal);
+    Tnew.animal = categorical(tbl.animal(),categories(tbl.animal));
+
+    Tnew.value = params.diff(:);
+
+    % --------------------------------------------------
+    % 5) Append to original table
+    % --------------------------------------------------
+    tbl = [tbl; Tnew];
+end
 
 %% ----------------- SWARM -----------------
 figure
-tbl.stimulus = removecats(tbl.stimulus);
 
-tbl.animal = removecats(tbl.animal);
+indxD = sort([1:numel(params.diff) 1:numel(params.diff)]);
+
+tbl.diffs = params.diff(indxD);
 
 swarmchart(tbl.stimulus, values, 18, tbl.animal, ...
     'filled', 'MarkerFaceAlpha', 0.6);
@@ -39,8 +116,7 @@ ylabel(params.yLegend)
 ax = gca;
 ax.Box   = 'off';    % remove top/right axes
 ax.Layer = 'top';
-stimuli     = unique(tbl.stimulus);
-experiments = unique(tbl.insertion);
+
 
 % Replace 'RG' with 'SB' in x-axis labels
 stimuliLabels = stimuli;

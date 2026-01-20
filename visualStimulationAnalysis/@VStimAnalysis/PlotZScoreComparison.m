@@ -1192,7 +1192,7 @@ ps = zeros(1,size(pairs,1));
 
 
 
-plotSwarmBootstrapWithComparisons(tempTable,pairs,ps,{'respNeur','totalSomaticN'},fraction = true, yLegend='Responsive/total units')
+plotSwarmBootstrapWithComparisons(tempTable,pairs,ps,{'respNeur','totalSomaticN'},fraction = true, yLegend='Responsive/total units',diff = diffs) 
 
 fig2=figure;
 
