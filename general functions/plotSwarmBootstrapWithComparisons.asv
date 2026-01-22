@@ -1,272 +1,233 @@
-function plotSwarmBootstrapWithComparisons(tbl, pairs, pValues,valueField, params)
+function plotSwarmBootstrapWithComparisons(tbl, pairs, pValues, valueField, params)
+
 arguments
     tbl table
-    pairs cell = {} %Pair names (abreviations)
-    pValues double = [] %P values of comparison pairs
-    valueField cell = {} %Valuues of points to plot
+    pairs cell = {}
+    pValues double = []
+    valueField cell = {}
     params.nBoot (1,1) double = 10000
-    params.fraction = false %If there are 2 value fields, then a fraction between the 1st and the 2nd is computed
-    params.yLegend = 'value'
-    params.diff = [] %Plot differences in value of pairs. 
+    params.fraction logical = false
+    params.yLegend char = 'value'
+    params.diff logical = false   % compute difference between first pair
 end
+
 %% ----------------- PARAMETERS -----------------
-yMaxVis     = 1;   % visualization limit
-bracketPad  = yMaxVis*0.05;     % space above visible data
-stackPad    = yMaxVis*0.05;     % vertical spacing between brackets (increased)
-textPad     = yMaxVis*0.01;   % distance between p-value text and bracket
+yMaxVis     = 1;
+bracketPad  = yMaxVis * 0.05;
+stackPad    = yMaxVis * 0.05;
+textPad     = yMaxVis * 0.01;
 semAlpha    = 0.6;
 
-%% ----------------- PARAMETERS -----------------
-if params.fraction
+%% ----------------- DIFF MODE -----------------
+if params.diff
 
-    values = tbl.(valueField{1})./tbl.(valueField{2});
-else
-    values = tbl.(valueField{1});
-end
+    assert(~isempty(pairs) && size(pairs,1) >= 1, ...
+        'params.diff=true requires at least one stimulus pair.');
 
-%% ----------------- CHANGE STIM NAMES -----------------
+    stimA = pairs{1,1};
+    stimB = pairs{1,2};
 
-stimuli     = unique(tbl.stimulus);
-experiments = unique(tbl.insertion);
+    if params.fraction
+        assert(numel(valueField) == 2, ...
+            'Fraction mode requires two valueField entries.');
+    end
 
-tbl.stimulus = removecats(tbl.stimulus);
-tbl.animal = removecats(tbl.animal);
-tbl.insertion = removecats(tbl.insertion);
-
-
-% Replace 'RG' with 'SB' 
-
-rgIdx = ismember(stimuli, categorical({'RG'}));
-if any(rgIdx)
-  tbl.stimulus(tbl.stimulus == 'RG') = 'SB';
-end
-
-rgIdx = ismember(stimuli, categorical({'SDGm'}));
-if any(rgIdx)
-     tbl.stimulus(tbl.stimulus == 'SDGm') = 'MG';
-end
-
-rgIdx = ismember(stimuli, categorical({'SDGs'}));
-if any(rgIdx)
-     tbl.stimulus(tbl.stimulus == 'SDGs') = 'SG';
-end
-tbl.stimulus = removecats(tbl.stimulus);
-stimuli = unique(tbl.stimulus);
-
-%% ----------------- ADD DIFF -----------------
-
-if ~isempty(params.diff)
-
-    tbl.diff = zeros(size(tbl,1),1);
-    % Required stimulus name
-    diffName = sprintf('%s-%s',stimuli(1),stimuli(2));
-
-    % --------------------------------------------------
-    % 1) Get unique insertions (one per group)
-    % --------------------------------------------------
     ins = categories(tbl.insertion);
     nIns = numel(ins);
 
-    % --------------------------------------------------
-    % 2) Safety check
-    % --------------------------------------------------
-    assert(numel(params.diff) == nIns, ...
-        'Length of vals must equal number of insertions');
+    diffVals = nan(nIns,1);
+    animals  = categorical(strings(nIns,1));
 
-    % --------------------------------------------------
-    % 3) Ensure the new stimulus category exists
-    % --------------------------------------------------
-    if ~ismember(diffName, categories(tbl.stimulus))
-        tbl.stimulus = addcats(tbl.stimulus, diffName);
-    end
+    for i = 1:nIns
+        idxA = tbl.insertion == ins{i} & tbl.stimulus == stimA;
+        idxB = tbl.insertion == ins{i} & tbl.stimulus == stimB;
 
-    % --------------------------------------------------
-    % 4) Create one new row per insertion
-    % --------------------------------------------------
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
+        if any(idxA) && any(idxB)
 
-    Tnew.insertion = categorical(ins, categories(tbl.insertion));
-    Tnew.stimulus    = categorical( ...
-        repmat({diffName}, nIns, 1),categories(tbl.stimulus));
+            if params.fraction
+                vA = tbl.(valueField{1})(idxA) ./ tbl.(valueField{2})(idxA);
+                vB = tbl.(valueField{1})(idxB) ./ tbl.(valueField{2})(idxB);
+            else
+                vA = tbl.(valueField{1})(idxA);
+                vB = tbl.(valueField{1})(idxB);
+            end
 
-    uAnimals = unique(tbl.animal);
-    Tnew.animal = categorical(tbl.animal(),categories(tbl.animal));
-
-    Tnew.value = params.diff(:);
-
-    % --------------------------------------------------
-    % 5) Append to original table
-    % --------------------------------------------------
-    tbl = [tbl; Tnew];
-end
-
-%% ----------------- SWARM -----------------
-figure
-
-indxD = sort([1:numel(params.diff) 1:numel(params.diff)]);
-
-tbl.diffs = params.diff(indxD);
-
-swarmchart(tbl.stimulus, values, 18, tbl.animal, ...
-    'filled', 'MarkerFaceAlpha', 0.6);
-hold on
-colormap(lines(numel(unique(tbl.animal))))
-ylabel(params.yLegend)
-%xlabel('Stimulus')
-ax = gca;
-ax.Box   = 'off';    % remove top/right axes
-ax.Layer = 'top';
-
-
-% Replace 'RG' with 'SB' in x-axis labels
-stimuliLabels = stimuli;
-rgIdx = ismember(stimuliLabels, categorical({'RG'}));
-if any(rgIdx)
-    stimuliLabels(rgIdx) = 'SB';
-end
-
-rgIdx = ismember(stimuliLabels, categorical({'SDGm'}));
-if any(rgIdx)
-    stimuliLabels(rgIdx) = 'MG';
-end
-
-rgIdx = ismember(stimuliLabels, categorical({'SDGs'}));
-if any(rgIdx)
-    stimuliLabels(rgIdx) = 'SG';
-end
-
-ax.XTickLabel = stimuliLabels;
-
-%% ----------------- BOOTSTRAP SEM -----------------
-for i = 1:numel(stimuli)
-    % one value per experiment
-    vals = [];
-    for e = 1:numel(experiments)
-        idx = tbl.insertion == experiments(e) & ...
-              tbl.stimulus   == stimuli(i);
-        if any(idx)
-            vals(end+1,1) = values(idx); %#ok<AGROW>
+            diffVals(i) = mean(vA) - mean(vB);
+            animals(i)  = tbl.animal(find(idxA,1)); 
         end
     end
-    % require >= 3 experiments
+
+    valid = ~isnan(diffVals);
+
+    stimName = sprintf('%s-%s', stimA, stimB);
+
+    tblPlot = table();
+    tblPlot.insertion = categorical(ins(valid));
+    tblPlot.stimulus  = categorical(repmat({stimName}, sum(valid), 1));
+    tblPlot.animal    = animals(valid);
+    tblPlot.value     = diffVals(valid);
+
+    plotLinesBetween = false;
+
+else
+    %% ----------------- RAW MODE -----------------
+    if params.fraction
+        assert(numel(valueField) == 2, ...
+            'Fraction mode requires two valueField entries.');
+        tbl.value = tbl.(valueField{1}) ./ tbl.(valueField{2});
+    else
+        tbl.value = tbl.(valueField{1});
+    end
+
+    tblPlot = tbl;
+    plotLinesBetween = true;
+end
+
+% ----------------- CHANGE STIM NAMES ----------------- 
+stimuli = unique(tbl.stimulus); 
+
+tbl.stimulus = removecats(tbl.stimulus); 
+tbl.animal = removecats(tbl.animal); 
+tbl.insertion = removecats(tbl.insertion); 
+%Replace 'RG' with 'SB' 
+
+rgIdx = ismember(stimuli, categorical({'RG'})); 
+if any(rgIdx) 
+    tbl.stimulus(tbl.stimulus == 'RG') = 'SB'; 
+end 
+
+rgIdx = ismember(stimuli, categorical({'SDGm'})); 
+if any(rgIdx) tbl.stimulus(tbl.stimulus == 'SDGm') = 'MG'; 
+end 
+
+rgIdx = ismember(stimuli, categorical({'SDGs'})); 
+if any(rgIdx) tbl.stimulus(tbl.stimulus == 'SDGs') = 'SG';
+ end 
+
+
+%% ----------------- CLEAN CATEGORIES -----------------
+tblPlot.stimulus   = removecats(tblPlot.stimulus);
+tblPlot.animal     = removecats(tblPlot.animal);
+tblPlot.insertion  = removecats(tblPlot.insertion);
+
+stimuli     = categories(tblPlot.stimulus);
+insertions  = categories(tblPlot.insertion);
+
+%% ----------------- FIGURE -----------------
+figure;
+ax = axes;
+hold(ax, 'on');
+
+% 1) Swarm first
+swarmchart(ax, tblPlot.stimulus, tblPlot.value, ...
+    18, tblPlot.animal, ...
+    'filled', 'MarkerFaceAlpha', 0.6);
+
+% 2) Get numeric x positions of categories
+cats = categories(tblPlot.stimulus);
+xMap = containers.Map(cats, 1:numel(cats));
+
+xNum = arrayfun(@(i) xMap(char(tblPlot.stimulus(i))), ...
+                1:height(tblPlot));
+
+% 3) Plot lines AFTER swarm
+for i = 1:numel(unique(tblPlot.insertion))
+    idx = double(tblPlot.insertion) == i;
+    if sum(idx) < 2
+        continue
+    end
+
+    line(ax, ...
+        xNum(idx), tblPlot.value(idx), ...
+        'Color', [0 0 0 0.2], ...
+        'LineWidth', 0.75);
+end
+
+colormap(lines(numel(categories(tblPlot.animal))))
+ylabel(params.yLegend)
+
+ax = gca;
+ax.Box   = 'off';
+ax.Layer = 'top';
+
+%% ----------------- BOOTSTRAP MEAN + SEM -----------------
+for i = 1:numel(stimuli)
+
+    vals = [];
+    for e = 1:numel(insertions)
+        idx = tblPlot.insertion == insertions{e} & ...
+              tblPlot.stimulus  == stimuli{i};
+        if any(idx)
+            vals(end+1,1) = tblPlot.value(idx); %#ok<AGROW>
+        end
+    end
+
     if numel(vals) < 3
         continue
     end
+
     bootMean = bootstrp(params.nBoot, @mean, vals);
     mu  = mean(bootMean);
     sem = std(bootMean);
-    % SEM vertical line
+
+    % SEM
     line([i i], mu + [-1 1]*sem, ...
         'Color', [0 0 0 semAlpha], 'LineWidth', 2);
-    % SEM caps
-    capWidth = 0.1;
-    line([i-capWidth i+capWidth], [mu+sem mu+sem], ...
+
+    capW = 0.1;
+    line([i-capW i+capW], [mu+sem mu+sem], ...
         'Color', [0 0 0 semAlpha], 'LineWidth', 2);
-    line([i-capWidth i+capWidth], [mu-sem mu-sem], ...
+    line([i-capW i+capW], [mu-sem mu-sem], ...
         'Color', [0 0 0 semAlpha], 'LineWidth', 2);
-    % Mean
+
+    % mean
     dx = 0.15;
     plot([i-dx i+dx], [mu mu], 'k-', 'LineWidth', 1.2);
 end
+
 %% ----------------- PAIRWISE COMPARISONS -----------------
-% Safety check: ensure pValues matches pairs
-if size(pairs,1) ~= numel(pValues)
-    warning('Number of pairs (%d) does not match number of pValues (%d). Skipping comparisons.', ...
-        size(pairs,1), numel(pValues));
-    ylim([0 yMaxVis])
-    hold off
-    return
+if ~params.diff && ~isempty(pairs) && numel(pValues) == size(pairs,1)
+
+    usedHeights = zeros(size(pairs,1),1);
+
+    for k = 1:size(pairs,1)
+
+        x1 = find(strcmp(stimuli, pairs{k,1}));
+        x2 = find(strcmp(stimuli, pairs{k,2}));
+        if isempty(x1) || isempty(x2)
+            continue
+        end
+
+        vals1 = tblPlot.value(tblPlot.stimulus == pairs{k,1});
+        vals2 = tblPlot.value(tblPlot.stimulus == pairs{k,2});
+
+        maxVisible = max(min([vals1; vals2], yMaxVis));
+        yBase = maxVisible + bracketPad;
+
+        y = yBase;
+        while any(abs(usedHeights(1:k-1) - y) < stackPad)
+            y = y + stackPad;
+        end
+        usedHeights(k) = y;
+
+        % bracket
+        line([x1 x2], [y y], 'Color','k', 'LineWidth',1.2);
+        line([x1 x1], [y-yMaxVis*0.01 y], 'Color','k', 'LineWidth',1.2);
+        line([x2 x2], [y-yMaxVis*0.01 y], 'Color','k', 'LineWidth',1.2);
+
+        % significance
+        if pValues(k) < 1e-3
+            txt = '***';
+            if pValues(k) == 0
+                txt = '****';
+            end
+            text(mean([x1 x2]), y + textPad, txt, ...
+                'HorizontalAlignment','center', ...
+                'FontSize', 7);
+        end
+    end
 end
 
-usedHeights = zeros(size(pairs,1),1);
-for k = 1:size(pairs,1)
-    x1 = find(ismember(stimuli, pairs{k,1}));
-    x2 = find(ismember(stimuli, pairs{k,2}));
-    
-    % Check if both stimuli exist
-    if isempty(x1) || isempty(x2)
-        warning('Stimulus pair {%s, %s} not found in data. Skipping.', ...
-            pairs{k,1}, pairs{k,2});
-        continue
-    end
-    
-    % Find max visible data for ONLY these two stimuli
-    idx1 = tbl.stimulus == pairs{k,1};
-    idx2 = tbl.stimulus == pairs{k,2};
-    
-    % Get values below yMaxVis for each stimulus
-    vals1 = values(idx1);
-    vals2 = values(idx2);
-    vals1_visible = vals1(vals1 <= yMaxVis);
-    vals2_visible = vals2(vals2 <= yMaxVis);
-    
-    % Find the maximum visible value (closest to 100)
-    if isempty(vals1_visible)
-        max1 = yMaxVis;
-    else
-        max1 = max(vals1_visible);
-    end
-    
-    if isempty(vals2_visible)
-        max2 = yMaxVis;
-    else
-        max2 = max(vals2_visible);
-    end
-    
-    maxVisible = max(max1, max2);
-    
-    yBase = maxVisible + bracketPad;
-    
-    % auto-stack brackets
-    y = yBase;
-    while any(abs(usedHeights(1:k-1) - y) < stackPad)
-        y = y + stackPad;
-    end
-    usedHeights(k) = y;
-    
-    % bracket
-    line([x1 x2], [y y], 'Color','k', 'LineWidth',1.2);
-    line([x1 x1], [y-yMaxVis*0.01 y], 'Color','k', 'LineWidth',1.2);
-    line([x2 x2], [y-yMaxVis*0.01 y], 'Color','k', 'LineWidth',1.2);
-    
-    % probability label (only show if p < 1e-3)
-    if pValues(k) < 1e-3
-        if pValues(k) == 0
-            %pTxt = sprintf('p < %.0e', 1/params.nBoot);
-            pTxt = '****';
-        else
-            %pTxt = sprintf('p = %.4f', pValues(k));
-            pTxt = '***';
-        end
-        text(mean([x1 x2]), y + textPad, pTxt, ...
-            'HorizontalAlignment','center', ...
-            'FontSize', 7);
-    end
-end
-%% ----------------- OVERFLOW MARKERS -----------------
-for i = 1:numel(stimuli)
-    nAbove = sum(tbl.stimulus == stimuli(i) & values > yMaxVis);
-    if nAbove == 0
-        continue
-    end
-    % highest bracket involving this stimulus
-    involved = any(strcmp(pairs, stimuli(i)),2);
-    if any(involved)
-        yBracket = max(usedHeights(involved));
-        % Position text above the bracket area
-        yText = yBracket + 4;
-    else
-        yText = yMaxVis + 2;
-    end
-    
-    % Only show text label
-    text(i, yText, sprintf('n=%d', nAbove), ...
-        'HorizontalAlignment','center', ...
-        'VerticalAlignment','bottom', ...
-        'FontSize', 10, ...
-        'Color','r', ...
-        'Clipping','off');
-end
 ylim([0 yMaxVis])
 hold off
 end
