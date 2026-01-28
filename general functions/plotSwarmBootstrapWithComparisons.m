@@ -9,10 +9,13 @@ arguments
     params.fraction logical = false
     params.yLegend char = 'value'
     params.diff logical = false   % compute difference between first pair
+    params.Xjitter = 'density'
+    params.dotSize = 35
+    params.yMaxVis = 1
 end
 
 %% ----------------- PARAMETERS -----------------
-yMaxVis     = 1;
+yMaxVis     = params.yMaxVis;
 bracketPad  = yMaxVis * 0.05;
 stackPad    = yMaxVis * 0.05;
 textPad     = yMaxVis * 0.01;
@@ -32,13 +35,14 @@ if params.diff
             'Fraction mode requires two valueField entries.');
     end
 
+
     ins = categories(tbl.insertion);
-    nIns = numel(ins);
 
-    diffVals = nan(nIns,1);
-    animals  = categorical(strings(nIns,1));
+    diffVals = [];
+    animals = [];
+    insers = [];
 
-    for i = 1:nIns
+    for i = 1:numel(ins)
         idxA = tbl.insertion == ins{i} & tbl.stimulus == stimA;
         idxB = tbl.insertion == ins{i} & tbl.stimulus == stimB;
 
@@ -52,8 +56,9 @@ if params.diff
                 vB = tbl.(valueField{1})(idxB);
             end
 
-            diffVals(i) = mean(vA) - mean(vB);
-            animals(i)  = tbl.animal(find(idxA,1)); 
+            diffVals = [diffVals; vA - vB];
+            animals  = [animals; repmat(tbl.animal(find(idxA,1)),length(vA),1)]; 
+            insers = [insers; repmat(i,length(vA),1)];
         end
     end
 
@@ -62,7 +67,7 @@ if params.diff
     stimName = sprintf('%s-%s', stimA, stimB);
 
     tblPlot = table();
-    tblPlot.insertion = categorical(ins(valid));
+    tblPlot.insertion = categorical(insers(valid));
     tblPlot.stimulus  = categorical(repmat({stimName}, sum(valid), 1));
     tblPlot.animal    = animals(valid);
     tblPlot.value     = diffVals(valid);
@@ -135,30 +140,35 @@ hold(ax, 'on');
 set(ax, 'Clipping', 'off');  % <-- ADD THIS LINE
 
 % 1) Swarm first
-swarmchart(ax, tblPlot.stimulus, tblPlot.value, ...
-    18, tblPlot.animal, ...
-    'filled', 'MarkerFaceAlpha', 0.6);
+s=swarmchart(ax, tblPlot.stimulus, tblPlot.value, ...
+    params.dotSize, tblPlot.animal, ...
+    'MarkerEdgeAlpha', 0.6);
 
-% 2) Get numeric x positions of categories
-cats = categories(tblPlot.stimulus);
-xMap = containers.Map(cats, 1:numel(cats));
+s.XJitter = params.Xjitter;
+%s.XJitterWidth = 0.1;
 
-xNum = arrayfun(@(i) xMap(char(tblPlot.stimulus(i))), ...
-                1:height(tblPlot));
+if plotLinesBetween
+    % 2) Get numeric x positions of categories
+    cats = categories(tblPlot.stimulus);
+    xMap = containers.Map(cats, 1:numel(cats));
 
-% 3) Plot lines AFTER swarm
-for i = 1:numel(unique(tblPlot.insertion))
-    idx = double(tblPlot.insertion) == i;
-    if sum(idx) < 2
-        continue
+    xNum = arrayfun(@(i) xMap(char(tblPlot.stimulus(i))), ...
+        1:height(tblPlot));
+
+
+    % 3) Plot lines AFTER swarm
+    for i = 1:numel(unique(tblPlot.NeurID))
+        idx = double(tblPlot.NeurID) == i;
+        if sum(idx) < 2
+            continue
+        end
+
+        line(ax, ...
+            xNum(idx), tblPlot.value(idx), ...
+            'Color', [0 0 0 0.1], ...
+            'LineWidth', 0.1),'lin';
     end
-
-    line(ax, ...
-        xNum(idx), tblPlot.value(idx), ...
-        'Color', [0 0 0 0.2], ...
-        'LineWidth', 0.75);
 end
-
 colormap(lines(numel(categories(tblPlot.animal))))
 ylabel(params.yLegend)
 
@@ -169,22 +179,29 @@ ax.Layer = 'top';
 %% ----------------- BOOTSTRAP MEAN + SEM -----------------
 for i = 1:numel(stimuli)
 
-    vals = [];
-    for e = 1:numel(insertions)
-        idx = tblPlot.insertion == insertions{e} & ...
-              tblPlot.stimulus  == stimuli{i};
-        if any(idx)
-            vals(end+1,1) = tblPlot.value(idx); %#ok<AGROW>
-        end
-    end
+    idx = tblPlot.stimulus  == stimuli{i};
 
+    if any(idx) && params.fraction
+        vals = tblPlot.value(idx);
+        insers = tblPlot.insertion(idx);
+        animals = tblPlot.animal(idx);
+    elseif any(idx)
+        vals = tblPlot.value(idx);
+        insers = tblPlot.insertion(idx);
+        animals = tblPlot.animal(idx);
+    end
+   
     if numel(vals) < 3
+        fprintf('Number of values to bootstrap is less than 3\n')
         continue
     end
 
     bootMean = bootstrp(params.nBoot, @mean, vals);
     mu  = mean(bootMean);
     sem = std(bootMean);
+
+    mu = mean(vals);
+    sem = std(vals,'omitnan') / sqrt(numel(vals));
 
     % SEM
     line([i i], mu + [-1 1]*sem, ...
@@ -195,6 +212,7 @@ for i = 1:numel(stimuli)
         'Color', [0 0 0 semAlpha], 'LineWidth', 2);
     line([i-capW i+capW], [mu-sem mu-sem], ...
         'Color', [0 0 0 semAlpha], 'LineWidth', 2);
+    
 
     % mean
     dx = 0.15;

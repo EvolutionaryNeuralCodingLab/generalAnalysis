@@ -9,10 +9,13 @@ arguments
     params.fraction logical = false
     params.yLegend char = 'value'
     params.diff logical = false   % compute difference between first pair
+    params.Xjitter = 'density'
+    params.dotSize = 35
+    params.yMaxVis = 1
 end
 
 %% ----------------- PARAMETERS -----------------
-yMaxVis     = 1;
+yMaxVis     = params.yMaxVis;
 bracketPad  = yMaxVis * 0.05;
 stackPad    = yMaxVis * 0.05;
 textPad     = yMaxVis * 0.01;
@@ -32,13 +35,14 @@ if params.diff
             'Fraction mode requires two valueField entries.');
     end
 
+
     ins = categories(tbl.insertion);
-    nIns = numel(ins);
 
-    diffVals = nan(nIns,1);
-    animals  = categorical(strings(nIns,1));
+    diffVals = [];
+    animals = [];
+    insers = [];
 
-    for i = 1:nIns
+    for i = 1:numel(ins)
         idxA = tbl.insertion == ins{i} & tbl.stimulus == stimA;
         idxB = tbl.insertion == ins{i} & tbl.stimulus == stimB;
 
@@ -52,8 +56,9 @@ if params.diff
                 vB = tbl.(valueField{1})(idxB);
             end
 
-            diffVals(i) = mean(vA) - mean(vB);
-            animals(i)  = tbl.animal(find(idxA,1)); 
+            diffVals = [diffVals; vA - vB];
+            animals  = [animals; repmat(tbl.animal(find(idxA,1)),length(vA),1)]; 
+            insers = [insers; repmat(i,length(vA),1)];
         end
     end
 
@@ -62,7 +67,7 @@ if params.diff
     stimName = sprintf('%s-%s', stimA, stimB);
 
     tblPlot = table();
-    tblPlot.insertion = categorical(ins(valid));
+    tblPlot.insertion = categorical(insers(valid));
     tblPlot.stimulus  = categorical(repmat({stimName}, sum(valid), 1));
     tblPlot.animal    = animals(valid);
     tblPlot.value     = diffVals(valid);
@@ -83,26 +88,41 @@ else
     plotLinesBetween = true;
 end
 
-% ----------------- CHANGE STIM NAMES ----------------- 
-stimuli = unique(tbl.stimulus); 
+%% ----------------- CHANGE STIM NAMES -----------------
+stimuli = unique(tblPlot.stimulus);
 
-tbl.stimulus = removecats(tbl.stimulus); 
-tbl.animal = removecats(tbl.animal); 
-tbl.insertion = removecats(tbl.insertion); 
-%Replace 'RG' with 'SB' 
+% tbl.stimulus = removecats(tbl.stimulus);
+% tbl.animal = removecats(tbl.animal);
+% tbl.insertion = removecats(tbl.insertion);
+%Replace 'RG' with 'SB'
 
-rgIdx = ismember(stimuli, categorical({'RG'})); 
-if any(rgIdx) 
-    tbl.stimulus(tbl.stimulus == 'RG') = 'SB'; 
-end 
+rgIdx = ismember(stimuli, categorical({'RG'}));
+if any(rgIdx)
+    tblPlot.stimulus(tblPlot.stimulus == 'RG') = 'SB';
+end
 
-rgIdx = ismember(stimuli, categorical({'SDGm'})); 
-if any(rgIdx) tbl.stimulus(tbl.stimulus == 'SDGm') = 'MG'; 
-end 
+rgIdx = ismember(stimuli, categorical({'SDGm'}));
+if any(rgIdx)
+    tblPlot.stimulus(tblPlot.stimulus == 'SDGm') = 'MG';
+end
 
-rgIdx = ismember(stimuli, categorical({'SDGs'})); 
-if any(rgIdx) tbl.stimulus(tbl.stimulus == 'SDGs') = 'SG';
- end 
+rgIdx = ismember(stimuli, categorical({'SDGs'}));
+if any(rgIdx)
+    tblPlot.stimulus(tblPlot.stimulus == 'SDGs') = 'SG';
+end
+
+%% ----------------- RENAME PAIRS TO MATCH -----------------
+if ~isempty(pairs)
+    for i = 1:numel(pairs)
+        if strcmp(pairs{i}, 'RG')
+            pairs{i} = 'SB';
+        elseif strcmp(pairs{i}, 'SDGm')
+            pairs{i} = 'MG';
+        elseif strcmp(pairs{i}, 'SDGs')
+            pairs{i} = 'SG';
+        end
+    end
+end
 
 
 %% ----------------- CLEAN CATEGORIES -----------------
@@ -117,32 +137,38 @@ insertions  = categories(tblPlot.insertion);
 figure;
 ax = axes;
 hold(ax, 'on');
+set(ax, 'Clipping', 'off');  % <-- ADD THIS LINE
 
 % 1) Swarm first
-swarmchart(ax, tblPlot.stimulus, tblPlot.value, ...
-    18, tblPlot.animal, ...
-    'filled', 'MarkerFaceAlpha', 0.6);
+s=swarmchart(ax, tblPlot.stimulus, tblPlot.value, ...
+    params.dotSize, tblPlot.animal, ...
+    'MarkerEdgeAlpha', 0.6);
 
-% 2) Get numeric x positions of categories
-cats = categories(tblPlot.stimulus);
-xMap = containers.Map(cats, 1:numel(cats));
+s.XJitter = params.Xjitter;
+%s.XJitterWidth = 0.1;
 
-xNum = arrayfun(@(i) xMap(char(tblPlot.stimulus(i))), ...
-                1:height(tblPlot));
+if plotLinesBetween
+    % 2) Get numeric x positions of categories
+    cats = categories(tblPlot.stimulus);
+    xMap = containers.Map(cats, 1:numel(cats));
 
-% 3) Plot lines AFTER swarm
-for i = 1:numel(unique(tblPlot.insertion))
-    idx = double(tblPlot.insertion) == i;
-    if sum(idx) < 2
-        continue
+    xNum = arrayfun(@(i) xMap(char(tblPlot.stimulus(i))), ...
+        1:height(tblPlot));
+
+
+    % 3) Plot lines AFTER swarm
+    for i = 1:numel(unique(tblPlot.NeurID))
+        idx = double(tblPlot.NeurID) == i;
+        if sum(idx) < 2
+            continue
+        end
+
+        line(ax, ...
+            xNum(idx), tblPlot.value(idx), ...
+            'Color', [0 0 0 0.1], ...
+            'LineWidth', 0.1),'lin';
     end
-
-    line(ax, ...
-        xNum(idx), tblPlot.value(idx), ...
-        'Color', [0 0 0 0.2], ...
-        'LineWidth', 0.75);
 end
-
 colormap(lines(numel(categories(tblPlot.animal))))
 ylabel(params.yLegend)
 
@@ -153,22 +179,29 @@ ax.Layer = 'top';
 %% ----------------- BOOTSTRAP MEAN + SEM -----------------
 for i = 1:numel(stimuli)
 
-    vals = [];
-    for e = 1:numel(insertions)
-        idx = tblPlot.insertion == insertions{e} & ...
-              tblPlot.stimulus  == stimuli{i};
-        if any(idx)
-            vals(end+1,1) = tblPlot.value(idx); %#ok<AGROW>
-        end
-    end
+    idx = tblPlot.stimulus  == stimuli{i};
 
+    if any(idx) && params.fraction
+        vals = tblPlot.value(idx);
+        insers = tblPlot.insertion(idx);
+        animals = tblPlot.animal(idx);
+    elseif any(idx)
+        vals = tblPlot.value(idx);
+        insers = tblPlot.insertion(idx);
+        animals = tblPlot.animal(idx);
+    end
+   
     if numel(vals) < 3
+        fprintf('Number of values to bootstrap is less than 3\n')
         continue
     end
 
     bootMean = bootstrp(params.nBoot, @mean, vals);
     mu  = mean(bootMean);
     sem = std(bootMean);
+
+    mu = mean(vals);
+    sem = std(vals,'omitnan') / sqrt(numel(vals));
 
     % SEM
     line([i i], mu + [-1 1]*sem, ...
@@ -179,6 +212,7 @@ for i = 1:numel(stimuli)
         'Color', [0 0 0 semAlpha], 'LineWidth', 2);
     line([i-capW i+capW], [mu-sem mu-sem], ...
         'Color', [0 0 0 semAlpha], 'LineWidth', 2);
+    
 
     % mean
     dx = 0.15;
@@ -186,20 +220,80 @@ for i = 1:numel(stimuli)
 end
 
 %% ----------------- PAIRWISE COMPARISONS -----------------
+% if ~params.diff && ~isempty(pairs) && numel(pValues) == size(pairs,1)
+% 
+%     usedHeights = zeros(size(pairs,1),1);
+% 
+%     for k = 1:size(pairs,1)
+% 
+%         x1 = find(strcmp(stimuli, pairs{k,1}));
+%         x2 = find(strcmp(stimuli, pairs{k,2}));
+%         if isempty(x1) || isempty(x2)
+%             continue
+%         end
+% 
+%         vals1 = tblPlot.value(tblPlot.stimulus == pairs{k,1});
+%         vals2 = tblPlot.value(tblPlot.stimulus == pairs{k,2});
+% 
+%         maxVisible = max(min([vals1; vals2], yMaxVis));
+%         yBase = maxVisible + bracketPad;
+% 
+%         y = yBase;
+%         while any(abs(usedHeights(1:k-1) - y) < stackPad)
+%             y = y + stackPad;
+%         end
+%         usedHeights(k) = y;
+% 
+%         % bracket
+%         line([x1 x2], [y y], 'Color','k', 'LineWidth',1.2);
+%         line([x1 x1], [y-yMaxVis*0.01 y], 'Color','k', 'LineWidth',1.2);
+%         line([x2 x2], [y-yMaxVis*0.01 y], 'Color','k', 'LineWidth',1.2);
+% 
+%         % significance
+%         if pValues(k) < 1e-3
+%             txt = '***';
+%             if pValues(k) == 0
+%                 txt = '****';
+%             end
+%             text(mean([x1 x2]), y + textPad, txt, ...
+%                 'HorizontalAlignment','center', ...
+%                 'FontSize', 7);
+%         end
+%     end
+% end
+% 
+% ylim([0 yMaxVis])
+% hold off
+% end
+
+%% ----------------- PAIRWISE COMPARISONS -----------------
 if ~params.diff && ~isempty(pairs) && numel(pValues) == size(pairs,1)
 
+    fprintf('=== DEBUGGING BRACKETS ===\n');
+    fprintf('Number of pairs: %d\n', size(pairs,1));
+    fprintf('Number of pValues: %d\n', numel(pValues));
+    fprintf('Stimuli in plot: %s\n', strjoin(cellstr(stimuli), ', '));
+    
     usedHeights = zeros(size(pairs,1),1);
 
     for k = 1:size(pairs,1)
+        
+        fprintf('\n--- Pair %d: %s vs %s ---\n', k, pairs{k,1}, pairs{k,2});
 
         x1 = find(strcmp(stimuli, pairs{k,1}));
         x2 = find(strcmp(stimuli, pairs{k,2}));
+        
+        fprintf('x1 index: %d, x2 index: %d\n', x1, x2);
+        
         if isempty(x1) || isempty(x2)
+            fprintf('SKIPPING: One or both stimuli not found!\n');
             continue
         end
 
         vals1 = tblPlot.value(tblPlot.stimulus == pairs{k,1});
         vals2 = tblPlot.value(tblPlot.stimulus == pairs{k,2});
+
+        fprintf('vals1 count: %d, vals2 count: %d\n', numel(vals1), numel(vals2));
 
         maxVisible = max(min([vals1; vals2], yMaxVis));
         yBase = maxVisible + bracketPad;
@@ -210,10 +304,14 @@ if ~params.diff && ~isempty(pairs) && numel(pValues) == size(pairs,1)
         end
         usedHeights(k) = y;
 
+        fprintf('Bracket y position: %.3f\n', y);
+        fprintf('p-value: %.4e\n', pValues(k));
+        fprintf('Will draw bracket: YES\n');
+
         % bracket
-        line([x1 x2], [y y], 'Color','k', 'LineWidth',1.2);
-        line([x1 x1], [y-yMaxVis*0.01 y], 'Color','k', 'LineWidth',1.2);
-        line([x2 x2], [y-yMaxVis*0.01 y], 'Color','k', 'LineWidth',1.2);
+        line([x1 x2], [y y], 'Color','k', 'LineWidth',1.2, 'Clipping', 'off');
+        line([x1 x1], [y-yMaxVis*0.01 y], 'Color','k', 'LineWidth',1.2, 'Clipping', 'off');
+        line([x2 x2], [y-yMaxVis*0.01 y], 'Color','k', 'LineWidth',1.2, 'Clipping', 'off');
 
         % significance
         if pValues(k) < 1e-3
@@ -221,13 +319,14 @@ if ~params.diff && ~isempty(pairs) && numel(pValues) == size(pairs,1)
             if pValues(k) == 0
                 txt = '****';
             end
+            fprintf('Drawing text: %s\n', txt);
             text(mean([x1 x2]), y + textPad, txt, ...
                 'HorizontalAlignment','center', ...
-                'FontSize', 7);
+                'FontSize', 7, 'Clipping', 'off');
+        else
+            fprintf('p-value not significant enough (>= 1e-3)\n');
         end
     end
-end
-
-ylim([0 yMaxVis])
-hold off
+    
+    fprintf('\n=== END DEBUGGING ===\n');
 end

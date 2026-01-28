@@ -89,7 +89,16 @@ else
     forloop = true;
 end
 
-longTable = table( ...
+longTablePairComp = table( ...
+    categorical.empty(0,1), ...
+    categorical.empty(0,1), ...
+    categorical.empty(0,1), ...
+    categorical.empty(0,1),...
+    double.empty(0,1), ...
+    double.empty(0,1), ...
+    'VariableNames', {'animal','insertion','stimulus','NeurID','Z-score','SpkR'} );
+
+longTable= table( ...
     categorical.empty(0,1), ...
     categorical.empty(0,1), ...
     categorical.empty(0,1), ...
@@ -404,6 +413,50 @@ if forloop
             ;pValuesMB,pValuesRG,pValuesMBR,pValuesFFF,pValuesSDGm,pValuesSDGs,pValuesNI,pValuesNV};
 
         [row, col] = find(cellfun(@(x) ischar(x) && endsWith(x, Stims2Comp{1}), pvals));
+
+        for i=1:numel(params.ComparePairs)
+
+            [row, col] = find(cellfun(@(x) ischar(x) && endsWith(x, params.ComparePairs{i}), pvals));
+
+            pvalsC{i}= pvals{2,col};
+
+        end
+
+        vars = who;     
+
+        zscoresC1 = vars(contains(vars,sprintf('zScores_%s',params.ComparePairs{1})));
+        zscoresC1 = eval(zscoresC1{1});
+        unitIDs = 1:numel(zscoresC1);
+        zscoresC1 = zscoresC1(pvalsC{1}<params.threshold | pvalsC{2}<params.threshold);
+
+        spkRC1 = vars(contains(vars,sprintf('spkR_%s',params.ComparePairs{1})));
+        spkRC1 = eval(spkRC1{1});
+        spkRC1 = spkRC1(pvalsC{1}<params.threshold | pvalsC{2}<params.threshold);
+
+        unitIDs = unitIDs((pvalsC{1}<params.threshold | pvalsC{2}<params.threshold));
+
+        zscoresC2 = vars(contains(vars,sprintf('zScores_%s',params.ComparePairs{2})));
+        zscoresC2 = eval(zscoresC2{1});
+        zscoresC2 = zscoresC2(pvalsC{1}<params.threshold | pvalsC{2}<params.threshold);
+
+        spkRC2 = vars(contains(vars,sprintf('spkR_%s',params.ComparePairs{2})));
+        spkRC2 = eval(spkRC2{1});
+        spkRC2 = spkRC2(pvalsC{1}<params.threshold | pvalsC{2}<params.threshold);
+
+        if ~isempty(unitIDs)
+
+            TableC1 = table(categorical(cellstr(repmat(Animal,numel(~~unitIDs),1))),categorical(repmat(j,numel(unitIDs),1)),...
+                categorical(cellstr(repmat(params.ComparePairs{1},numel(unitIDs),1))),categorical(unitIDs)', zscoresC1',spkRC1', ...
+                'VariableNames', {'animal','insertion','stimulus','NeurID','Z-score','SpkR'});
+
+            TableC2 = table(categorical(cellstr(repmat(Animal,numel(unitIDs),1))),categorical(repmat(j,numel(unitIDs),1)),...
+                categorical(cellstr(repmat(params.ComparePairs{2},numel(unitIDs),1))),categorical(unitIDs)', zscoresC2',spkRC2', ...
+                'VariableNames', {'animal','insertion','stimulus','NeurID','Z-score','SpkR'});
+
+
+            longTablePairComp = [longTablePairComp;TableC1;TableC2];
+
+        end
 
         pvalsStimSelected = pvals{2,col};
 
@@ -869,10 +922,65 @@ if forloop
     S.params = params;
     S.responsiveNeurons = responsiveNeurons;
     S.TableRespNeurs = longTable;
+    S.TableStimComp = longTablePairComp;
 
     save([saveDir nameOfFile],'-struct', 'S');
 
 end
+
+if ~isempty(params.ComparePairs)
+
+    pairs = params.ComparePairs;
+
+    [G, insID] = findgroups(S.TableStimComp.insertion);
+    hasAll = splitapply(@(s) all(ismember(unique(categorical(pairs)), s)), S.TableStimComp.stimulus, G);
+
+    tempTable = S.TableStimComp(hasAll(G) & ismember(S.TableStimComp.stimulus, unique(categorical(pairs))),:);
+
+
+    %pairs = {"SDGm","SDGs";"MB","MBR";"MB","RG";"NV","NI"};
+    nBoot = 10000;
+    j=1;
+
+    ps = zeros(1,size(pairs,1));
+
+    S.TableStimComp.('Z-score')(isnan( S.TableStimComp.('Z-score'))) = 0;
+    S.TableStimComp.SpkR(isnan( S.TableStimComp.SpkR)) = 0;
+
+    for i = 1:size(pairs,1)
+
+        diffs = [];
+        insers = [];
+        animals = [];
+        for ins = unique(S.TableStimComp.insertion)'
+
+            idx1 = S.TableStimComp.insertion == categorical(ins) & S.TableStimComp.stimulus == pairs{j,1};
+            idx2 = S.TableStimComp.insertion == categorical(ins) & S.TableStimComp.stimulus == pairs{j,2};
+            
+            V1 = S.TableStimComp.('Z-score')(idx1);
+            V2 = S.TableStimComp.('Z-score')(idx2);
+
+
+            % B1 = hierBoot(V1,nBoot,S.TableStimComp.NeurID(idx1));
+            % 
+            % B2 = hierBoot(V2,nBoot,S.TableStimComp.NeurID(idx2));
+            animal = unique(S.TableStimComp.animal(idx1));
+            diffs = [diffs;V1-V2];
+            insers = [insers;double(repmat(ins,size(V1,1),1))];
+            animals = [animals;double(repmat(animal,size(V1,1),1))];
+
+        end
+
+        %%% Change to hierarchical bootstrapping. 
+
+        bootDiff = hierBoot(diffs,nBoot,insers,animals);
+        ps(j) = mean(bootDiff<=0);
+        j = j+1;
+    end
+
+end
+
+plotSwarmBootstrapWithComparisons(S.TableStimComp,pairs,ps,{'Z-score'}, yLegend='Z-score',yMaxVis=40,diff=true) 
 
 %%% Create Figure
 
@@ -1192,7 +1300,7 @@ ps = zeros(1,size(pairs,1));
 
 
 
-plotSwarmBootstrapWithComparisons(tempTable,pairs,ps,{'respNeur','totalSomaticN'},fraction = true, yLegend='Responsive/total units') 
+plotSwarmBootstrapWithComparisons(tempTable,pairs,ps,{'respNeur','totalSomaticN'},fraction = true, yLegend='Responsive/total units',diff=true) 
 
 fig2=figure;
 
