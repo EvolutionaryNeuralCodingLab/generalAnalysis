@@ -978,9 +978,102 @@ if ~isempty(params.ComparePairs)
         j = j+1;
     end
 
-end
 
-plotSwarmBootstrapWithComparisons(S.TableStimComp,pairs,ps,{'Z-score'}, yLegend='Z-score',yMaxVis=40,diff=true) 
+
+plotSwarmBootstrapWithComparisons(S.TableStimComp,pairs,ps,{'Z-score'}, yLegend='Z-score',yMaxVis=40,diff=true,plotMeanSem = false) 
+
+figure;
+scatter(S.TableStimComp.("Z-score")(S.TableStimComp.stimulus == pairs{1}),...
+    S.TableStimComp.("Z-score")(S.TableStimComp.stimulus == pairs{2})....
+    ,7,S.TableStimComp.animal(S.TableStimComp.stimulus == pairs{1}),...
+    "filled","MarkerFaceAlpha",0.4)
+hold on
+axis equal
+
+lims =[min(S.TableStimComp.("Z-score")) max(S.TableStimComp.("Z-score"))];
+plot(lims, lims, 'k--', 'LineWidth', 1.5)
+lims = [-5 40];
+ylim(lims)
+xlim(lims)
+
+% Convert to string
+s = string(pairs);
+
+% Replace substring wherever it appears
+s = replace(s, "RG", "SB");
+s = replace(s, "SDGs", "SG");
+s = replace(s, "SDGm", "MG");
+
+xlabel(s{1})
+ylabel(s{2})
+
+colormap(lines(numel(categories(S.TableStimComp.animal))))
+
+
+%%%%%  SPIKE RATE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    j=1;
+
+    ps = zeros(1,size(pairs,1));
+
+
+    for i = 1:size(pairs,1)
+
+        diffs = [];
+        insers = [];
+        animals = [];
+        for ins = unique(S.TableStimComp.insertion)'
+
+            idx1 = S.TableStimComp.insertion == categorical(ins) & S.TableStimComp.stimulus == pairs{j,1};
+            idx2 = S.TableStimComp.insertion == categorical(ins) & S.TableStimComp.stimulus == pairs{j,2};
+            
+            V1 = S.TableStimComp.SpkR(idx1);
+            V2 = S.TableStimComp.SpkR(idx2);
+
+
+            % B1 = hierBoot(V1,nBoot,S.TableStimComp.NeurID(idx1));
+            % 
+            % B2 = hierBoot(V2,nBoot,S.TableStimComp.NeurID(idx2));
+            animal = unique(S.TableStimComp.animal(idx1));
+            diffs = [diffs;V1-V2];
+            insers = [insers;double(repmat(ins,size(V1,1),1))];
+            animals = [animals;double(repmat(animal,size(V1,1),1))];
+
+        end
+
+        %%% Change to hierarchical bootstrapping. 
+
+        bootDiff = hierBoot(diffs,nBoot,insers,animals);
+        ps(j) = mean(bootDiff<=0);
+        j = j+1;
+    end
+
+V1max = max(diffs);
+
+plotSwarmBootstrapWithComparisons(S.TableStimComp,pairs,ps,{'SpkR'}, yLegend='SpkR',yMaxVis=V1max,diff=true,plotMeanSem = false) 
+
+figure;
+scatter(S.TableStimComp.SpkR(S.TableStimComp.stimulus == pairs{1}),...
+    S.TableStimComp.SpkR(S.TableStimComp.stimulus == pairs{2})....
+    ,7,S.TableStimComp.animal(S.TableStimComp.stimulus == pairs{1}),...
+    "filled","MarkerFaceAlpha",0.4)
+hold on
+axis equal
+
+lims =[min(S.TableStimComp.SpkR) max(S.TableStimComp.SpkR)];
+plot(lims, lims, 'k--', 'LineWidth', 1.5)
+%lims = [-5 40];
+ylim(lims)
+xlim(lims)
+
+
+xlabel(s{1})
+ylabel(s{2})
+
+colormap(lines(numel(categories(S.TableStimComp.animal))))
+
+
+
+end
 
 %%% Create Figure
 

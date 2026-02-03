@@ -7,7 +7,7 @@ arguments (Input)
     params.inputParams = false
     params.exNeurons = 1;
     params.AllSomaticNeurons = false;
-    params.AllResponsiveNeurons = true;
+    params.AllResponsiveNeurons = false;
     params.noEyeMoves = false
     params.reduceFactor = 20
     params.allStimParamsCombined = false

@@ -14,7 +14,6 @@ arguments (Input)
     params.MergeNtrials =1
     params.GaussianLength = 50
     params.oneTrial = false
-    params.selectedLum = []
 end
 
 
@@ -22,12 +21,10 @@ NeuronResp = obj.ResponseWindow;
 Stats = obj.ShufflingAnalysis;
 directimesSorted = NeuronResp.C(:,1)';
 
-nSize = numel(unique(NeuronResp.C(:,3)));
-nLum = numel(unique(NeuronResp.C(:,4)));
-
 if ~isempty(params.selectedLum)
-    directimesSorted = directimesSorted(NeuronResp.C(:,4)==params.selectedLum);
-    nLum = 1;
+
+    directimesSorted = directimesSorted()
+
 end
 
 goodU = NeuronResp.goodU;
@@ -44,7 +41,8 @@ seqMatrix = obj.VST.pos;
 
 % trialDivision = numel(directimesSorted)/numel(unique(NeuronResp.C(:,2)))/numel(unique(NeuronResp.C(:,3)))/...
 %     numel(unique(NeuronResp.C(:,4)));
-
+nSize = numel(unique(NeuronResp.C(:,3)));
+nLum = numel(unique(NeuronResp.C(:,4)));
 
 preBase = params.preBase;
 

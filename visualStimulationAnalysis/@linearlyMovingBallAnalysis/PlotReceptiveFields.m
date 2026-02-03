@@ -199,7 +199,8 @@ for u = eNeuron
                 j = j+1;
                 
                 if j ==size(RFuRed,1)*size(RFuRed,2)*size(RFuRed,3)
-                    colorbar;
+                    c = colorbar;
+                    title(c,'spk/s')
                 end
                 axis(ax, 'equal'); 
                 pbaspect(ax, [1 1 1]);

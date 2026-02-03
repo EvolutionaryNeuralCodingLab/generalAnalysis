@@ -10,8 +10,11 @@ arguments
     params.yLegend char = 'value'
     params.diff logical = false   % compute difference between first pair
     params.Xjitter = 'density'
-    params.dotSize = 35
+    params.dotSize = 7
     params.yMaxVis = 1
+    params.filled = true
+    params.Alpha = 0.4
+    params.plotMeanSem = true
 end
 
 %% ----------------- PARAMETERS -----------------
@@ -96,20 +99,18 @@ stimuli = unique(tblPlot.stimulus);
 % tbl.insertion = removecats(tbl.insertion);
 %Replace 'RG' with 'SB'
 
-rgIdx = ismember(stimuli, categorical({'RG'}));
-if any(rgIdx)
-    tblPlot.stimulus(tblPlot.stimulus == 'RG') = 'SB';
-end
+% Convert to string
+s = string(tblPlot.stimulus);
 
-rgIdx = ismember(stimuli, categorical({'SDGm'}));
-if any(rgIdx)
-    tblPlot.stimulus(tblPlot.stimulus == 'SDGm') = 'MG';
-end
+% Replace substring wherever it appears
+s = replace(s, "RG", "SB");
+s = replace(s, "SDGs", "SG");
+s = replace(s, "SDGm", "MG");
 
-rgIdx = ismember(stimuli, categorical({'SDGs'}));
-if any(rgIdx)
-    tblPlot.stimulus(tblPlot.stimulus == 'SDGs') = 'SG';
-end
+
+% Convert back to categorical
+tblPlot.stimulus = categorical(s);
+
 
 %% ----------------- RENAME PAIRS TO MATCH -----------------
 if ~isempty(pairs)
@@ -140,9 +141,15 @@ hold(ax, 'on');
 set(ax, 'Clipping', 'off');  % <-- ADD THIS LINE
 
 % 1) Swarm first
-s=swarmchart(ax, tblPlot.stimulus, tblPlot.value, ...
-    params.dotSize, tblPlot.animal, ...
-    'MarkerEdgeAlpha', 0.6);
+if params.filled
+    s=swarmchart(ax, tblPlot.stimulus, tblPlot.value, ...
+        params.dotSize, tblPlot.animal, 'filled', ...
+        'MarkerFaceAlpha', params.Alpha);
+else
+    s=swarmchart(ax, tblPlot.stimulus, tblPlot.value, ...
+        params.dotSize, tblPlot.animal, ...
+        'MarkerEdgeAlpha',params.Alpha);
+end
 
 s.XJitter = params.Xjitter;
 %s.XJitterWidth = 0.1;
@@ -168,6 +175,8 @@ if plotLinesBetween
             'Color', [0 0 0 0.1], ...
             'LineWidth', 0.1),'lin';
     end
+else
+    yline(0,LineWidth=1,Alpha=0.7)
 end
 colormap(lines(numel(categories(tblPlot.animal))))
 ylabel(params.yLegend)
@@ -177,94 +186,55 @@ ax.Box   = 'off';
 ax.Layer = 'top';
 
 %% ----------------- BOOTSTRAP MEAN + SEM -----------------
-for i = 1:numel(stimuli)
 
-    idx = tblPlot.stimulus  == stimuli{i};
+if params.plotMeanSem
 
-    if any(idx) && params.fraction
-        vals = tblPlot.value(idx);
-        insers = tblPlot.insertion(idx);
-        animals = tblPlot.animal(idx);
-    elseif any(idx)
-        vals = tblPlot.value(idx);
-        insers = tblPlot.insertion(idx);
-        animals = tblPlot.animal(idx);
+    for i = 1:numel(stimuli)
+
+        idx = tblPlot.stimulus  == stimuli{i};
+
+        if any(idx) && params.fraction
+            vals = tblPlot.value(idx);
+            insers = tblPlot.insertion(idx);
+            animals = tblPlot.animal(idx);
+        elseif any(idx)
+            vals = tblPlot.value(idx);
+            insers = tblPlot.insertion(idx);
+            animals = tblPlot.animal(idx);
+        end
+
+        if numel(vals) < 3
+            fprintf('Number of values to bootstrap is less than 3\n')
+            continue
+        end
+
+        if size(tblPlot,1) < 500
+            bootMean = bootstrp(params.nBoot, @mean, vals);
+            mu  = mean(bootMean);
+            sem = std(bootMean);
+        else
+
+            mu = mean(vals);
+            sem = std(vals,'omitnan') / sqrt(numel(vals));
+        end
+
+        % SEM
+        line([i i], mu + [-1 1]*sem, ...
+            'Color', [0 0 0 semAlpha], 'LineWidth', 2);
+
+        capW = 0.1;
+        line([i-capW i+capW], [mu+sem mu+sem], ...
+            'Color', [0 0 0 semAlpha], 'LineWidth', 2);
+        line([i-capW i+capW], [mu-sem mu-sem], ...
+            'Color', [0 0 0 semAlpha], 'LineWidth', 2);
+
+
+        % mean
+        dx = 0.15;
+        plot([i-dx i+dx], [mu mu], 'k-', 'LineWidth', 1.2);
     end
-   
-    if numel(vals) < 3
-        fprintf('Number of values to bootstrap is less than 3\n')
-        continue
-    end
-
-    bootMean = bootstrp(params.nBoot, @mean, vals);
-    mu  = mean(bootMean);
-    sem = std(bootMean);
-
-    mu = mean(vals);
-    sem = std(vals,'omitnan') / sqrt(numel(vals));
-
-    % SEM
-    line([i i], mu + [-1 1]*sem, ...
-        'Color', [0 0 0 semAlpha], 'LineWidth', 2);
-
-    capW = 0.1;
-    line([i-capW i+capW], [mu+sem mu+sem], ...
-        'Color', [0 0 0 semAlpha], 'LineWidth', 2);
-    line([i-capW i+capW], [mu-sem mu-sem], ...
-        'Color', [0 0 0 semAlpha], 'LineWidth', 2);
-    
-
-    % mean
-    dx = 0.15;
-    plot([i-dx i+dx], [mu mu], 'k-', 'LineWidth', 1.2);
 end
 
-%% ----------------- PAIRWISE COMPARISONS -----------------
-% if ~params.diff && ~isempty(pairs) && numel(pValues) == size(pairs,1)
-% 
-%     usedHeights = zeros(size(pairs,1),1);
-% 
-%     for k = 1:size(pairs,1)
-% 
-%         x1 = find(strcmp(stimuli, pairs{k,1}));
-%         x2 = find(strcmp(stimuli, pairs{k,2}));
-%         if isempty(x1) || isempty(x2)
-%             continue
-%         end
-% 
-%         vals1 = tblPlot.value(tblPlot.stimulus == pairs{k,1});
-%         vals2 = tblPlot.value(tblPlot.stimulus == pairs{k,2});
-% 
-%         maxVisible = max(min([vals1; vals2], yMaxVis));
-%         yBase = maxVisible + bracketPad;
-% 
-%         y = yBase;
-%         while any(abs(usedHeights(1:k-1) - y) < stackPad)
-%             y = y + stackPad;
-%         end
-%         usedHeights(k) = y;
-% 
-%         % bracket
-%         line([x1 x2], [y y], 'Color','k', 'LineWidth',1.2);
-%         line([x1 x1], [y-yMaxVis*0.01 y], 'Color','k', 'LineWidth',1.2);
-%         line([x2 x2], [y-yMaxVis*0.01 y], 'Color','k', 'LineWidth',1.2);
-% 
-%         % significance
-%         if pValues(k) < 1e-3
-%             txt = '***';
-%             if pValues(k) == 0
-%                 txt = '****';
-%             end
-%             text(mean([x1 x2]), y + textPad, txt, ...
-%                 'HorizontalAlignment','center', ...
-%                 'FontSize', 7);
-%         end
-%     end
-% end
-% 
-% ylim([0 yMaxVis])
-% hold off
-% end
 
 %% ----------------- PAIRWISE COMPARISONS -----------------
 if ~params.diff && ~isempty(pairs) && numel(pValues) == size(pairs,1)
@@ -328,5 +298,74 @@ if ~params.diff && ~isempty(pairs) && numel(pValues) == size(pairs,1)
         end
     end
     
-    fprintf('\n=== END DEBUGGING ===\n');
+end
+
+%% ----------------- SIGNIFICANCE FOR DIFF MODE -----------------
+%% ----------------- SIGNIFICANCE FOR DIFF MODE -----------------
+if params.diff && ~isempty(pValues) && numel(pValues) >= 1
+    
+    fprintf('=== DIFF MODE SIGNIFICANCE ===\n');
+    fprintf('p-value: %.4e\n', pValues(1));
+    
+    % There's only one "stimulus" (the difference)
+    x1 = 1;  % Position of the single difference bar
+    
+    % Get all values for this difference
+    vals = tblPlot.value;
+    
+    % Find the maximum visible value
+    maxVisible = max(min(vals, yMaxVis));
+    yText = maxVisible + bracketPad;
+    
+    fprintf('Text y position: %.3f\n', yText);
+    
+    % Draw significance stars
+    if pValues(1) < 1e-3
+        txt = '***';
+        if pValues(1) == 0
+            txt = '****';
+        end
+        fprintf('Drawing significance: %s\n', txt);
+        
+        % Draw the asterisks
+        text(x1, yText, txt, ...
+            'HorizontalAlignment', 'center', ...
+            'FontSize', 7, ...
+            'Clipping', 'off');
+        
+        % Draw the comparison text above the asterisks
+        stimA = pairs{1,1};
+        stimB = pairs{1,2};
+        compText = sprintf('%s > %s', stimA, stimB);
+        
+        yCompText = yText + textPad*10;
+        
+        text(x1, yCompText, compText, ...
+            'HorizontalAlignment', 'center', ...
+            'FontSize', 10, ...
+            'Clipping', 'off');
+        
+        fprintf('Drawing comparison text: %s\n', compText);
+
+        ylims = ylim;
+        
+        % Adjust ylim if needed to fit both texts
+        requiredHeight = yCompText + textPad*10;  % Extra padding above comparison text
+        if requiredHeight > yMaxVis
+            ylim([ylims(1) requiredHeight]);
+            fprintf('Adjusted ylim to [0 %.3f] to fit text\n', requiredHeight);
+        else
+            ylim([ylims(1) yMaxVis]);
+        end
+    else
+        fprintf('p-value not significant enough (>= 1e-3)\n');
+        ylim([0 yMaxVis]);
+    end
+    
+    fprintf('=== END DIFF MODE SIGNIFICANCE ===\n');
+else
+    ylim([ylims(1) yMaxVis]);
+end
+
+
 end
