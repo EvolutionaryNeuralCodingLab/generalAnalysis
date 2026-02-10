@@ -117,7 +117,12 @@ end
 xlim([0 length(raw_signal)/NP.samplingFrequency]);
 lims = xlim;
 ylims = ylim;
-ylim([ylims(1),ylims(2)+30])
+
+if size(raw_signal,1) > 1
+    ylim([ylims(1),ylims(2)+60])
+else
+    ylim([ylims(1),ylims(2)+30])
+end
 
 if tr >1
     limsY = ylim;

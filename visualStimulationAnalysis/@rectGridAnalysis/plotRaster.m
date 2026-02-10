@@ -1,20 +1,22 @@
 function plotRaster(obj,params)
 
-arguments (Input) 
+arguments (Input)
     obj
     params.overwrite logical = false
     params.analysisTime = datetime('now')
     params.inputParams = false
     params.preBase = 200
     params.bin = 10
-    params.exNeurons = 1
+    params.exNeurons = []
     params.AllSomaticNeurons = false
-    params.AllResponsiveNeurons = false
+    params.AllResponsiveNeurons = true
     params.fixedWindow = true
     params.MergeNtrials =1
     params.GaussianLength = 50
     params.oneTrial = false
     params.selectedLum = []
+    params.plotPatch logical = true
+    params.PaperFig logical = false
 end
 
 
@@ -25,22 +27,27 @@ directimesSorted = NeuronResp.C(:,1)';
 nSize = numel(unique(NeuronResp.C(:,3)));
 nLum = numel(unique(NeuronResp.C(:,4)));
 
+seqMatrix = obj.VST.pos;
+
 if ~isempty(params.selectedLum)
     directimesSorted = directimesSorted(NeuronResp.C(:,4)==params.selectedLum);
     nLum = 1;
 end
+
+proportionTrials = 1/(numel(NeuronResp.C(:,1))/numel(directimesSorted));
 
 goodU = NeuronResp.goodU;
 p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
 phy_IDg = p.phy_ID(string(p.label') == 'good');
 pvals = Stats.pvalsResponse;
 
+
 stimDur = NeuronResp.stimDur;
 stimInter = NeuronResp.stimInter;
 
 positionsMatrix = [obj.VST.pos2X,obj.VST.pos2Y];%NewExp
 
-seqMatrix = obj.VST.pos;
+
 
 % trialDivision = numel(directimesSorted)/numel(unique(NeuronResp.C(:,2)))/numel(unique(NeuronResp.C(:,3)))/...
 %     numel(unique(NeuronResp.C(:,4)));
@@ -48,10 +55,10 @@ seqMatrix = obj.VST.pos;
 
 preBase = params.preBase;
 
-if params.AllSomaticNeurons
+if params.AllSomaticNeurons && isempty(params.exNeurons)
     eNeuron = 1:size(goodU,2);
     pvals = [eNeuron;pvals(eNeuron)];
-elseif params.AllResponsiveNeurons
+elseif params.AllResponsiveNeurons && isempty(params.exNeurons)
     eNeuron = find(pvals<0.05);
     pvals = [eNeuron;pvals(eNeuron)];% Select all good neurons if not specified
     if isempty(eNeuron)
@@ -71,15 +78,16 @@ win=stimDur+preBase*2;
 
 Mr = ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
 
-[nT,nN,nB] = size(Mr);
-%indRG --> sorted infexes
 
-trialsPerCath = length(seqMatrix)/(length(unique(seqMatrix)));
 
 ur =1;
 for u = eNeuron
 
-    t = tiledlayout(sqrt(max(seqMatrix)), sqrt(max(seqMatrix)),'TileSpacing','tight');
+    [nT,nN,nB] = size(Mr);
+
+    trialsPerCath = length(directimesSorted)/(length(unique(seqMatrix)));
+
+    t = tiledlayout(sqrt(max(seqMatrix)), sqrt(max(seqMatrix)),'TileSpacing','compact');
 
     if params.MergeNtrials >1
         j=1;
@@ -96,12 +104,14 @@ for u = eNeuron
             j = j+1;
 
         end
+        trialsPerCath = trialsPerCath/mergeTrials;
+        nT = nT/mergeTrials;
     else
         Mr2=Mr(:,u,:);
         mergeTrials =1;
     end
 
-     if params.fixedWindow  %%Select highest window stim type
+    if params.fixedWindow  %%Select highest window stim type
         j =1;
         meanMr = zeros(1,nT/trialsPerCath);
         for i = 1:trialsPerCath:nT
@@ -112,68 +122,173 @@ for u = eNeuron
         [maxResp,maxRespIn]= max(meanMr);
         %Figure paper
         start = -50;
-        window = stimDur+100;
+        window = 500;
     else
         [maxResp,maxRespIn]= max(NeuronResp.NeuronVals(u,:,1));
         start = NeuronResp.NeuronVals(u,maxRespIn,3)*NeuronResp.params.binRaster -20;
         window = 500;
-     end
+    end
 
     [T,B] = size(Mr2);
     j=1;
 
-    for i = 1:trialsPerCath/mergeTrials:T
+
+    for i = 1:trialsPerCath:T
         %Build raster
-        M = Mr2(i:min(i+trialsPerCath/mergeTrials-1, end),:,:).*(1000/bin);
+        M = Mr2(i:min(i+trialsPerCath-1, end),:,:).*(1000/bin);
         [nTrials,nTimes]=size(M);
-        nexttile
+
+        ax = nexttile;
+
         imagesc((1:nTimes),1:nTrials,squeeze(M));colormap(flipud(gray(64)));
-        xline(preBase/bin, LineWidth=1.5, Color="#77AC30");
-        xline((stimDur+preBase)/bin, LineWidth=1.5, Color="#0072BD");
-        xticks([preBase/bin (round(stimDur/100)*100+preBase)/bin]);
-        xticklabels(xticks*bin)
+
+        axis tight
+        ax.Box = 'on';
+        ax.XColor = [0.5 0.5 0.5];
+        ax.YColor = [0.5 0.5 0.5];
+
+        if all(M(:)==0)
+            caxis([0 1]);   % choose meaningful limits
+            set(gca, 'Color', 'w')
+        end
+
+
+
+        %xline(preBase/bin, LineWidth=1.5, Color="#77AC30");
+        xline(preBase/bin, LineWidth=1.5,Color=[0.7 0.7 0.7])
+        xline((stimDur+preBase)/bin, LineWidth=1.5,Color=[0.7 0.7 0.7]);
+        %xticks([preBase/bin (round(stimDur/100)*100+preBase)/bin]);
+        %xticklabels(xticks*bin/1000)
+        xticks([])
+        ax = gca;
+        ax.XAxis.FontSize = 8;
+        ax.XAxis.FontName = 'helvetica';
+
         if nSize >1
-            yline([trialsPerCath/mergeTrials/nSize:trialsPerCath/mergeTrials/nSize:trialsPerCath/mergeTrials-1]+0.5,LineWidth=1)
+            yline([trialsPerCath/nSize:trialsPerCath/nSize:trialsPerCath-1]+0.5,LineWidth=1)
         end
 
         if nLum >1
-            yline([trialsPerCath/mergeTrials/nLum:trialsPerCath/mergeTrials/nLum:trialsPerCath/mergeTrials-1]+0.5,LineWidth=1)
+            yline([trialsPerCath/nLum:trialsPerCath/nLum:trialsPerCath-1]+0.5,LineWidth=1)
         end
 
         set(gca,'YTickLabel',[]);
 
-        if i < T - (trialsPerCath/mergeTrials)*max(positionsMatrix(:))-1
+        if i < T - (trialsPerCath)*max(positionsMatrix(:))-1
             set(gca,'XTickLabel',[]);
 
         end
 
-        if j ==  maxRespIn
+        if j ==  maxRespIn && params.plotPatch && ~params.oneTrial
 
             ylims = ylim;
 
-            xlims = xlim;
-            hold on
-            patch([xlims sort(xlims,'descend')],[ylims(1) ylims(1) ylims(2) ylims(2)],'b', 'FaceAlpha', 0.2, 'EdgeColor', 'k', 'LineWidth', 2)
-            hold off
+            patch([(preBase+start)/params.bin (preBase+start+window)/params.bin (preBase+start+window)/params.bin (preBase+start)/params.bin]...
+                ,[ylims(1) ylims(1) ylims(2) ylims(2)],'r','FaceAlpha',0.3,'EdgeColor','none')
+
+
+        elseif j ==  maxRespIn && params.plotPatch && params.MergeNtrials == 1
+
+            [mx ind] = max(sum(squeeze(M(:,:,round((preBase+start)/params.bin):round((preBase+start+window)/params.bin))),2));
+
+            patch([(preBase+start)/params.bin (preBase+start+window)/params.bin (preBase+start+window)/params.bin (preBase+start)/params.bin],...
+                [ind-0.5 ind-0.5 ind+0.5 ind+0.5],...
+                'r','FaceAlpha',0.3,'EdgeColor','none')
         end
 
         j = j+1;
     end
+
     fig = gcf;
     set(fig, 'Color', 'w');
     % Set the color of the figure and axes to black
-    colorbar;
-    title(t,sprintf('Rect-GRid-raster-U%d-PhyU-%dpval-%s',u,phy_IDg(u),num2str(pvals(2,ur),'%.4f')))
-    ylabel(t,sprintf('%d trials',nTrials*mergeTrials))
-    xlabel(t,'Time (ms)')
-    fig.Position =  [147   270   662   446];%[147    58   994   658];
-
-    if params.overwrite,obj.printFig(fig,sprintf('%s-rect-GRid-raster-eNeuron-%d',obj.dataObj.recordingName,u)),end
-   
+    cb = colorbar;
+    cb.FontName = 'helvetica';
+    cb.FontSize = 8;
+    title(cb, '[spk/s]', 'FontSize', 10, 'FontName','helvetica');
     
+    
+    %%%% scale bar (outside, below last tile – same geometry)
+
+    hold(ax, 'on')
+
+    % ---- data-space limits ----
+    xl = xlim(ax);
+    yl = ylim(ax);
+
+    % ---- parameters (UNCHANGED from your logic) ----
+    xLen = stimDur / bin;          % ms
+    yLen = 0.12 * range(yl);
+    marginY = 0.1;
+
+    % ---- anchor in DATA coordinates (same as before) ----
+    x0 = min(xl) + preBase / bin;
+    y0 = max(yl) - marginY * range(yl); %#ok<NASGU> (kept for clarity)
+
+    % ---- convert DATA-x to AXES-normalized coordinates ----
+    xNorm0   = (x0   - xl(1)) / range(xl);
+    xNormLen =  xLen / range(xl);
+
+    % ---- get axes position in FIGURE coordinates ----
+    axPos = ax.Position;    % [x y width height]
+
+    % ---- place bar BELOW the tile ----
+    gap = 0.02;             % gap below tile (figure units)
+    yFig = axPos(2) - gap;
+
+    % ---- horizontal bar (above text) ----
+    annotation('line', ...
+        axPos(1) + [xNorm0 xNorm0 + xNormLen] * axPos(3), ...
+        [yFig yFig], ...
+        'Color','k', 'LineWidth', 2)
+
+    % ---- vertical bar (short, downward, right end) ----
+    yLenFig = 0.12 * axPos(4);
+    dx = 0.02;  % fraction of tile width to shift left
+    annotation('line', ...
+        axPos(1) + ((xNorm0 + xNormLen - dx) * axPos(3)) * [1 1], ...
+        [yFig yFig - yLenFig-yLenFig*0.3], ...
+        'Color','k', 'LineWidth', 2)
+
+    % ---- label (below the horizontal bar) ----
+    textOffset = 0.050;  % fraction of figure height to move text below the horizontal bar
+
+    annotation('textbox', ...
+        [axPos(1) + xNorm0 * axPos(3), ...
+        yFig - textOffset, ...        % moved down from the horizontal line
+        xNormLen * axPos(3), ...
+        0.05], ...
+        'String', sprintf('%d sec', (round(stimDur/10)*10)/1000), ...
+        'EdgeColor','none', ...
+        'HorizontalAlignment','center', ...
+        'VerticalAlignment','top', ...
+        'FontSize', 10, 'FontName','helvetica', ...
+        'Interpreter','none','FitBoxToText','on')
+
+
+    hold(ax, 'off')
+
+    title(t,sprintf('Rect-GRid-raster-U%d-PhyU-%dpval-%s',u,phy_IDg(u),num2str(pvals(2,ur),'%.4f')))
+    ylabel(t,sprintf('%d Trials/Location',nTrials*mergeTrials),'FontSize',10,'FontName','helvetica')
+    xlabel(t,'Time [s]','FontSize',10,'FontName','helvetica')
+    fig.Position =  [147   323   662   393];%[147    58   994   658];
+
+    pos1 = cb.Position(1);
+    cb.Position(1) = pos1 + 0.02;
+
+
+    if params.PaperFig
+        obj.printFig(fig,sprintf('%s-rect-GRid-raster-eNeuron-%d',obj.dataObj.recordingName,u),PaperFig = params.PaperFig)
+    elseif params.overwrite
+        obj.printFig(fig,sprintf('%s-rect-GRid-raster-eNeuron-%d',obj.dataObj.recordingName,u))
+    end
+
+
     %%Plot raw data
 
     maxRespIn = maxRespIn-1;
+
+    trialsPerCath = length(directimesSorted)/(length(unique(seqMatrix)));
     trials = maxRespIn*trialsPerCath+1:maxRespIn*trialsPerCath + trialsPerCath;
 
     chan = goodU(1,u);
@@ -184,38 +299,48 @@ for u = eNeuron
 
     typeData = "line"; %or heatmap
 
-    fig2 = figure;
-    
     spikes = squeeze(BuildBurstMatrix(goodU(:,u),round(p.t),round(startTimes),round((window))));
-    
+
     if params.oneTrial
         [mx ind] = max(sum(spikes,2)); %select trial with most spikes
     else
         ind = 1:size(spikes,1);
     end
+    fig2 = figure;
 
-    [fig2, mx, mn] = PlotRawDataNP(obj,fig = fig2,chan = chan, startTimes = startTimes(ind),...
-        window = window,spikeTimes = spikes(ind,:),multFactor =1.5, stdMult = 3);
+    [fig2, mx, mn] = PlotRawDataNP(obj,fig = fig2,c = chan, startTimes = startTimes(ind),...
+        window = window,spikeTimes = spikes(ind,:));
+    %
+    % xline(-start/1000,'r','LineWidth',1.5)
+    % xline((stimDur+abs(start))/1000,'r','LineWidth',1.5)
+    xticks([0,abs(100)/1000:abs(100)/1000:obj.VST.stimDuration+abs(100*2)/1000+1])
+    xticklabels([0:abs(100):obj.VST.stimDuration*1000+abs(start*2)])
+    xlabel('Time [ms]','FontSize',10,'FontName','helvetica')
+    ax = gca;
+    ax.XAxis.FontSize = 8;
+    ax.XAxis.FontName = 'helvetica';
+    ax.YAxis.FontSize = 8;
+    ax.YAxis.FontName = 'helvetica';
 
-    xline(-start/1000,'LineWidth',1.5,Color="#77AC30")
-    xline((stimDur+abs(start))/1000,'LineWidth',1.5,Color="#0072BD")
-    xticks([0,abs(start)/1000:abs(start)/1000:obj.VST.stimDuration+abs(start*2)/1000+1])
-    xticklabels([start,0:abs(start):obj.VST.stimDuration*1000+abs(start*2)])
-    xlabel('Miliseconds')
-    yticks([])
-    ylabel('uV')
+    ylabel('[\muV]','FontSize',10,'FontName','helvetica')
     title(sprintf('U.%d-Unit-phy-%d-p-%d',u,phy_IDg(u),pvals(2,ur)));
-    fig2.Position =  [147   270   662   446];
+    fig2.Position =  [ 218   450   565   133];
 
-    if params.overwrite,obj.printFig(fig2,sprintf('%s-rect-GRid-rawData-raster-eNeuron-%d',obj.dataObj.recordingName,u)),end
+
+    if params.PaperFig
+        obj.printFig(fig2,sprintf('%s-rect-GRid-rawData-raster-eNeuron-%d',obj.dataObj.recordingName,u),PaperFig = params.PaperFig)
+    elseif params.overwrite
+        obj.printFig(fig2,sprintf('%s-rect-GRid-rawData-raster-eNeuron-%d',obj.dataObj.recordingName,u))
+    end
 
     %prettify_plot
-    
+
     if u ~= eNeuron(end)
         close all
     end
 
     ur = ur+1;
+
 
 end %end eNeuron for loop
 

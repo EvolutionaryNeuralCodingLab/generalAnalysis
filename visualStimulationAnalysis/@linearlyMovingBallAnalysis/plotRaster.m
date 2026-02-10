@@ -19,6 +19,7 @@ arguments (Input)
     params.useNormTrialWindow = false
     params.OneDirection string = "all"
     params.OneLuminosity string = "all"
+    params.PaperFig logical = false
     
 end
 
@@ -122,6 +123,7 @@ end
 
 [Mr]=ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
 
+channels = goodU(1,eNeuron);
 
 [nT,nN,nB] = size(Mr);
 
@@ -183,7 +185,7 @@ for u = eNeuron
     end
 
 
-    subplot(20,1,[9 16]);
+    subplot(18,1,[6 16]);
     imagesc(squeeze(Mr2).*(1000/params.bin));colormap(flipud(gray(64)));
     %Plot stim start:
     xline(preBase/params.bin,'k', LineWidth=1.5)
@@ -220,10 +222,9 @@ for u = eNeuron
 
     hold on
 
-
     xticklabels([])
     xlim([0 round(stimDur+preBase*2)/params.bin])
-    xticks([0 preBase/params.bin:300/params.bin:(stimDur+preBase*2)/params.bin (round((stimDur+preBase*2)/100)*100)/params.bin])
+    xticks([0 preBase/params.bin:600/params.bin:(stimDur+preBase*2)/params.bin (round((stimDur+preBase*2)/100)*100)/params.bin])
     xticklabels([]);
 
     yt =[0];
@@ -232,14 +233,16 @@ for u = eNeuron
 
     end
 
-    yt = yt(2:end);
+    yt = yt(2:end-1);
     yticks(yt)
 
     yticklabels(repmat([trialDivision:trialDivision*2*sizeN:(nT/direcN)-1+trialDivision*sizeN],1,direcN))
 
     ax = gca; % Get current axes
-    ax.YAxis.FontSize = 7; % Change font size of y-axis tick labels
+    ax.YAxis.FontSize = 8; % Change font size of y-axis tick labels
+    ax.YAxis.FontName = 'helvetica';
 
+    ylabel('Trials','FontSize',10,'FontName','helvetica')
 
     if params.SelectedWindow  %%Select highest window stim type
         j =1;
@@ -280,19 +283,31 @@ for u = eNeuron
     y2 = maxRespIn*trialDivision+0.5;
 
   
-    patch([(preBase+start)/params.bin (preBase+start+window)/params.bin (preBase+start+window)/params.bin (preBase+start)/params.bin],...
-        [y2 y2 y1 y1],...
-        'r','FaceAlpha',0.2,'EdgeColor','none')
+    %patch([(preBase+start)/params.bin (preBase+start+window)/params.bin (preBase+start+window)/params.bin (preBase+start)/params.bin],...
+        % [y2 y2 y1 y1],...
+        % 'r','FaceAlpha',0.2,'EdgeColor','none')
 
     patch([0 (preBase*2+stimDur)/params.bin (preBase*2+stimDur)/params.bin 0],...
         [y2 y2 y1 y1],...
         'k','FaceAlpha',0.1,'EdgeColor','none')
 
 
+    TrialM = squeeze(Mr2(trials,:,round((preBase+start)/params.bin):round((preBase+start+window)/params.bin)))';
+
+    [mxTrial TrialNumber] = max(sum(TrialM));
+
+    RasterTrials = trials(TrialNumber);
+
+    patch([(preBase+start)/params.bin (preBase+start+window)/params.bin (preBase+start+window)/params.bin (preBase+start)/params.bin],...
+        [RasterTrials-0.5 RasterTrials-0.5 RasterTrials+0.5 RasterTrials+0.5],...
+        'r','FaceAlpha',0.3,'EdgeColor','none')
+
+
+
     %%%%%% Plot PSTH
     %%%%%% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-    subplot(20,1,[17 20])
+    subplot(18,1,[17 18])
 
     MRhist = BuildBurstMatrix(goodU(:,u),round(p.t),round((directimesSorted-preBase)),round((stimDur+preBase*2)));
 
@@ -320,8 +335,6 @@ for u = eNeuron
     b.FaceColor = 'k';
     b.FaceAlpha = 0.3;
     b.MarkerEdgeColor = "none";
-    ylabel('Spikes/sec','FontSize',10);
-    xlabel('Seconds','FontSize',10);
     xlim([0 round((stimDur+preBase*2)/100)*100])
 
     try %zero spiking in selection
@@ -332,15 +345,24 @@ for u = eNeuron
         continue
     end
 
-    xticks([0 preBase:300:(stimDur+preBase*2) round((stimDur+preBase*2)/100)*100])
+    xticks([0 preBase:600:(stimDur+preBase*2) round((stimDur+preBase*2)/100)*100])
 
     xline([preBase stimDur+preBase],'LineWidth',1.5)
 
-    xticklabels([-(preBase) 0:300:round((stimDur/100))*100 round((stimDur/100))*100 + preBase]./1000)
+    xticklabels([-(preBase) 0:600:round((stimDur/100))*100 round((stimDur/100))*100 + 2*preBase]./1000)
 
     ax = gca; % Get current axes
-    ax.YAxis.FontSize = 7; % Change font size of y-axis tick labels
-    ax.XAxis.FontSize = 7;
+    ax.XAxis.FontSize = 8;
+    ax.XAxis.FontName = 'helvetica';
+
+    ax.YAxis.FontSize = 8;
+    ax.YAxis.FontName = 'helvetica';
+
+    ylabel('[spk/s]','FontSize',10,'FontName','helvetica');
+    xlabel('Time [s]','FontSize',10,'FontName','helvetica');
+
+    ylims = ylim;
+    yticks([round(ylims(2)/10)*5 round(ylims(2)/10)*10])
 
 
     %%%%PLot raw data several trials one
@@ -358,7 +380,7 @@ for u = eNeuron
 
     chan = goodU(1,u);
 
-    subplot(20,1,[1 4])
+    subplot(18,1,[1 3])
 
     startTimes = directimesSorted(RasterTrials)+start;
 
@@ -371,65 +393,81 @@ for u = eNeuron
 
     [fig, mx, mn] = PlotRawDataNP(obj,fig = fig,chan = chan, startTimes = startTimes,...
         window = window,spikeTimes = spikes);
+    
+    ax = gca; 
+    ax.YAxis.FontSize = 8;
+    ax.YAxis.FontName = 'helvetica';
+   
+    xlims= xlim;
+    xticks([0:(xlims(2)/5):xlims(2)])
+    xticklabels([0:100:window])
+    ax.XAxis.FontSize = 8;
+    ax.XAxis.FontName = 'helvetica';
 
     xlabel(string(chan))
     xline(-start/1000,'LineWidth',1.5)
-    xticklabels([])
-    xlabel([]);xticks([])
-    ylabel('uV')
-    title({sprintf('U.%d-Unit-phy-%d-p-%d',u,phy_IDg(u),pvals(2,ur)),...
+    xlabel('Time [ms]','FontName','helvetica','FontSize',10) 
+
+    ax.XRuler.TickDirection = 'out';   % ticks only outward (bottom)
+    ax.XAxisLocation = 'bottom';
+    ylabel('[\muV]','FontSize',10,'FontName','helvetica')
+    title({sprintf('U.%d-Chan-%d-U.phy-%d-p-%d',u,channels(ur),phy_IDg(u),pvals(2,ur)),...
         sprintf('Ball-sizes-deg-%s',sizesString)});
 
     %%%%%%%%%%% Plot raster of selected trials
     %%%%%%%%%%% %%%%%%%%%%%%%%%%%%%%%%%%%%%
-    subplot(20,1,[5 7])
+    % subplot(20,1,[5 7])
+    % 
+    % RasterTrials =  trials;
+    % 
+    % bin3 = 4;
+    % trialM = BuildBurstMatrix(goodU(:,u),round(p.t/bin3),round((directimesSorted+start)/bin3),round((window)/bin3));
+    % 
+    % if numel(RasterTrials) == 1
+    %     TrialM = squeeze(trialM(RasterTrials,:,:))';
+    % else
+    %     TrialM = squeeze(trialM(trials,:,:));
+    % end
+    % 
+    % %TrialM(TrialM~=0) = 0.3;
+    % spikes1 = TrialM(TrialNumber,:);
+    % spikeLoc = find(spikes1 >0);
+    % if isempty(spikeLoc)
+    %     close
+    %     ur = ur+1;
+    %     continue
+    % end
+    % %TrialM(TrialNumber,spikeLoc) = 1;
+    % 
+    % %Select offset in which selected trial belongs (10 trials)
+    % imagesc(TrialM);colormap(flipud(gray(64)));
+    % caxis([0 1])
+    % xline([preBase stimDur+preBase],'LineWidth',1.5)
+    % ylabel([sprintf('%d trials',numel(trials))])
+    % 
+    % xticks([1:50/bin3:window/bin3+1])
+    % xticklabels([0:50:window])
+    % 
+    % ax = gca;
+    % ax.XRuler.TickDirection = 'out';   % ticks only outward (bottom)
+    % ax.XAxisLocation = 'bottom';
+    % 
+    % xlabel('Milliseconds')
+    % set(gca,'FontSize',7)
+    % 
+    % xline(-start/bin3,'LineWidth',1.5)
+    % 
+    % xline(spikeLoc,'LineWidth',1,'Color','r','Alpha',0.3)
+    % 
+    % yline(TrialNumber,'LineWidth',3,'Color','r','Alpha',0.3) %Mark trial
 
-    RasterTrials =  trials;
+    fig.Position = [1     1   366   379];
 
-    bin3 = 4;
-    trialM = BuildBurstMatrix(goodU(:,u),round(p.t/bin3),round((directimesSorted+start)/bin3),round((window)/bin3));
-
-    if numel(RasterTrials) == 1
-        TrialM = squeeze(trialM(RasterTrials,:,:))';
-    else
-        TrialM = squeeze(trialM(trials,:,:));
+    if params.PaperFig
+        obj.printFig(fig,sprintf('%s-%s-MovBall-SelectedTrials-eNeuron-%d',obj.dataObj.recordingName,fieldName,u),PaperFig = params.PaperFig)
+    elseif params.overwrite
+        obj.printFig(fig,sprintf('%s-%s-MovBall-SelectedTrials-eNeuron-%d',obj.dataObj.recordingName,fieldName,u))
     end
-
-    %TrialM(TrialM~=0) = 0.3;
-    spikes1 = TrialM(TrialNumber,:);
-    spikeLoc = find(spikes1 >0);
-    if isempty(spikeLoc)
-        close
-        ur = ur+1;
-        continue
-    end
-    %TrialM(TrialNumber,spikeLoc) = 1;
-
-    %Select offset in which selected trial belongs (10 trials)
-    imagesc(TrialM);colormap(flipud(gray(64)));
-    caxis([0 1])
-    xline([preBase stimDur+preBase],'LineWidth',1.5)
-    ylabel([sprintf('%d trials',numel(trials))])
-
-    xticks([1:50/bin3:window/bin3+1])
-    xticklabels([0:50:window])
-
-    ax = gca;
-    ax.XRuler.TickDirection = 'out';   % ticks only outward (bottom)
-    ax.XAxisLocation = 'bottom';
-
-    xlabel('Milliseconds')
-    set(gca,'FontSize',7)
-
-    xline(-start/bin3,'LineWidth',1.5)
-
-    xline(spikeLoc,'LineWidth',1,'Color','r','Alpha',0.3)
-
-    yline(TrialNumber,'LineWidth',3,'Color','r','Alpha',0.3) %Mark trial
-
-    fig.Position = [680     5   296   9734];
-
-    if params.overwrite,obj.printFig(fig,sprintf('%s-%s-MovBall-SelectedTrials-eNeuron-%d',obj.dataObj.recordingName,fieldName,u)),end
 
     if ur ~= length(eNeuron)
         close
