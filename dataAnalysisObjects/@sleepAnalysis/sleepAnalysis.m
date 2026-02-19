@@ -5464,7 +5464,7 @@ classdef sleepAnalysis < recAnalysis
             times=times(pp);
             if maxDendroClusters==2
 
-                [DC,order,clusters]=DendrogramMatrix(corrMat,'linkMetric','euclidean','linkMethod','ward','maxClusters',maxDendroClusters);
+                [DC,order,clusters,~,~,cop]=DendrogramMatrix(corrMat,'linkMetric','euclidean','linkMethod','ward','maxClusters',maxDendroClusters);
 
                 S1=mean(normsPxx(:,clusters==1),2);
                 S2=mean(normsPxx(:,clusters==2),2);
@@ -5474,7 +5474,7 @@ classdef sleepAnalysis < recAnalysis
                     crossFreq=freqHz(find(S1-S2>=0,1,'first'));
                 end
             else
-                [DC,order,clusters]=DendrogramMatrix(corrMat,'linkMetric','euclidean','linkMethod','ward','maxClusters',maxDendroClusters);
+                [DC,order,clusters,~,~,cop]=DendrogramMatrix(corrMat,'linkMetric','euclidean','linkMethod','ward','maxClusters',maxDendroClusters);
 
                 for i=1:maxDendroClusters
                     S(:,i)=mean(normsPxx(:,clusters==i),2);
@@ -5482,7 +5482,7 @@ classdef sleepAnalysis < recAnalysis
                 crossFreq=[];
             end
 
-            save(obj.files.spectralClustering,'times','corrMat','sPxx','normsPxx','freqHz','parFreqBandDetection','order','clusters','crossFreq');
+            save(obj.files.spectralClustering,'times','corrMat','sPxx','normsPxx','freqHz','parFreqBandDetection','order','clusters','crossFreq','cop');
         end
 
         %% getFilters
