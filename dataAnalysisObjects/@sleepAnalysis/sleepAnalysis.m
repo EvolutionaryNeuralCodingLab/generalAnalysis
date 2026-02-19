@@ -2701,7 +2701,7 @@ classdef sleepAnalysis < recAnalysis
             parseObj = inputParser;
             addParameter(parseObj,'ch',obj.recTable.defaulLFPCh(obj.currentPRec),@isnumeric);
             addParameter(parseObj,'avgOnCh',[],@isnumeric); %uses several averaged channels for d/b extraction
-            addParameter(parseObj,'movLongWin',1000*60*30,@isnumeric); %max freq. to examine
+            addParameter(parseObj,'movLongWin',1000*60*30,@isnumeric); %Length of chunking of the data during analysis- no need to change unless not enough memory
             addParameter(parseObj,'movWin',10000,@isnumeric);
             addParameter(parseObj,'movOLWin',9000,@isnumeric);
             addParameter(parseObj,'segmentWelch',1000,@isnumeric);
@@ -3119,150 +3119,7 @@ classdef sleepAnalysis < recAnalysis
             %plot(t_ms/1000/60/60,HAng);hold on;plot(TcycleMid/1000/60/60,HAng(pTcycleMid),'or');plot(TcycleOffset/1000/60/60,HAng(pTcycleOffset),'og');plot(TcycleOnset/1000/60/60,HAng(pTcycleOnset),'.m');
             save(obj.files.slowCycles,'parSlowCycles','TcycleOnset','TcycleOffset','TcycleMid','pSleepDBRatio','t_ms','DBRatioMedFilt','HAng');
         end
-
-        %{
-         function data=getSlowCycles(obj,varargin)
-            obj.checkFileRecording;
-            
-            parseObj = inputParser;
-            addParameter(parseObj,'ch',obj.recTable.defaulLFPCh(obj.currentPRec),@isnumeric);
-            addParameter(parseObj,'medianFiltWin',1000*20,@isnumeric);
-            addParameter(parseObj,'longOrdFiltWin',1000*1000,@isnumeric);
-            addParameter(parseObj,'longOrdFiltOrd',0.6,@isnumeric);
-            addParameter(parseObj,'estimateFilterValuesFromPeriod',1,@isnumeric);
-            addParameter(parseObj,'removeNonSignificatACSegments',0,@isnumeric);
-            addParameter(parseObj,'excludeIrregularCycles',1,@isnumeric); %for excluding cycles which do not have a regular duration
-            addParameter(parseObj,'overwrite',0,@isnumeric);
-            
-            addParameter(parseObj,'inputParams',false,@isnumeric);
-            parseObj.parse(varargin{:});
-            if parseObj.Results.inputParams
-                disp(parseObj.Results);
-                return;
-            end
-            
-            %evaluate all input parameters in workspace
-            for i=1:numel(parseObj.Parameters)
-                eval([parseObj.Parameters{i} '=' 'parseObj.Results.(parseObj.Parameters{i});']);
-            end
-            
-            %make parameter structure
-            parSlowCycles=parseObj.Results;
-            
-            %check if analysis was already done done
-            obj.files.slowCycles=[obj.currentAnalysisFolder filesep 'slowCycles_ch' num2str(ch) '.mat'];
-            if exist(obj.files.slowCycles,'file') & ~overwrite
-                if nargout==1
-                    data=load(obj.files.slowCycles);
-                else
-                    disp('Slow cycle analysis already exists for this recording');
-                end
-                return;
-            end
-            
-            dbRatioFile=[obj.currentAnalysisFolder filesep 'dbRatio_ch' num2str(ch) '.mat'];
-            obj.checkFileRecording(dbRatioFile,'Delta to beta analysis missing, please first run getDelta2BetaRatio');
-            load(dbRatioFile,'t_ms','bufferedDelta2BetaRatio','parDBRatio'); %load data  
-            
-            dbAutocorrFile=[obj.currentAnalysisFolder filesep 'dbAutocorr_ch' num2str(ch) '.mat'];
-            obj.checkFileRecording(dbAutocorrFile,'Delta to beta autocorr analysis missing, please first run getDelta2BetaAC');
-            load(dbAutocorrFile,'pSleepDBRatio','period','pSleepSlidingAC','pSleepDBRatioAC'); %load data
-                
-            timeBin=(parDBRatio.movWin-parDBRatio.movOLWin);
-            bufferedDelta2BetaRatio(isnan(bufferedDelta2BetaRatio))=0;
-            
-            %calculate filter values based on oscillation period
-            band=1.5;
-            if estimateFilterValuesFromPeriod
-                medianFiltWin=round(period*0.25);
-                maxCycleSamples=round((period*band)/timeBin);
-                minCycleSamples=round(period/band/timeBin);
-            else
-                maxCycleSamples=round(140/timeBin);
-                minCycleSamples=round(10/timeBin);
-            end
-            
-            %smooth with median filter
-            medianFiltSamples=medianFiltWin/timeBin;
-            DBRatioMedFilt = fastmedfilt1d(bufferedDelta2BetaRatio, medianFiltSamples);
-
-            %plot(t_ms/1000/60/60,DBRatioMedFilt);hold on;plot(t_ms/1000/60/60,DBLongOrdFilt);
-
-            Th=[];
-            hilbertPhaseCycleAnalysis=1;
-            if hilbertPhaseCycleAnalysis
-                HAng=phase(hilbert(DBRatioMedFilt));
-                %the peaks in this analysis are the end of the delta period and the troughs are the
-                [cycleOnsetPeaks,pTcycleOnset]=findpeaks(HAng,'MinPeakProminence',pi/8,'MinPeakDistance',minCycleSamples,'MinPeakHeight',0,'MinPeakWidth',minCycleSamples/4);
-                cycleOnset=t_ms(pTcycleOnset);
-                %
-        %{
-                    h(1)=subplot(2,1,1);plot(t_ms/1000/60/60,DBRatioMedFilt);
-                    h(2)=subplot(2,1,2);plot(t_ms/1000/60/60,HAng);hold on;plot(cycleOnset/1000/60/60,cycleOnsetPeaks,'or');
-                    linkaxes(h,'x');
-        %}
-            else
-                edgeSamples=100;
-                %long order filter to determine edges of DB fluctuation
-                longOrdFiltSamples=round(longOrdFiltWin/timeBin);
-                longOrdFiltOrdSamples=round(longOrdFiltOrd*longOrdFiltSamples);
-                DBLongOrdFilt = ordfilt2(DBRatioMedFilt, longOrdFiltOrdSamples, ones(longOrdFiltSamples,1));
-                sortDBLongOrdFilt=sort(DBLongOrdFilt);
-                sortDBLongOrdFilt(isnan(sortDBLongOrdFilt))=[];
-                Th=mean(sortDBLongOrdFilt(1:edgeSamples))+(mean(sortDBLongOrdFilt((end-edgeSamples):end))-mean(sortDBLongOrdFilt(1:edgeSamples)))/2;
-                %Th=min(DBLongOrdFilt)+(max(DBLongOrdFilt)-min(DBLongOrdFilt))/2;
-                pTcycleOnset=find((DBRatioMedFilt(2:end)>=Th & DBRatioMedFilt(1:end-1)<Th) & pSleepDBRatio(1:end-1));
-            end
-            %tSlidingAC
-            removeNonSleepSegments=1;
-            if removeNonSleepSegments
-                %pTcycleOnset is places in t_ms
-                pTcycleOnset=intersect(pTcycleOnset,find(pSleepDBRatio));
-            end
-            
-            if removeNonSignificatACSegments
-                pTcycleOnset=intersect(pTcycleOnset,find(pSleepDBRatioAC));
-            end
-
-            if excludeIrregularCycles %check if cycles are within the range of band and if not remove them
-                pTcycleOnset(diff(pTcycleOnset)<minCycleSamples)=[];
-                pTcycleOffset=pTcycleOnset(2:end);
-                pTcycleOnset=pTcycleOnset(1:end-1);
-                ppRemove=(pTcycleOffset-pTcycleOnset)>maxCycleSamples;
-                pTcycleOffset(ppRemove)=[];
-                pTcycleOnset(ppRemove)=[];
-            else
-                pTcycleOffset=pTcycleOnset(2:end);
-                pTcycleOnset=pTcycleOnset(1:end-1);
-            end
-            
-            %calculate the middle state transition
-            
-            pTcycleMid=zeros(numel(pTcycleOnset),1);
-            %edgesSamples=10;
-            for i=1:numel(pTcycleOnset)
-                [~,pTmp]=min(HAng(pTcycleOnset(i):pTcycleOffset(i)));
-                pTcycleMid(i)=pTmp+pTcycleOnset(i)-1;
-            %    pTmp=find(DBRatioMedFilt((pTcycleOnset(i)+edgesSamples):(pTcycleOffset(i)-edgesSamples))<Th,1,'first');
-            %    if ~isempty(pTmp)
-            %        pTcycleMid(i)=pTmp;
-            %    end
-            end
-            TcycleMid=t_ms(pTcycleMid);
-            TcycleOnset=t_ms(pTcycleOnset);
-            TcycleOffset=t_ms(pTcycleOffset);
-            %switch between onset/offset and mid to adhere to previous function.
-            %tmp=TcycleOffset;
-            %TcycleOnset=TcycleMid(1:end-1);
-            %TcycleOffset=TcycleMid(2:end);
-            %TcycleMid=tmp(1:end-1);
-            
-            %plot(t_ms/1000/60/60,HAng);hold on;plot(TcycleMid/1000/60/60,HAng(pTcycleMid),'or');plot(TcycleOnset/1000/60/60,HAng(pTcycleOnset),'og');
-            save(obj.files.slowCycles,'parSlowCycles','TcycleOnset','TcycleOffset','TcycleMid','pSleepDBRatio','t_ms','DBRatioMedFilt','Th');
-         end
          
-        %}
-
         function [h]=plotSlowCycles(obj,varargin)
 
             parseObj = inputParser;
@@ -4357,14 +4214,14 @@ classdef sleepAnalysis < recAnalysis
             parseObj.FunctionName='sleepAnalysis\getDelta2BetaAC';
             addParameter(parseObj,'ch',obj.recTable.defaulLFPCh(obj.currentPRec),@isnumeric);
             addParameter(parseObj,'tStart',0,@isnumeric); %ms
-            addParameter(parseObj,'win',obj.currentDataObj.recordingDuration_ms,@isnumeric);%ms
+            addParameter(parseObj,'win',obj.currentDataObj.recordingDuration_ms,@isnumeric);%ms - the window in the recording to analyze
             addParameter(parseObj,'maxPeriodBand',20,@isnumeric); %the frequency band around AC peak to look for it in sec
-            addParameter(parseObj,'movOLWin',4000,@isnumeric);
+            %addParameter(parseObj,'movOLWin',4000,@isnumeric); %The 
             addParameter(parseObj,'MinPeakProminenceLimit',0.04,@isnumeric);
-            addParameter(parseObj,'XCFLagIntialEstimation',500000,@isnumeric);% xcf lag in ms
-            addParameter(parseObj,'movingAutoCorrWin',1000*1000,@isnumeric);
+            addParameter(parseObj,'XCFLagIntialEstimation',500*1000,@isnumeric);% xcf lag in ms - need to be smaller than the movingAutoCorrWin
+            addParameter(parseObj,'movingAutoCorrWin',1000*1000,@isnumeric); % the window for XCF analysis - should be compatible with 
             addParameter(parseObj,'movingAutoCorrOL',900*1000,@isnumeric);
-            addParameter(parseObj,'oscilDurationMovingWin',60*60*1000,@isnumeric);
+            addParameter(parseObj,'oscilDurationMovingWin',60*60*1000,@isnumeric); %ms - time scale for the median filter for determining when sleep exists - does not affect AC function
             addParameter(parseObj,'smoothingDuration',1000*60*60,@isnumeric);
             addParameter(parseObj,'oscilDurationThresh',0.25,@isnumeric);
             addParameter(parseObj,'bestSleepWindow',2*60*60*1000,@isnumeric);

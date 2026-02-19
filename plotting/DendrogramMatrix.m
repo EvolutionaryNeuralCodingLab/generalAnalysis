@@ -14,7 +14,7 @@
 %
 % Recommended usage: [DC,order]=DendrogramMatrix(C);
 % To show matrix use : imagesc(DC); or pcolor(DC); - to show grid
-function [DC,order,clusters,h,Z]=DendrogramMatrix(C,varargin)
+function [DC,order,clusters,h,Z,cop]=DendrogramMatrix(C,varargin)
 %default options
 toPlotBinaryTree=0;
 figureHandle=[];
@@ -76,7 +76,10 @@ end
 %calculate euclidean distance
 Y=pdist(C,linkMetric);
 Z=linkage(Y,linkMethod);
-%C = cophenet(Z,Y);
+if nargout==6
+    cop = cophenet(Z,Y);
+end
+
 %I=inconsistent(Z,4);
 
 if strcmp(Orientation,'right')
