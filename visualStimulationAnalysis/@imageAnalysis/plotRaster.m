@@ -5,15 +5,16 @@ arguments (Input)
     params.overwrite logical = false
     params.analysisTime = datetime('now')
     params.inputParams = false
-    params.preBase = 200
+    params.preBase = 500
     params.bin = 10
     params.exNeurons = 1
     params.AllSomaticNeurons = false
     params.AllResponsiveNeurons = false
     params.fixedWindow = true
     params.MergeNtrials =1
-    params.GaussianLength = 50
+    params.GaussianLength = 3
     params.oneTrial = false
+    params.imageDir = 'W:\Large_scale_mapping_NP\NormalAndRandImages'
 end
 
 
@@ -29,14 +30,25 @@ pvals = Stats.pvalsResponse;
 stimDur = NeuronResp.stimDur;
 stimInter = NeuronResp.stimInter;
 
-positionsMatrix = [obj.VST.pos2X,obj.VST.pos2Y];%NewExp
+%Organize images asuming that shuffled images are have an even index in cell
+%array containing names
+imagesNames = cell(1,numel(obj.VST.imgNames));
+imagesNames(1:numel(imagesNames)/2) = obj.VST.imgNames(1:2:numel(imagesNames));
+imagesNames(numel(imagesNames)/2+1:numel(imagesNames)) = obj.VST.imgNames(2:2:numel(imagesNames));
+cd(params.imageDir)
 
-seqMatrix = obj.VST.pos;
+
+% Load and combine vertically
+imgs = cellfun(@imread, imagesNames, 'UniformOutput', false);
+
+combinedImg = cat(1, imgs{:});
+
+
 
 % trialDivision = numel(directimesSorted)/numel(unique(NeuronResp.C(:,2)))/numel(unique(NeuronResp.C(:,3)))/...
 %     numel(unique(NeuronResp.C(:,4)));
-nSize = numel(unique(NeuronResp.C(:,3)));
-nLum = numel(unique(NeuronResp.C(:,4)));
+nImages = numel(unique(NeuronResp.C(:,2)));
+nState = numel(unique(NeuronResp.C(:,3)));
 
 preBase = params.preBase;
 
@@ -61,17 +73,15 @@ win=stimDur+preBase*2;
 
 [Mr]=BuildBurstMatrix(goodU,round(p.t/bin),round((directimesSorted-preBase)/bin),round(win/bin));
 
-Mr = ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
+Mr = ConvBurstMatrix(Mr,fspecial('gaussian',[1 3],3),'same');
 
 [nT,nN,nB] = size(Mr);
 %indRG --> sorted infexes
 
-trialsPerCath = length(seqMatrix)/(length(unique(seqMatrix)));
+trialsPerCath = length(directimesSorted)/(nImages);
 
 ur =1;
 for u = eNeuron
-
-    t = tiledlayout(sqrt(max(seqMatrix)), sqrt(max(seqMatrix)),'TileSpacing','tight');
 
     if params.MergeNtrials >1
         j=1;
@@ -112,52 +122,35 @@ for u = eNeuron
      end
 
     [T,B] = size(Mr2);
-    j=1;
 
-    for i = 1:trialsPerCath/mergeTrials:T
-        %Build raster
-        M = Mr2(i:min(i+trialsPerCath/mergeTrials-1, end),:,:).*(1000/bin);
-        [nTrials,nTimes]=size(M);
-        nexttile
-        imagesc((1:nTimes),1:nTrials,squeeze(M));colormap(flipud(gray(64)));
-        xline(preBase/bin, LineWidth=1.5, Color="#77AC30");
-        xline((stimDur+preBase)/bin, LineWidth=1.5, Color="#0072BD");
-        xticks([preBase/bin (round(stimDur/100)*100+preBase)/bin]);
-        xticklabels(xticks*bin)
-        if nSize >1
-            yline([trialsPerCath/mergeTrials/nSize:trialsPerCath/mergeTrials/nSize:trialsPerCath/mergeTrials-1]+0.5,LineWidth=1)
-        end
+  
+    fig = figure;
+    subplot(1,10,1:8)
+    %Build raster
+    M = Mr2.*(1000/bin);
+    [nTrials,nTimes]=size(M);
+    imagesc((1:nTimes),1:nTrials,squeeze(M));colormap(flipud(gray(64)));
+    xline(preBase/bin, LineWidth=1.5, Color="#77AC30");
+    xline((stimDur+preBase)/bin, LineWidth=1.5, Color="#0072BD");
+    xticks([preBase/bin (round(stimDur/100)*100+preBase)/bin]);
+    xticklabels(xticks*bin)
 
-        if nLum >1
-            yline([trialsPerCath/mergeTrials/nLum:trialsPerCath/mergeTrials/nLum:trialsPerCath/mergeTrials-1]+0.5,LineWidth=1)
-        end
+    yline([trialsPerCath/mergeTrials:trialsPerCath/mergeTrials:T/mergeTrials-1]+0.5,LineWidth=1)
+    
+    yline([T/mergeTrials/nState:T/mergeTrials/nState:T/mergeTrials-1]+0.5,LineWidth=3,Color='r')
 
-        set(gca,'YTickLabel',[]);
-
-        if i < T - (trialsPerCath/mergeTrials)*max(positionsMatrix(:))-1
-            set(gca,'XTickLabel',[]);
-
-        end
-
-        if j ==  maxRespIn
-
-            ylims = ylim;
-
-            xlims = xlim;
-            hold on
-            patch([xlims sort(xlims,'descend')],[ylims(1) ylims(1) ylims(2) ylims(2)],'b', 'FaceAlpha', 0.2, 'EdgeColor', 'k', 'LineWidth', 2)
-            hold off
-        end
-
-        j = j+1;
-    end
-    fig = gcf;
     set(fig, 'Color', 'w');
     % Set the color of the figure and axes to black
     colorbar;
-    title(t,sprintf('Rect-GRid-raster-U%d-PhyU-%dpval-%s',u,phy_IDg(u),num2str(pvals(2,ur),'%.4f')))
-    ylabel(t,sprintf('%d trials',nTrials*mergeTrials))
-    xlabel(t,'Time (ms)')
+    %caxis([0 1]);
+    title(sprintf('NaturalImage-raster-U%d-PhyU-%dpval-%s',u,phy_IDg(u),num2str(pvals(2,ur),'%.4f')))
+    ylabel(sprintf('%d trials',nTrials*mergeTrials))
+    xlabel('Time (ms)')
+
+    subplot(1,10,9:10)
+    imagesc(combinedImg);
+    axis image off;
+
     fig.Position =  [147   270   662   446];%[147    58   994   658];
 
     %%Plot raw data
@@ -196,15 +189,11 @@ for u = eNeuron
     title(sprintf('U.%d-Unit-phy-%d-p-%d',u,phy_IDg(u),pvals(2,ur)));
     fig2.Position =  [147   270   662   446];
 
-    if params.overwrite,obj.printFig(fig2,sprintf('%s-rect-GRid-rawData-raster-eNeuron-%d',obj.dataObj.recordingName,u)),end
+    if params.overwrite,obj.printFig(fig2,sprintf('%s-rect-GRid-rawData-raster-eNeuron-%d',obj.dataObj.recordingName,u)),close(fig2),end
 
-    if params.overwrite,obj.printFig(fig,sprintf('%s-rect-GRid-raster-eNeuron-%d',obj.dataObj.recordingName,u)),end
+    if params.overwrite,obj.printFig(fig,sprintf('%s-rect-GRid-raster-eNeuron-%d',obj.dataObj.recordingName,u)),close(fig),end
     %prettify_plot
     
-    if u ~= eNeuron(end)
-        close all
-    end
-
     ur = ur+1;
 
 end %end eNeuron for loop

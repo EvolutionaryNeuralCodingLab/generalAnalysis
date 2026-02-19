@@ -303,7 +303,7 @@ classdef (Abstract) VStimAnalysis < handle
             expectedFlips=numel(allFlips);
             fprintf('%d flips expected, %d found (diff=%d). Linking existing flip times with stimuli...\n',expectedFlips,measuredFlips,expectedFlips-measuredFlips);
             if (expectedFlips-measuredFlips)>0.1*expectedFlips
-                fprintf('There are more than 10 percent mismatch in the number of diode and vStim expected flips. Cant continue!!! Please check diode extration!\n');
+                fprintf('There are more than 10 percent mismatch in the number of diode and vStim expected flips. Cant continue!!! Please check diode extraction!\n');
                 return;
             end
             switch obj.trialType
@@ -348,7 +348,7 @@ classdef (Abstract) VStimAnalysis < handle
                         frameMatch=numel(currentPCFlipTimes)-(numel(currentDiodeFlipTimes)+sum(pDelayed));
                         if frameMatch>=0 %all frames that were not present were missed
                             [in,p]=ismembertol(currentPCFlipTimes-currentPCFlipTimes(1),currentDiodeFlipTimes-currentDiodeFlipTimes(1),obj.VST.ifi*1000/2,'DataScale',1);
-                        elseif (frameMatch+sum(pDelayed))==0 %at least some of the frames were delayed in presentation and not just missed
+                        elseif (frameMatch+sum(pDelayed))==0 && ~isequal(obj.stimName,'StaticDriftingGrating')%at least some of the frames were delayed in presentation and not just missed
                             %look for a delay in diode flips which may explain a consistent delay
                             tmpDiode=currentDiodeFlipTimes+cumsum([zeros(1,-frameMatch) pDelayed])*(-obj.VST.ifi*1000);
                             [in,p]=ismembertol(currentPCFlipTimes-currentPCFlipTimes(1),tmpDiode-tmpDiode(1),obj.VST.ifi*1000/2,'DataScale',1);
@@ -591,7 +591,8 @@ classdef (Abstract) VStimAnalysis < handle
                             framesNspeed(2,1) = round(obj.VST.actualStimDuration*obj.VST.fps); 
 
                             if isequal(obj.stimName,'movie')
-                                 framesNspeed = repmat(framesNspeed,1,numel(obj.VST.trialsPerCategory));
+                                framesNspeed(2,1) = round(obj.VST.movFrameCount);
+                                framesNspeed = repmat(framesNspeed,1,numel(obj.VST.movieSequence));
                             end
                             
                             if isequal(obj.stimName,'StaticDriftingGrating')
@@ -650,7 +651,7 @@ classdef (Abstract) VStimAnalysis < handle
                                 DiodeCrosses{2,i} = downTimes;
                             end
 
-                            if (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i}))*1.1 < framesNspeed(2,i)
+                            if (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i}))*1.1 < framesNspeed(2,i) && ~isequal(obj.stimName,'StaticDriftingGrating')
                                 %if the number of calculated frames is less than 10%
                                 %then perform an interpolation with the
                                 %first and last cross
@@ -694,9 +695,19 @@ classdef (Abstract) VStimAnalysis < handle
                                 end
                             end
 
-                            if isequal(obj.stimName,'StaticDriftingGrating') %Make sure there is only one start frame. 
-                                
-                                firstCross = min([DiodeCrosses{1,i},DiodeCrosses{2,i}]);
+                            if isequal(obj.stimName,'StaticDriftingGrating') %Make sure there is only one start frame.
+
+                                [firstCross, idx]= min([DiodeCrosses{1,i}(1),DiodeCrosses{2,i}(1)]);
+
+                                if firstCross > t_msS(1) + trialOn(1) + (obj.VST.static_time*1000)/2 %Add first frame that might not be read because of no diode change
+                                    if idx ==1
+                                        DiodeCrosses{2,i} = [50+trialOn(i) DiodeCrosses{2,i}];
+                                    else
+                                        DiodeCrosses{1,i} = [50+trialOn(i) DiodeCrosses{1,i}];
+                                    end
+                                    [firstCross, idx]= min([DiodeCrosses{1,i}(1),DiodeCrosses{2,i}(1)]);
+                                end
+
                                 ups = DiodeCrosses{1,i};
                                 downs = DiodeCrosses{2,i};
                                 ups = ups(ups == firstCross | ups>firstCross+obj.VST.static_time*1000*0.9);
@@ -704,10 +715,25 @@ classdef (Abstract) VStimAnalysis < handle
 
                                 DiodeCrosses{1,i} =  ups;
                                 DiodeCrosses{2,i} = downs;
-                            end
 
+                                if (length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i}))*1.1 < framesNspeed(2,i)
+                                    [~, ind]=min([DiodeCrosses{1,i}(1)  DiodeCrosses{2,i}(1)]);
+                                    diodeAll = sort([DiodeCrosses{1,i} DiodeCrosses{2,i}]);
 
-                        end
+                                    %DiodeInterp = linspace(diodeAll(1),diodeAll(end),framesNspeed(2,i));
+                                    DiodeInterp = [diodeAll(1) diodeAll(2):1000/obj.VST.fps: diodeAll(2) + (framesNspeed(2,i)-1)*(1000/obj.VST.fps)];
+                                    if ind == 2 %Trial starts with down cross
+                                        DiodeCrosses{2,i} = DiodeInterp(1:2:end);
+                                        DiodeCrosses{1,i} = DiodeInterp(2:2:end);
+                                    else
+                                        DiodeCrosses{2,i} = DiodeInterp(2:2:end);
+                                        DiodeCrosses{1,i} = DiodeInterp(1:2:end);
+                                    end
+                                end
+
+                            end %end especial case "if" for static and drifting gratings. 
+
+                        end %End for loop through trials
 
                         diodeUpCross=cell2mat(DiodeCrosses(1,:));
                         diodeDownCross=cell2mat(DiodeCrosses(2,:));
@@ -725,6 +751,7 @@ classdef (Abstract) VStimAnalysis < handle
                         hold on;xline((DiodeCrosses{1,i} - trialOn(i))*(obj.dataObj.samplingFrequencyNI/1000))
                         xline((DiodeCrosses{2,i}  - trialOn(i))*(obj.dataObj.samplingFrequencyNI/1000),'r')
                         yline(Th)
+                        hold on;xline((upTimes-trialOn(i))*(obj.dataObj.samplingFrequencyNI/1000));xline((50)*(obj.dataObj.samplingFrequencyNI/1000))
                         % %xline((trialOff(i)-trialOn(1))*(obj.dataObj.samplingFrequencyNI/1000),'b')
                         % figure;plot(1:length(DiodeCrosses{1,i}) + length(DiodeCrosses{2,i})-1,diff(sort([DiodeCrosses{1,i} DiodeCrosses{2,i}])))
                     else
@@ -751,7 +778,7 @@ classdef (Abstract) VStimAnalysis < handle
                         failedTrials =[];
                         for i =1:length(trialOff)
 
-                            startSnip  = round((trialOn(i)-trialOn(1)-100)*(obj.dataObj.samplingFrequencyNI/1000))+1;
+                            startSnip  = round((trialOn(i)-trialOn(1))*(obj.dataObj.samplingFrequencyNI/1000))+1;
                             endSnip  = round((trialOff(i)-trialOn(1)+interDelayMs/2)*(obj.dataObj.samplingFrequencyNI/1000));
 
                             if endSnip>length(A)
@@ -765,22 +792,22 @@ classdef (Abstract) VStimAnalysis < handle
                                 t_msS = t_ms(startSnip:endSnip);
                             end
 
-                           
-
-                            fDat=medfilt1(signal,(obj.VST.stimDuration/4)*1000);
+                            fDat=-1*medfilt1(signal,(obj.VST.stimDuration/4)*1000);
                             Th=mean(fDat(1:100:end));
                             stdS = std(fDat(1:100:end));
                             sdK = 0;
-                            upTimes=t_msS(fDat(1:end-1)<Th-sdK*stdS & fDat(2:end)>=Th+sdK*stdS)+trialOn(1)+100;%+interDelayMs/2; %get real recording times
-                            downTimes=t_msS(fDat(1:end-1)>Th+sdK*stdS  & fDat(2:end)<=Th-sdK*stdS )+trialOn(1)+100;%+interDelayMs/2;
+                            upTimes=t_msS(fDat(1:end-1)<Th-sdK*stdS & fDat(2:end)>=Th-sdK*stdS)+trialOn(1);%+interDelayMs/2; %get real recording times
+                            downTimes=t_msS(fDat(1:end-1)>Th-sdK*stdS  & fDat(2:end)<=Th-sdK*stdS )+trialOn(1);%+interDelayMs/2;
 
                             if length(upTimes) >1 || length(downTimes)>1
                                 upTimes=upTimes(1);
-                                downTimes = downTimes(1);
+                                downTimes = downTimes(2);
                             end
 
                             if length(upTimes) <1 || length(downTimes)<1
-                                2+2
+                                
+                                    upTimes = trialOn(i)+10;
+                                    downTimes = trialOff(i)+10;
                             end
 
                             DiodeCrosses{1,i} = upTimes;

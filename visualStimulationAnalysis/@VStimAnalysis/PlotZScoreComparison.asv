@@ -354,6 +354,8 @@ if forloop
                 spkR_MB = mean(statsMB.Speed1.ObsReponse);
             end
 
+
+
         end
 
         if params.ignoreNonSignif
@@ -622,7 +624,7 @@ if forloop
         sumNeurSDGt{j} = sumNeurSDG;
 
         zScoresNI{j} = zScores_NIs;
-        spKrNI{j} = spkR_NIs';
+        spKrNI{j} = spkR_NIs;
         diffSpkNI{j} = spkDiff_NIs;
         pvalsNI{j} = pvals_NI;
         sumNeurNIt{j} = sumNeurNI;
@@ -876,9 +878,6 @@ allColorIndices = repmat(AnIndex,numel(Stims2Comp2),1);
 
 % ---- Swarmchart (Larger Left Subplot) ----
 nexttile % Takes most of the space
-% y(isnan(y)) =0;
-% y(y == -inf) = 0;
-
 if ~params.EachStimSignif
     swarmchart(x, y, 5, [colormapUsed(allColorIndices,:)], 'filled','MarkerFaceAlpha',0.7); % Marker size 50
 else
