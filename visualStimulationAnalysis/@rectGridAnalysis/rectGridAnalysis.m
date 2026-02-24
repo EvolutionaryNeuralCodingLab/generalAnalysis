@@ -96,7 +96,7 @@ classdef rectGridAnalysis < VStimAnalysis
 
             %%Create window to scan rasters and get the maximum response
             duration = params.durationWindow; %window in ms, same as in MB
-            Mr = BuildBurstMatrix(goodU,round(p.t/bin),round((directimesSorted)/bin),round((stimDur+duration)/bin)); %response matrix
+            Mr = BuildBurstMatrix(goodU,round(p.t/bin),round((directimesSorted)/bin),round((stimDur)/bin)); %response matrix
             
             
             [MrC]=ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
@@ -255,7 +255,7 @@ classdef rectGridAnalysis < VStimAnalysis
                 params.analysisTime = datetime('now')
                 params.inputParams = false
                 params.trialThreshold = 0.6
-                params.N_bootstrap = 5000;
+                params.N_bootstrap = 10000;
                 params.normTrials = false
                 
             end

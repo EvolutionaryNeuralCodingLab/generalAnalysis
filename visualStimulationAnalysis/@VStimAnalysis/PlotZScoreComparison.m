@@ -15,10 +15,11 @@ arguments
     params.overwriteGroupStats = false
     params.RespDurationWin = 100; %same as default
     params.shuffles = 2000; %same as default
-    params.StatMethod = {'ObsWindow'}
+    params.StatMethod = 'ObsWindow'
     params.ignoreNonSignif = false %when comparing first stim, ignore neurons non responsive to other stim
     params.EachStimSignif = false %resposnive neurons for each stim are selected (default: responsive neurons of first stime are selected)
-    params.ComparePairs = {};
+    params.ComparePairs = {}; %Compare only pairs, recommended
+    params.PaperFig logical = false
 end
 
 % Compare z-scores and p-values between moving ball and rect grid analyses
@@ -928,7 +929,12 @@ if forloop
 
 end
 
+
+
 if ~isempty(params.ComparePairs)
+
+
+    %%%%% Z-score analysis
 
     pairs = params.ComparePairs;
 
@@ -980,12 +986,35 @@ if ~isempty(params.ComparePairs)
 
 
 
-plotSwarmBootstrapWithComparisons(S.TableStimComp,pairs,ps,{'Z-score'}, yLegend='Z-score',yMaxVis=40,diff=true,plotMeanSem = false) 
+[fig,randiColors] = plotSwarmBootstrapWithComparisons(S.TableStimComp,pairs,ps,{'Z-score'}, yLegend='Z-score',yMaxVis=40,diff=true,plotMeanSem = false); 
 
-figure;
-scatter(S.TableStimComp.("Z-score")(S.TableStimComp.stimulus == pairs{1}),...
-    S.TableStimComp.("Z-score")(S.TableStimComp.stimulus == pairs{2})....
-    ,7,S.TableStimComp.animal(S.TableStimComp.stimulus == pairs{1}),...
+ax = gca;
+ax.YAxis.FontSize = 8;
+ax.YAxis.FontName = 'helvetica';
+
+ax = gca;
+ax.XAxis.FontSize = 8;
+ax.XAxis.FontName = 'helvetica';
+
+set(fig, 'Units', 'centimeters');
+set(fig, 'Position', [20 20 4 6]);
+
+NP = loadNPclassFromTable(expList(1)); %73 81
+vs = linearlyMovingBallAnalysis(NP);
+
+if params.PaperFig
+    vs.printFig(fig,sprintf('Zcore-comparison-Swarm-%s-%s',params.ComparePairs{1},params.ComparePairs{2}),PaperFig = params.PaperFig)
+end
+
+
+fig = figure;
+pair1= S.TableStimComp.("Z-score")(S.TableStimComp.stimulus == pairs{1});
+pair2 = S.TableStimComp.("Z-score")(S.TableStimComp.stimulus == pairs{2});
+colorAnimal = S.TableStimComp.animal(S.TableStimComp.stimulus == pairs{1});
+
+scatter(pair1(randiColors),...
+    pair2((randiColors))....
+    ,7,colorAnimal((randiColors)),...
     "filled","MarkerFaceAlpha",0.4)
 hold on
 axis equal
@@ -1008,6 +1037,23 @@ xlabel(s{1})
 ylabel(s{2})
 
 colormap(lines(numel(categories(S.TableStimComp.animal))))
+
+
+ax = gca;
+ax.YAxis.FontSize = 8;
+ax.YAxis.FontName = 'helvetica';
+
+ax = gca;
+ax.XAxis.FontSize = 8;
+ax.XAxis.FontName = 'helvetica';
+
+set(fig, 'Units', 'centimeters');
+set(fig, 'Position', [20 20 5 5]);
+
+if params.PaperFig
+    vs.printFig(fig,sprintf('Zcore-comparison-Scatter-%s-%s',params.ComparePairs{1},params.ComparePairs{2}),PaperFig = params.PaperFig)
+end
+
 
 
 %%%%%  SPIKE RATE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1047,30 +1093,63 @@ colormap(lines(numel(categories(S.TableStimComp.animal))))
         j = j+1;
     end
 
-V1max = max(diffs);
+    V1max = max(diffs);
 
-plotSwarmBootstrapWithComparisons(S.TableStimComp,pairs,ps,{'SpkR'}, yLegend='SpkR',yMaxVis=V1max,diff=true,plotMeanSem = false) 
+    [fig,randiColors] = plotSwarmBootstrapWithComparisons(S.TableStimComp,pairs,ps,{'SpkR'}, yLegend='SpkR',yMaxVis=V1max,diff=true,plotMeanSem = false);
 
-figure;
-scatter(S.TableStimComp.SpkR(S.TableStimComp.stimulus == pairs{1}),...
-    S.TableStimComp.SpkR(S.TableStimComp.stimulus == pairs{2})....
-    ,7,S.TableStimComp.animal(S.TableStimComp.stimulus == pairs{1}),...
-    "filled","MarkerFaceAlpha",0.4)
-hold on
-axis equal
+    ax = gca;
+    ax.YAxis.FontSize = 8;
+    ax.YAxis.FontName = 'helvetica';
 
-lims =[min(S.TableStimComp.SpkR) max(S.TableStimComp.SpkR)];
-plot(lims, lims, 'k--', 'LineWidth', 1.5)
-%lims = [-5 40];
-ylim(lims)
-xlim(lims)
+    ax = gca;
+    ax.XAxis.FontSize = 8;
+    ax.XAxis.FontName = 'helvetica';
 
+    set(fig, 'Units', 'centimeters');
+    set(fig, 'Position', [20 20 4 6]);
 
-xlabel(s{1})
-ylabel(s{2})
+    if params.PaperFig
+        vs.printFig(fig,sprintf('spkRate-comparison-Swarm-%s-%s',params.ComparePairs{1},params.ComparePairs{2}),PaperFig = params.PaperFig)
+    end
 
-colormap(lines(numel(categories(S.TableStimComp.animal))))
+    fig = figure;
 
+    pair1 = S.TableStimComp.SpkR(S.TableStimComp.stimulus == pairs{1});
+    pair2 = S.TableStimComp.SpkR(S.TableStimComp.stimulus == pairs{2});
+    colorAnimal = S.TableStimComp.animal(S.TableStimComp.stimulus == pairs{1});
+
+    scatter(pair1(randiColors),...
+        pair2(randiColors)....
+        ,7,colorAnimal(randiColors),...
+        "filled","MarkerFaceAlpha",0.4)
+    hold on
+    axis equal
+
+    lims =[min(S.TableStimComp.SpkR) max(S.TableStimComp.SpkR)];
+    plot(lims, lims, 'k--', 'LineWidth', 1.5)
+    %lims = [-5 40];
+    ylim(lims)
+    xlim(lims)
+
+    xlabel(s{1})
+    ylabel(s{2})
+
+    colormap(lines(numel(categories(S.TableStimComp.animal))))
+
+    ax = gca;
+    ax.YAxis.FontSize = 8;
+    ax.YAxis.FontName = 'helvetica';
+
+    ax = gca;
+    ax.XAxis.FontSize = 8;
+    ax.XAxis.FontName = 'helvetica';
+
+    set(fig, 'Units', 'centimeters');
+    set(fig, 'Position', [20 20 5 5]);
+
+    if params.PaperFig
+        vs.printFig(fig,sprintf('spkRate-comparison-Scatter-%s-%s',params.ComparePairs{1},params.ComparePairs{2}),PaperFig = params.PaperFig)
+    end
 
 
 end

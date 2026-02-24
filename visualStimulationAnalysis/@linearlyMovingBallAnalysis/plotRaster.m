@@ -461,7 +461,10 @@ for u = eNeuron
     % 
     % yline(TrialNumber,'LineWidth',3,'Color','r','Alpha',0.3) %Mark trial
 
-    fig.Position = [1     1   366   379];
+    %fig.Position = [1     1   366   379];
+
+    set(fig, 'Units', 'centimeters');
+    set(fig, 'Position', [20 20 9 12]);
 
     if params.PaperFig
         obj.printFig(fig,sprintf('%s-%s-MovBall-SelectedTrials-eNeuron-%d',obj.dataObj.recordingName,fieldName,u),PaperFig = params.PaperFig)

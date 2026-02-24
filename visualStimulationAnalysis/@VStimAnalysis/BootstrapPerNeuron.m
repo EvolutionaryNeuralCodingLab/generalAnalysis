@@ -4,7 +4,7 @@ arguments (Input)
     obj
     params.nBoot = 10000
     params.EmptyTrialPerc = 0.6
-    params.FilterEmptyResponses = true
+    params.FilterEmptyResponses = false
     params.overwrite = false
 end
 % Computes per-neuron z-scores of stimulus responses vs baseline using bootstrap
@@ -40,14 +40,6 @@ responseParams = obj.ResponseWindow;
 if isfield(responseParams, "Speed1")
 
     x = length(obj.VST.speed);
-
-    % % Generate field names for each unique speed
-    % topFields = arrayfun(@(n) sprintf('Speed%d', n), 1:x, 'UniformOutput', false);
-    % 
-    % % Initialize each as an empty struct with subfields
-    % subFields = {'pvalsResponse','ZScoreU','boot_means'};  % subfield names
-    % emptySubStruct = cell2struct(cell(1, numel(subFields)), subFields, 2);
-    % S = cell2struct(repmat({emptySubStruct}, 1, x), topFields, 2);
 
     Times.Speed1 = responseParams.Speed1.C(:,1)';
     Durations.Speed1 = responseParams.Speed1.stimDur;
@@ -94,7 +86,8 @@ for s=1:x
  
     end
 
-    Mr = BuildBurstMatrix(goodU,round(p.t),round(directimesSorted),round(stimDur+ responseParams.params.durationWindow)); %response matrix
+    %Mr = BuildBurstMatrix(goodU,round(p.t),round(directimesSorted),round(stimDur+ responseParams.params.durationWindow)); %response matrix
+    Mr = BuildBurstMatrix(goodU,round(p.t),round(directimesSorted),round(stimDur)); %response matrix
     Mb = BuildBurstMatrix(goodU,round(p.t),round(directimesSorted-0.75*obj.VST.interTrialDelay*1000),round(0.75*obj.VST.interTrialDelay*1000)); %baseline matrix
 
     %Take categories where at least> 50% of trials have spikes.
@@ -115,23 +108,12 @@ for s=1:x
 
                 if perc >= params.EmptyTrialPerc
                     responses(i:i+trialsCat-1, u) = zeros(1,trialsCat);
-                     baselines(i:i+trialsCat-1, u) = zeros(1,trialsCat);% Store z-scores for neurons with sufficient trials
+                    baselines(i:i+trialsCat-1, u) = zeros(1,trialsCat);% Store z-scores for neurons with sufficient trials
                 end
             end
         end
     end
 
-    % figure;imagesc(responses(:,60))
-    %
-    % figure;imagesc(baselines(:,60))
-    %
-    % figure;imagesc(squeeze(Mr(:,60,:)))
-    %
-    % figure;imagesc(baselines(:,60))
-
-
-    % respBoot = bootstrp(params.nBoot,@mean,responses);
-    % baseBoot =  bootstrp(params.nBoot,@mean,baselines);
 
     Diff = responses - baselines;
 
@@ -144,55 +126,8 @@ for s=1:x
     
     stdBase = std(bootBase);
 
-
-
-    % nNeurons = size(responses,2);
-    % 
-    % p_hat = zeros(nNeurons,1);
-    % p_dist_all = zeros(params.nBoot, nNeurons);   % optional
-    % 
-    % statFun2D = @(x) mean(x(:,2) > x(:,1));  % dominance statistic 
-    % 
-    % for nn = 1:nNeurons
-    % 
-    %     data = [baselines(:,nn), responses(:,nn)];
-    % 
-    %     p_dist = bootstrp(params.nBoot, statFun2D, data);
-    %     p_dist_all(:,nn) = p_dist;  % store if needed
-    % 
-    %     p_hat(nn) = mean(p_dist);
-    % end
-    % params.alpha= 0.05;
-    % % Decision rule like in the paragraph
-    % alpha = params.alpha;
-    % decision = strings(nNeurons,1);
-    % 
-    % for nn = 1:nNeurons
-    %     if p_hat(nn) > 1 - alpha/2
-    %         decision(nn) = "response > baseline";
-    %     elseif p_hat(nn) < alpha/2
-    %         decision(nn) = "baseline > response";
-    %     else
-    %         decision(nn) = "no difference";
-    %     end
-    % end
-    % figure;
-    % h = histogram(respBoot(:,1));
-    % h.BinEdges
-    % hold on;
-    % histogram(baseBoot(:,1),'BinEdges',h.BinEdges)
-
-    % D = respBoot - baseBoot; %hypothesis testing
-    % 
-    % pVal = mean(D <= 0); %by chance how often the baseline mean is bigger than the reponse.
-    % 
     z = mean(bootDiff,1) ./ stdDiff;
-    %z(isnan(z)) = 0;
- 
-    % 
-    % compare2 = [p_hat,pHat', pVal'];
-
-
+   
 
     if isfield(responseParams, "Speed1")
         % S.(fieldName).BootResponse = respBoot;

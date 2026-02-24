@@ -16,7 +16,9 @@ arguments (Input)
     params.testConvolution = false
     params.reduceFactor = 20;
     params.duration = 300; %response window
+    params.durationOff = 3000;
     params.offsetR = 50; %Response after onset of stim
+    params.TakeAllStimDur = true %calculate the receptive fields taking into account the whole window
 end
 
 
@@ -68,12 +70,19 @@ nLums = length(uLums); %%mAKE IT TO BE ABLE TO COMPARE TWO LUMINOSITIES.
 trialDiv  = length(seqMatrix)/length(unique(seqMatrix))/nSize/nLums;
 directimesSorted = C(:,1)';
 
+if params.TakeAllStimDur
+    params.offsetR=0;
+    params.duration = stimDur;
+    params.durationOff = NeuronResp.stimInter;
+end
+
 [Mr] = BuildBurstMatrix(goodU,round(p.t/params.bin),round((directimesSorted+params.offsetR)/params.bin),round(params.duration/params.bin));
-[Mro] = BuildBurstMatrix(goodU,round(p.t/params.bin),round((directimesSorted+stimDur)/params.bin),round(params.duration/params.bin));
-[Mb1] = BuildBurstMatrix(goodU,round(p.t/params.bin),round((directimesSorted-params.duration)/params.bin),round(params.duration/params.bin));
+[Mro] = BuildBurstMatrix(goodU,round(p.t/params.bin),round((directimesSorted+stimDur)/params.bin),round(params.durationOff/params.bin));
+
+% Mr = Mr.*(1000/params.bin); %convert to seconds
+% Mro = Mro.*(1000/params.bin); %convert to seconds
 
 [nT,nN,NB] = size(Mr);
-[nTo,nNo,NBo] = size(Mro);
 
 
 %%%%%%%%%%%%%%%%%%%% Shuffle raster before point multiplication in order
@@ -83,6 +92,7 @@ directimesSorted = C(:,1)';
 nShuffle =params.nShuffle;
 
 Raster = BuildBurstMatrix(goodU,round(p.t/params.bin),round((directimesSorted)/params.bin),round((stimDur)/params.bin));
+Raster = Raster.*(1000/params.bin);
 
 shuffledData = zeros(size(Raster,1), size(Raster,2), size(Raster,3), nShuffle);
 
@@ -179,9 +189,9 @@ else
              j=1;
             for i = 1:trialDiv:nT
 
-                meanR = mean(squeeze(MRtotal(o,i:i+trialDiv-1,u,:)));
+                meanR = mean(squeeze(MRtotal(o,i:i+trialDiv-1,u,:))).*(1000/params.bin); %convert to spikes per second
 
-                MrC(o,uLums == C(i,4),uSize == C(i,3),j,u,:) =meanR; %Combine on and off response
+                MrC(o,uLums == C(i,4),uSize == C(i,3),j,u,:) =meanR; 
 
                 j = j+1;
             end
@@ -257,7 +267,8 @@ MrMean(NanPos) = 0;
 
 Res = reshape(MrMean,[size(MrMean,1),size(MrMean,2),size(MrMean,3),1,1,size(MrMean,4),nN]).*1000;
 
-RFu = reshape(sum(VD.*Res,6),[size(MrMean,1),size(MrMean,2),size(MrMean,3),size(VD,4),size(VD,4),nN]);
+%Take mean
+RFu = reshape(mean(VD.*Res,6),[size(MrMean,1),size(MrMean,2),size(MrMean,3),size(VD,4),size(VD,4),nN]);
 
 offsetN = sqrt(max(seqMatrix));
 
@@ -284,6 +295,8 @@ end
 S.RFu = RFu;
 
 S.RFuFilt = RFuFilt;
+
+S.shuffledData = shuffledData;
 
 S.params = params;
 

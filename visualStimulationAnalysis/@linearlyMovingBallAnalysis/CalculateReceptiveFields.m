@@ -13,7 +13,7 @@ arguments (Input)
     params.speed = 1; %min =1, max = 2;
     params.noEyeMoves = false
     params.delay = 250
-    params.nShuffle = 20 %Number of shuffles to generate shuffled receptive fields. 
+    params.nShuffle = 2 %Number of shuffles to generate shuffled receptive fields. 
     params.testConvolution = false
     params.reduceFactor = 20 %reduce factor for screen resolution
 end

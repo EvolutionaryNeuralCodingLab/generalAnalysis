@@ -6,7 +6,7 @@ arguments (Input)
     params.analysisTime = datetime('now')
     params.inputParams = false
     params.preBase = 200
-    params.bin = 10
+    params.bin = 40
     params.exNeurons = []
     params.AllSomaticNeurons = false
     params.AllResponsiveNeurons = true
@@ -17,6 +17,8 @@ arguments (Input)
     params.selectedLum = []
     params.plotPatch logical = true
     params.PaperFig logical = false
+    params.stim2show = 300
+    
 end
 
 
@@ -71,12 +73,12 @@ else
 end
 
 bin=params.bin;
-win=stimDur+preBase*2;
+win= preBase+params.stim2show; %stimDur+preBase*2;
 %preBase = round(stimInter/20)*10;
 
 [Mr]=BuildBurstMatrix(goodU,round(p.t/bin),round((directimesSorted-preBase)/bin),round(win/bin));
 
-Mr = ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
+%Mr = ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
 
 
 
@@ -86,8 +88,10 @@ for u = eNeuron
     [nT,nN,nB] = size(Mr);
 
     trialsPerCath = length(directimesSorted)/(length(unique(seqMatrix)));
+    
+    figure('Units', 'centimeters', 'Position', [10 10 6 4])
 
-    t = tiledlayout(sqrt(max(seqMatrix)), sqrt(max(seqMatrix)),'TileSpacing','compact');
+    t = tiledlayout(sqrt(max(seqMatrix)), sqrt(max(seqMatrix)),'TileSpacing','tight');
 
     if params.MergeNtrials >1
         j=1;
@@ -122,11 +126,11 @@ for u = eNeuron
         [maxResp,maxRespIn]= max(meanMr);
         %Figure paper
         start = -50;
-        window = 500;
+        window = 300;
     else
         [maxResp,maxRespIn]= max(NeuronResp.NeuronVals(u,:,1));
         start = NeuronResp.NeuronVals(u,maxRespIn,3)*NeuronResp.params.binRaster -20;
-        window = 500;
+        window = 300;
     end
 
     [T,B] = size(Mr2);
@@ -142,23 +146,26 @@ for u = eNeuron
 
         imagesc((1:nTimes),1:nTrials,squeeze(M));colormap(flipud(gray(64)));
 
-        axis tight
+        %axis tight
         ax.Box = 'on';
-        ax.XColor = [0.5 0.5 0.5];
-        ax.YColor = [0.5 0.5 0.5];
+        ax.XColor = [0.6 0.6 0.6];
+        ax.YColor = [0.6 0.6 0.6];
 
-        if all(M(:)==0)
-            caxis([0 1]);   % choose meaningful limits
-            set(gca, 'Color', 'w')
-        end
-
-
+        caxis([0 1]);   % choose meaningful limits
+        set(gca, 'Color', 'w')
 
         %xline(preBase/bin, LineWidth=1.5, Color="#77AC30");
-        xline(preBase/bin, LineWidth=1.5,Color=[0.7 0.7 0.7])
-        xline((stimDur+preBase)/bin, LineWidth=1.5,Color=[0.7 0.7 0.7]);
+        %xline(preBase/bin, LineWidth=1.5,Color=[0.7 0.7 0.7])
+        %xline((stimDur+preBase)/bin, LineWidth=1.5,Color=[0.7 0.7 0.7]);
         %xticks([preBase/bin (round(stimDur/100)*100+preBase)/bin]);
         %xticklabels(xticks*bin/1000)
+
+        yl = ylim;
+        
+        patch([(preBase)/params.bin (preBase+params.stim2show)/params.bin (preBase+params.stim2show)/params.bin (preBase)/params.bin],...
+                [yl(1) yl(1) yl(2) yl(2)],...
+                'k','FaceAlpha',0.1,'EdgeColor','none')
+        
         xticks([])
         ax = gca;
         ax.XAxis.FontSize = 8;
@@ -201,11 +208,11 @@ for u = eNeuron
 
     fig = gcf;
     set(fig, 'Color', 'w');
-    % Set the color of the figure and axes to black
-    cb = colorbar;
-    cb.FontName = 'helvetica';
-    cb.FontSize = 8;
-    title(cb, '[spk/s]', 'FontSize', 10, 'FontName','helvetica');
+    % % Set the color of the figure and axes to black
+    % cb = colorbar;
+    % cb.FontName = 'helvetica';
+    % cb.FontSize = 8;
+    % title(cb, '[spk/s]', 'FontSize', 10, 'FontName','helvetica');
     
     
     %%%% scale bar (outside, below last tile – same geometry)
@@ -217,12 +224,12 @@ for u = eNeuron
     yl = ylim(ax);
 
     % ---- parameters (UNCHANGED from your logic) ----
-    xLen = stimDur / bin;          % ms
+    xLen = params.stim2show / bin;          % ms
     yLen = 0.12 * range(yl);
     marginY = 0.1;
 
     % ---- anchor in DATA coordinates (same as before) ----
-    x0 = min(xl) + preBase / bin;
+    x0 = preBase / bin;
     y0 = max(yl) - marginY * range(yl); %#ok<NASGU> (kept for clarity)
 
     % ---- convert DATA-x to AXES-normalized coordinates ----
@@ -258,7 +265,7 @@ for u = eNeuron
         yFig - textOffset, ...        % moved down from the horizontal line
         xNormLen * axPos(3), ...
         0.05], ...
-        'String', sprintf('%d sec', (round(stimDur/10)*10)/1000), ...
+        'String', sprintf('%d ms', (round(params.stim2show/10)*10)), ...
         'EdgeColor','none', ...
         'HorizontalAlignment','center', ...
         'VerticalAlignment','top', ...
@@ -270,11 +277,16 @@ for u = eNeuron
 
     title(t,sprintf('Rect-GRid-raster-U%d-PhyU-%dpval-%s',u,phy_IDg(u),num2str(pvals(2,ur),'%.4f')))
     ylabel(t,sprintf('%d Trials/Location',nTrials*mergeTrials),'FontSize',10,'FontName','helvetica')
-    xlabel(t,'Time [s]','FontSize',10,'FontName','helvetica')
-    fig.Position =  [147   323   662   393];%[147    58   994   658];
+    xlabel(t,'Time','FontSize',10,'FontName','helvetica')
+    
+    set(fig, 'Units', 'centimeters');
+    set(fig, 'Position', [20 20 6 6]);
+    
+    
+   % fig.Position =  [1120         651         466         307];%[147    58   994   658];
 
-    pos1 = cb.Position(1);
-    cb.Position(1) = pos1 + 0.02;
+    % pos1 = cb.Position(1);
+    % cb.Position(1) = pos1 + 0.03;
 
 
     if params.PaperFig
@@ -313,7 +325,7 @@ for u = eNeuron
     %
     % xline(-start/1000,'r','LineWidth',1.5)
     % xline((stimDur+abs(start))/1000,'r','LineWidth',1.5)
-    xticks([0,abs(100)/1000:abs(100)/1000:obj.VST.stimDuration+abs(100*2)/1000+1])
+    xticks([0,1/10:1/10:window/1000])
     xticklabels([0:abs(100):obj.VST.stimDuration*1000+abs(start*2)])
     xlabel('Time [ms]','FontSize',10,'FontName','helvetica')
     ax = gca;
@@ -324,13 +336,19 @@ for u = eNeuron
 
     ylabel('[\muV]','FontSize',10,'FontName','helvetica')
     title(sprintf('U.%d-Unit-phy-%d-p-%d',u,phy_IDg(u),pvals(2,ur)));
-    fig2.Position =  [ 218   450   565   133];
-
+    
+    if params.oneTrial
+        tr = 1;
+        set(fig2, 'Units', 'centimeters');
+        set(fig2, 'Position', [20 20 10 3]);
+    else
+        tr = numel(ind);
+    end
 
     if params.PaperFig
-        obj.printFig(fig2,sprintf('%s-rect-GRid-rawData-raster-eNeuron-%d',obj.dataObj.recordingName,u),PaperFig = params.PaperFig)
+        obj.printFig(fig2,sprintf('%s-rect-GRid-rawData-%d-Trials-raster-eNeuron-%d',obj.dataObj.recordingName,tr,u),PaperFig = params.PaperFig)
     elseif params.overwrite
-        obj.printFig(fig2,sprintf('%s-rect-GRid-rawData-raster-eNeuron-%d',obj.dataObj.recordingName,u))
+        obj.printFig(fig2,sprintf('%s-rect-GRid-rawData-%d-Trials-raster-eNeuron-%d',obj.dataObj.recordingName,u))
     end
 
     %prettify_plot

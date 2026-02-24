@@ -1,4 +1,4 @@
-function plotSwarmBootstrapWithComparisons(tbl, pairs, pValues, valueField, params)
+function [fig,randiColors] = plotSwarmBootstrapWithComparisons(tbl, pairs, pValues, valueField, params)
 
 arguments
     tbl table
@@ -13,7 +13,7 @@ arguments
     params.dotSize = 7
     params.yMaxVis = 1
     params.filled = true
-    params.Alpha = 0.4
+    params.Alpha = 0.2
     params.plotMeanSem = true
 end
 
@@ -134,20 +134,23 @@ tblPlot.insertion  = removecats(tblPlot.insertion);
 stimuli     = categories(tblPlot.stimulus);
 insertions  = categories(tblPlot.insertion);
 
+%% ----------------- RANDOMIZED COLORS -----------------
+randiColors = randperm(size(tblPlot,1));
+
 %% ----------------- FIGURE -----------------
-figure;
+fig = figure;
 ax = axes;
 hold(ax, 'on');
 set(ax, 'Clipping', 'off');  % <-- ADD THIS LINE
 
 % 1) Swarm first
 if params.filled
-    s=swarmchart(ax, tblPlot.stimulus, tblPlot.value, ...
-        params.dotSize, tblPlot.animal, 'filled', ...
+    s=swarmchart(ax, tblPlot.stimulus(randiColors), tblPlot.value(randiColors), ...
+        params.dotSize, tblPlot.animal(randiColors), 'filled', ...
         'MarkerFaceAlpha', params.Alpha);
 else
-    s=swarmchart(ax, tblPlot.stimulus, tblPlot.value, ...
-        params.dotSize, tblPlot.animal, ...
+    s=swarmchart(ax, tblPlot.stimulus(randiColors), tblPlot.value(randiColors), ...
+        params.dotSize, tblPlot.animal(randiColors), ...
         'MarkerEdgeAlpha',params.Alpha);
 end
 
@@ -178,6 +181,8 @@ if plotLinesBetween
 else
     yline(0,LineWidth=1,Alpha=0.7)
 end
+coloranimal = {lines(numel(categories(tblPlot.animal))),categories(tblPlot.animal)};
+
 colormap(lines(numel(categories(tblPlot.animal))))
 ylabel(params.yLegend)
 
