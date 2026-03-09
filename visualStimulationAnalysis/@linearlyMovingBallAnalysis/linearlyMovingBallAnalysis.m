@@ -89,9 +89,14 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
 
             preBase = round(stimInter-params.preBase);
             % Load Kilosort and phy results
-            p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
+            p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder,0,1,1);
             label = string(p.label');
             goodU = p.ic(:,label == 'good');
+
+            if isempty(goodU)
+                 warning('%s has No somatic Neurons, skipping experiment/n',obj.dataObj.recordingName)
+                return
+            end
 
             for s = 1:x %iterate among unique speeds
 

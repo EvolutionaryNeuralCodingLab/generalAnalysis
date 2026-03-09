@@ -27,7 +27,7 @@ end
 
 %% Moving ball
 
-for ex = [95] %97
+for ex = [69,81,95,97] %97
     NP = loadNPclassFromTable(ex); %73 81
     vs = linearlyMovingBallAnalysis(NP,Session=1);
     % vs.getSessionTime("overwrite",true);
@@ -35,17 +35,16 @@ for ex = [95] %97
     % % %vs.plotDiodeTriggers
     % vs.getSyncedDiodeTriggers("overwrite",true);
     % % %vs.plotSpatialTuningSpikes;
-    % r = vs.ResponseWindow('overwrite',true);
-    % results = vs.ShufflingAnalysis('overwrite',true);
+    r = vs.ResponseWindow('overwrite',true);
+    results = vs.ShufflingAnalysis('overwrite',true);
     % % vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'MergeNtrials',3)
     % %vs.plotRaster('AllResponsiveNeurons',true,'overwrite',true,'MergeNtrials',2,'bin',5,'GaussianLength',30,'MaxVal_1', false)
     % vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'speed',2,'MergeNtrials',3)
-    vs.plotRaster('exNeurons',73,'overwrite',true,'MergeNtrials',1,'OneDirection','up','OneLuminosity','white','PaperFig',true)
+    %vs.plotRaster('exNeurons',73,'overwrite',true,'MergeNtrials',1,'OneDirection','up','OneLuminosity','white','PaperFig',true)
     % %vs.plotCorrSpikePattern
     % %vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'speed',2)
-    %vs.CalculateReceptiveFields('overwrite',true);
-    
-    vs.PlotReceptiveFields('exNeurons',73,'overwrite',true,'OneDirection','up','OneLuminosity','white','PaperFig',true)
+    %vs.CalculateReceptiveFields('overwrite',true);   
+    %vs.PlotReceptiveFields('exNeurons',73,'overwrite',true,'OneDirection','up','OneLuminosity','white','PaperFig',true)
     result = vs.BootstrapPerNeuron('overwrite',true);%('overwrite',true);
     % pvals0_6Filter =result.Speed2.pvalsResponse';
     % compare = [pvals,pvalsNoFilt,pvals0_6Filter];
@@ -62,7 +61,8 @@ end
 %[49:54,84:90,92:96] %All SDG experiments
 %solve MBR
 %bootsrapRespBase
-VStimAnalysis.PlotZScoreComparison([49:54,64:97],{'MB','RG'},StatMethod='bootsrapRespBase', overwrite=false,ComparePairs={'MB','RG'},PaperFig=true)%[49:54,57:91] %%Check why I have different array dimensions in MBR
+VStimAnalysis.PlotZScoreComparison([49:54,64:97],{'MB','RG'},StatMethod='bootsrapRespBase', overwrite=false,ComparePairs={'MB','RG'},PaperFig=false,...
+    overwriteResponse=false,overwriteStats=false)%[49:54,57:91] %%Check why I have different array dimensions in MBR
 
 %% Gratings
 

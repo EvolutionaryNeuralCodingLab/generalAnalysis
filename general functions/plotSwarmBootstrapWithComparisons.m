@@ -151,7 +151,7 @@ if params.filled
 else
     s=swarmchart(ax, tblPlot.stimulus(randiColors), tblPlot.value(randiColors), ...
         params.dotSize, tblPlot.animal(randiColors), ...
-        'MarkerEdgeAlpha',params.Alpha);
+        'MarkerEdgeAlpha',params.Alpha,'LineWidth',1,'SizeData',30);
 end
 
 s.XJitter = params.Xjitter;
@@ -166,9 +166,16 @@ if plotLinesBetween
         1:height(tblPlot));
 
 
+    try
+        tblPlot.NeurID;
+        UI = 'NeurID';
+    catch
+        UI = 'insertion';
+    end
+
     % 3) Plot lines AFTER swarm
-    for i = 1:numel(unique(tblPlot.NeurID))
-        idx = double(tblPlot.NeurID) == i;
+    for i = 1:numel(unique(tblPlot.(UI)))
+        idx = double(tblPlot.(UI)) == i;
         if sum(idx) < 2
             continue
         end
@@ -306,7 +313,8 @@ if ~params.diff && ~isempty(pairs) && numel(pValues) == size(pairs,1)
 end
 
 %% ----------------- SIGNIFICANCE FOR DIFF MODE -----------------
-%% ----------------- SIGNIFICANCE FOR DIFF MODE -----------------
+ylims = ylim;
+
 if params.diff && ~isempty(pValues) && numel(pValues) >= 1
     
     fprintf('=== DIFF MODE SIGNIFICANCE ===\n');
@@ -325,6 +333,7 @@ if params.diff && ~isempty(pValues) && numel(pValues) >= 1
     fprintf('Text y position: %.3f\n', yText);
     
     % Draw significance stars
+
     if pValues(1) < 1e-3
         txt = '***';
         if pValues(1) == 0
@@ -352,7 +361,7 @@ if params.diff && ~isempty(pValues) && numel(pValues) >= 1
         
         fprintf('Drawing comparison text: %s\n', compText);
 
-        ylims = ylim;
+       
         
         % Adjust ylim if needed to fit both texts
         requiredHeight = yCompText + textPad*10;  % Extra padding above comparison text
@@ -364,7 +373,7 @@ if params.diff && ~isempty(pValues) && numel(pValues) >= 1
         end
     else
         fprintf('p-value not significant enough (>= 1e-3)\n');
-        ylim([0 yMaxVis]);
+        ylim([ylims(1) yMaxVis]);
     end
     
     fprintf('=== END DIFF MODE SIGNIFICANCE ===\n');

@@ -90,9 +90,14 @@ classdef rectGridAnalysis < VStimAnalysis
             trialDivision = numel(directimesSorted)/numel(unique(C(:,2)))/numel(unique(C(:,3)))/numel(unique(C(:,4)));
 
             % Load Kilosort and phy results
-            p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
+            p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder,0,1,1);
             label = string(p.label');
             goodU = p.ic(:,label == 'good');
+
+            if isempty(goodU) || size(goodU,2) < 3
+                warning('%s Has less than 3 somatic Neurons, skipping experiment%n',obj.dataObj.recordingName)
+                return
+            end
 
             %%Create window to scan rasters and get the maximum response
             duration = params.durationWindow; %window in ms, same as in MB

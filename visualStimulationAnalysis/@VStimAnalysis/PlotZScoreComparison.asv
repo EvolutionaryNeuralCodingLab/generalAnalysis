@@ -1490,23 +1490,17 @@ tempTable.TotalRespNeur = totals(G);
 %%% PLOTTING
 
 
-fig = plotSwarmBootstrapWithComparisons(tempTable,pairs,ps,{'respNeur','totalSomaticN'},fraction = true, yLegend='Responsive/total units',diff=false, filled = false, Xjitter = 'none',Alpha=0.6);
+fig = plotSwarmBootstrapWithComparisons(tempTable,pairs,ps,{'respNeur','totalSomaticN'},fraction = true, yLegend='Responsive/total units',diff=false, filled = false, Xjitter = 'none',Alpha=0.9);
 
-ax = gca;
-ax.YAxis.FontSize = 8;
-ax.YAxis.FontName = 'helvetica';
+ ax = gca;
+    ax.YAxis.FontSize = 8;
+    ax.YAxis.FontName = 'helvetica';
 
-ax = gca;
-ax.XAxis.FontSize = 8;
-ax.XAxis.FontName = 'helvetica';
+    ax = gca;
+    ax.XAxis.FontSize = 8;
+    ax.XAxis.FontName = 'helvetica';
 
-set(fig, 'Units', 'centimeters');
-set(fig, 'Position', [20 20 5 6]);
-
-
-if params.PaperFig
-    vs.printFig(fig,sprintf('ResponsiveUnits-comparison-%s-%s',params.ComparePairs{1},...
-        params.ComparePairs{2}),PaperFig = params.PaperFig)
-end
+    set(fig, 'Units', 'centimeters');
+    set(fig, 'Position', [20 20 4 6]);
 
 end

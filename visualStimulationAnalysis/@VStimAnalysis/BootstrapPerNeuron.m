@@ -25,6 +25,12 @@ p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
 label = string(p.label');
 goodU = p.ic(:,label == 'good'); %somatic neurons
 
+
+if isempty(goodU)
+    warning('%s has No somatic Neurons, skipping experiment/n',obj.dataObj.recordingName)
+    return
+end
+
 try
     DiodeCrossings = obj.getSyncedDiodeTriggers;
 catch
