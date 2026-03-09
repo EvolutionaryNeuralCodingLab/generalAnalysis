@@ -89,9 +89,14 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
 
             preBase = round(stimInter-params.preBase);
             % Load Kilosort and phy results
-            p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
+            p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder,0,1,1);
             label = string(p.label');
             goodU = p.ic(:,label == 'good');
+
+            if isempty(goodU)
+                 warning('%s has No somatic Neurons, skipping experiment/n',obj.dataObj.recordingName)
+                return
+            end
 
             for s = 1:x %iterate among unique speeds
 
@@ -113,7 +118,7 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
 
                 %4. Sort directions:
                 directimesSorted = C(:,1)';
-                Mr = BuildBurstMatrix(goodU,round(p.t/params.binRaster),round(directimesSorted/params.binRaster),round((stimDur+ params.durationWindow)/params.binRaster)); %response matrix
+                Mr = BuildBurstMatrix(goodU,round(p.t/params.binRaster),round(directimesSorted/params.binRaster),round((stimDur)/params.binRaster)); %response matrix
                 [MrC]=ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
 
                 MrNorm = MrC./(sum(MrC,3));
@@ -252,7 +257,7 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
                 params.analysisTime = datetime('now')
                 params.inputParams = false
                 params.trialThreshold = 0.6
-                params.N_bootstrap = 5000
+                params.N_bootstrap = 10000
                 params.speed = 0 %min =1, middle = 2, max=3;
                 params.AllSpeeds = true
                 params.normTrials = false

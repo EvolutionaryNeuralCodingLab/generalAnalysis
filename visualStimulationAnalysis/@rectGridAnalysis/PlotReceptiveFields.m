@@ -1,4 +1,4 @@
-function PlotReceptiveFields(obj,params)
+function [colorbarLims] = PlotReceptiveFields(obj,params)
 
 arguments (Input)
     obj
@@ -7,7 +7,7 @@ arguments (Input)
     params.inputParams = false
     params.exNeurons = 1;
     params.AllSomaticNeurons = false;
-    params.AllResponsiveNeurons = true;
+    params.AllResponsiveNeurons = false;
     params.noEyeMoves = false
     params.reduceFactor = 20
     params.allStimParamsCombined = false
@@ -16,6 +16,9 @@ arguments (Input)
     params.pixel_size = 33
     params.resolution = 1080
     params.meanAllNeurons = false %get mean of receptive fields
+    params.TypeOfResponse = "on"
+    params.PaperFig = false
+    params.colorbarLims = []
 end
 
 if params.inputParams,disp(params),return,end
@@ -150,9 +153,18 @@ for u = eNeuron
     cMax = max(RFuRed,[],'all');
     cMin = min(RFuRed,[],'all');
 
+
+    if params.TypeOfResponse == "on"
+        RFuRed = RFuRed(1,:,:,:,:);
+    elseif params.TypeOfResponse == "off"
+        RFuRed = RFuRed(2,:,:,:,:);
+    elseif params.TypeOfResponse ~= "both"
+        error(fprintf('params.TypeOfResponse is not valid, options are "on","off","both".\n'))
+    end
+
     hasString = find(~cellfun(@isempty, params.RFsDivision)==1); %gives you dimensions (dirs, sizes, or lums) that are to be combined.
 
-    tilesSize = size(RFuFilt,hasString);
+    tilesSize = prod(size(RFuRed,[1 2 3]));
 
     if numel(tilesSize) ==1 %%Create tile grid for RF ploting 
         if tilesSize<4
@@ -175,6 +187,14 @@ for u = eNeuron
 
     rspT={'on','off'};
 
+    if params.TypeOfResponse == "on"
+        RFuRed = RFuRed(1,:,:,:,:);
+    elseif params.TypeOfResponse == "off"
+        RFuRed = RFuRed(2,:,:,:,:);
+    elseif params.TypeOfResponse ~= "both"
+        error(fprintf('params.TypeOfResponse is not valid, options are "on","off","both".\n'))
+    end
+
     for r = 1:size(RFuRed,1)
         for l = 1:size(RFuRed,2)
             for s = 1:size(RFuRed,3)
@@ -182,10 +202,21 @@ for u = eNeuron
                 ax = nexttile;
                 imagesc((squeeze(RFuRed(r,l,s,:,:))));
 
+                xi = gca;
+                axi.YAxis.FontSize = 8;
+                axi.YAxis.FontName = 'helvetica';
+
+                xlabel('Degrees','FontSize',10,'FontName','helvetica')
+                ylabel('Degrees','FontSize',10,'FontName','helvetica')
+
+                axi = gca;
+                axi.XAxis.FontSize = 8;
+                axi.XAxis.FontName = 'helvetica';
+
                 caxis([cMin cMax]);
 
                 colormap('turbo')
-                title(sprintf('respType-%s-Lum-%s-Size-%s',string(rspT{r}),string(uLum(l)),string(uSize(s))))
+                title(sprintf('respType-%s-Lum-%s-Size-%s',string(rspT{r}),string(uLum(l)),string(uSize(s))),'FontSize',4)
 
                 %xlim([(redCoorX-redCoorY)/2 (redCoorX-redCoorY)/2+redCoorY])
                 xt = xticks;%(linspace((redCoorX-redCoorY)/2,(redCoorX-redCoorY)/2+redCoorY,offsetN*2));
@@ -200,9 +231,17 @@ for u = eNeuron
 
                 j = j+1;
                 
+
                 if j ==size(RFuRed,1)*size(RFuRed,2)*size(RFuRed,3)
-                    colorbar;
+                    c = colorbar;
+                    title(c,'spk/s','FontSize',8,'FontName','helvetica')
+
+                    if ~isempty(params.colorbarLims)
+                        clim([params.colorbarLims]);
+                    end
+                    [colorbarLims] = c.Limits;
                 end
+
                 axis(ax, 'equal'); 
                 pbaspect(ax, [1 1 1]);
               
@@ -210,20 +249,30 @@ for u = eNeuron
         end
     end
 
-    title(NeuronLayout, sprintf('Unit-%d',u));
+    %title(NeuronLayout, sprintf('Unit-%d',u));
 
-    figRF.Position = [  0.2328125                     0.315                0.23515625                   0.38125];
+    set(figRF, 'Units', 'centimeters');
+    set(figRF, 'Position', [2 2 4 4]);
+    Slum= strjoin(string(uLum),"-");
+
     if params.meanAllNeurons
         title(NeuronLayout,'MeanAllUnits');
-        if params.overwrite,obj.printFig(figRF,sprintf('%s-%s-MovBall-RF-sep-%s-Mean',...
+        if params.overwrite,obj.printFig(figRF,sprintf('%s-%s-RectGrid-RF-sep-%s-Mean',...
                 obj.dataObj.recordingName,fieldName, strjoin(params.RFsDivision, '&'))),end
         return
     end
     if params.noEyeMoves
        
     else
-        if params.overwrite,obj.printFig(figRF,sprintf('%s-%s-MovBall-RF-sep-%s-eNeuron-%d',...
-                obj.dataObj.recordingName,fieldName, strjoin(params.RFsDivision, '&'),u)),end
+        if params.PaperFig
+
+            if params.overwrite,obj.printFig(figRF,sprintf('%s-RectGrid-RF-lum-%s-eNeuron-%d',...
+                    obj.dataObj.recordingName, Slum,u),"PaperFig",true),end
+
+        else
+            if params.overwrite,obj.printFig(figRF,sprintf('%s-%s-RectGrid-RF-sep-%s-eNeuron-%d',...
+                    obj.dataObj.recordingName,fieldName, strjoin(params.RFsDivision, '&'),u)),end
+        end
     end
 
     if u ~= eNeuron(end)

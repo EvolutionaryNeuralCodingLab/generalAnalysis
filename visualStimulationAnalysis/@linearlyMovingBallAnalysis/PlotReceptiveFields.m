@@ -1,4 +1,4 @@
-function PlotReceptiveFields(obj,params)
+function [colorbarLims] = PlotReceptiveFields(obj,params)
 
 arguments (Input)
     obj
@@ -13,11 +13,16 @@ arguments (Input)
     params.noEyeMoves = false
     params.reduceFactor = 20
     params.allCombined = false
-    params.RFsDivision = {'Direction','',''}; %Direction, luminosities, sizes
     params.eye_to_monitor_distance = 21.5 % Distance from eye to monitor in cm
     params.pixel_size = 33
     params.resolution = 1080
     params.meanAllNeurons = false %get mean of receptive fields
+    params.PaperFig logical = false
+    params.OneDirection string = "all"
+    params.OneLuminosity string = "all"
+    params.OneSize string = "all"
+    params.colorbarLims = []
+
 end
 
 if params.inputParams,disp(params),return,end
@@ -33,6 +38,55 @@ responses = obj.ResponseWindow;
 uDir = unique(responses.(fieldName).C(:,2));
 uSize = unique(responses.(fieldName).C(:,4));
 uLum = unique(responses.(fieldName).C(:,6));
+
+%%% switch cases to plot one or all cases of one parameter
+if params.OneDirection ~= "all"
+    switch params.OneDirection
+        case "up"
+            dirIDX = find(uDir==0);
+        case "left"
+            dirIDX = find(uDir==1.57);
+        case "down"
+            dirIDX = find(uDir==3.14);
+        case "right"
+            dirIDX = find(uDir==1.57);
+        otherwise
+            error("Unknown inputPa value: %s", params.OneDirection)
+    end
+    DirectionSelected = uDir(dirIDX);
+else
+     DirectionSelected = uDir;
+end
+
+if params.OneLuminosity ~= "all"
+    switch params.OneLuminosity
+        case "black"
+            lumIDX = find(uLum==1);
+        case "white"
+            lumIDX = find(uLum==255);
+        otherwise
+            error("Unknown inputPa value: %s", params.OneLuminosity)
+    end
+    LuminositySelected = uLum(lumIDX);
+else
+     LuminositySelected = uLum;
+end
+
+if params.OneSize ~= "all"
+    switch params.OneSize
+        case "small"
+            sizeIDX = 1;
+        case "middle"
+            sizeIDX = 2;
+        case "big"
+            sizeIDX = 3;
+        otherwise
+            error("Unknown inputPa value: %s", params.OneLuminosity)
+    end
+    SizeSelected = uSize(sizeIDX);
+else
+     SizesSelected = uSize;
+end
 
 
 if isnan(params.exNeurons)
@@ -69,7 +123,8 @@ if params.noEyeMoves %%%mode quadrant
 else
     RFu = RFs.RFuST; %Sum of RFUs
 
-    RFuDirSizeFilt = RFs.RFuDirSizeLumFilt; %Size and dir and lum
+    RFuDirSizeLum = RFs.RFuDirSizeLumFilt; %Size and dir and lum
+
 
 end
 
@@ -109,50 +164,56 @@ for u = eNeuron
         figRF.Position = [ 680   577   156   139];
         if  params.noEyeMoves
             %print(figRF, sprintf('%s-NEM-MovBall-ReceptiveField-eNeuron-%d.pdf',NP.recordingName,u), '-dpdf', '-r300', '-vector');
-            if params.overwrite,obj.printFig(figRF,sprintf('%s-NEM-MovBall-ReceptiveField-eNeuron-%d.pdf',obj.dataObj.recordingName,u)),end
+            if params.PaperFig
+                if params.overwrite,obj.printFig(figRF,sprintf('%s-NEM-MovBall-ReceptiveField-eNeuron-%d.pdf',obj.dataObj.recordingName,u), PaperFig = params.PaperFig),end
+            else
+                if params.overwrite,obj.printFig(figRF,sprintf('%s-NEM-MovBall-ReceptiveField-eNeuron-%d.pdf',obj.dataObj.recordingName,u)),end
+            end
+
         else
-            %print(figRF, sprintf('%s-MovBall-ReceptiveField-eNeuron-%d.pdf',NP.recordingName,u), '-dpdf', '-r300', '-vector');
-            if params.overwrite,obj.printFig(figRF,sprintf('%s-MovBall-ReceptiveField-eNeuron-%d',obj.dataObj.recordingName,u)),end
+            if params.PaperFig
+                if params.overwrite,obj.printFig(figRF,sprintf('%s-MovBall-ReceptiveField-eNeuron-%d',obj.dataObj.recordingName,u), PaperFig = params.PaperFig),end
+            else
+                if params.overwrite,obj.printFig(figRF,sprintf('%s-MovBall-ReceptiveField-eNeuron-%d',obj.dataObj.recordingName,u)),end
+            end
         end
         
-
     end
-
 
     %%%% Plot receptive field per direction
     %%%% find max and min of colorbar limits
 
 
-
-    cMax = -inf;
-    cMin = inf;
-    hasNotString = find(~cellfun(@isempty, params.RFsDivision)==0); %gives you dimensions (dirs, sizes, or lums) that are to be combined.
-
-
-
     if params.meanAllNeurons
-        RFuRed =reshape(mean(RFuDirSizeFilt,6),[size(RFuDirSizeFilt,1),size(RFuDirSizeFilt,2),...
-            size(RFuDirSizeFilt,3),size(RFuDirSizeFilt,4)...
-            ,size(RFuDirSizeFilt,5)]);
+        RFuRed =reshape(mean(RFuDirSizeLum,6),[size(RFuDirSizeLum,1),size(RFuDirSizeLum,2),...
+            size(RFuDirSizeLum,3),size(RFuDirSizeLum,4)...
+            ,size(RFuDirSizeLum,5)]); %%Takes mean across all neurons
+        
         for i = 1:numel(hasNotString) %Take mean of elements that are not going to be compared (like luminosities, or directions, etc)
             RFuRed = mean(RFuRed,hasNotString(i));
             size(RFuRed)
         end
     else
-        RFuRed =reshape(RFuDirSizeFilt(:,:,:,:,:,ru),[size(RFuDirSizeFilt,1),size(RFuDirSizeFilt,2),size(RFuDirSizeFilt,3),size(RFuDirSizeFilt,4)...
-            ,size(RFuDirSizeFilt,5)]);
-        for i = 1:numel(hasNotString) %Take mean of elements that are not going to be compared (like luminosities, or directions, etc)
-            RFuRed = mean(RFuRed,hasNotString(i));
-            size(RFuRed)
+        RFuRed =reshape(RFuDirSizeLum(:,:,:,:,:,ru),[size(RFuDirSizeLum,1),size(RFuDirSizeLum,2),size(RFuDirSizeLum,3),size(RFuDirSizeLum,4)...
+            ,size(RFuDirSizeLum,5)]);
+
+        if params.OneSize ~= "all"
+            RFuRed = RFuRed(:,sizeIDX,:,:,:);
+        end
+
+        if params.OneLuminosity ~=  "all"
+             RFuRed = RFuRed(:,:,lumIDX,:,:);
+        end
+        
+        if params.OneDirection ~=  "all"
+             RFuRed = RFuRed(dirIDX,:,:,:,:);
         end
     end
   
     cMax = max(RFuRed,[],'all');
     cMin = min(RFuRed,[],'all');
 
-    hasString = find(~cellfun(@isempty, params.RFsDivision)==1); %gives you dimensions (dirs, sizes, or lums) that are to be combined.
-
-    tilesSize = size(RFuDirSizeFilt,hasString);
+    tilesSize = prod(size(RFuRed,[1 2 3]));
 
     if numel(tilesSize) ==1 %%Create tile grid for RF ploting 
         if tilesSize<4
@@ -167,9 +228,10 @@ for u = eNeuron
     end
 
 
-    %Create plot
+    %%%%%%%%%%%%%%% Create tiled plot showcasing different luminosities and
+    %%%%%%%%%%%%%%% directions
     figRF = figure('Units', 'normalized', 'OuterPosition', [0 0 1 1]); % Full screen figure;
-    NeuronLayout = tiledlayout(tilesSize(1),tilesSize(2),"TileSpacing","tight","Padding","tight");
+    NeuronLayout = tiledlayout(tilesSize(1),tilesSize(2),"TileSpacing","tight","Padding","compact");
 
     j=0;
 
@@ -182,8 +244,19 @@ for u = eNeuron
 
                 caxis([cMin cMax]);
 
+                axi = gca;
+                axi.YAxis.FontSize = 8;
+                axi.YAxis.FontName = 'helvetica';
+
+                xlabel('Degrees','FontSize',10,'FontName','helvetica')
+                ylabel('Degrees','FontSize',10,'FontName','helvetica')
+
+                axi = gca;
+                axi.XAxis.FontSize = 8;
+                axi.XAxis.FontName = 'helvetica';
+
                 colormap('turbo')
-                title(sprintf('Dir-%s-Size-%s-Lum-%s',string(uDir(d)),string(uSize(s)),string(uLum(l))))
+                title(sprintf('Dir-%s-Size-%s-Lum-%s',string(uDir(d)),string(uSize(s)),string(uLum(l))),'FontSize',4)
 
                 %xlim([(redCoorX-redCoorY)/2 (redCoorX-redCoorY)/2+redCoorY])
                 xt = xticks;%(linspace((redCoorX-redCoorY)/2,(redCoorX-redCoorY)/2+redCoorY,offsetN*2));
@@ -199,29 +272,53 @@ for u = eNeuron
                 j = j+1;
                 
                 if j ==size(RFuRed,1)*size(RFuRed,2)*size(RFuRed,3)
-                    colorbar;
+                    c = colorbar;
+                    title(c,'spk/s','FontSize',8,'FontName','helvetica')
+
+                    if ~isempty(params.colorbarLims)
+                        clim([params.colorbarLims]);
+                    end
+                    [colorbarLims] = c.Limits;
                 end
+                
                 axis(ax, 'equal'); 
                 pbaspect(ax, [1 1 1]);
-              
+
             end
         end
     end
 
     
-    title(NeuronLayout, sprintf('Unit-%d',u));
-    figRF.Position = [  0.2328125                     0.315                0.23515625                   0.38125];
+    %title(NeuronLayout, sprintf('Unit-%d',u),'FontSize',4);
+    %figRF.Position = [  0.2328125                     0.315                0.23515625                   0.38125];
+
+    Sdir= strjoin(string(DirectionSelected),"-");
+    Ssize= strjoin(string(SizesSelected),"-");
+    Slum= strjoin(string(LuminositySelected),"-");
+    
     if params.meanAllNeurons
         title(NeuronLayout,'MeanAllUnits');
         if params.overwrite,obj.printFig(figRF,sprintf('%s-%s-MovBall-RF-sep-%s-Mean',...
-                obj.dataObj.recordingName,fieldName, strjoin(params.RFsDivision, '&'))),end
+                obj.dataObj.recordingName,fieldName, sprintf('Dir-%s-Size-%s-Lum-%s',Sdir,Ssize,Slum))),end
         return
     end
+
+    if tilesSize(1) == 1
+        set(figRF, 'Units', 'centimeters');
+        set(figRF, 'Position', [2 2 4 4]);
+    end
+
+
     if params.noEyeMoves
-       
+
     else
-        if params.overwrite,obj.printFig(figRF,sprintf('%s-%s-MovBall-RF-sep-%s-eNeuron-%d',...
-                obj.dataObj.recordingName,fieldName, strjoin(params.RFsDivision, '&'),u)),end
+        if params.PaperFig
+            if params.overwrite,obj.printFig(figRF,sprintf('%s-%s-MovBall-RF-sep-%s-eNeuron-%d',...
+                    obj.dataObj.recordingName,fieldName, sprintf('Dir-%s-Size-%s-Lum-%s',Sdir,Ssize,Slum),u),PaperFig = params.PaperFig),end
+        else
+            if params.overwrite,obj.printFig(figRF,sprintf('%s-%s-MovBall-RF-sep-%s-eNeuron-%d',...
+                    obj.dataObj.recordingName,fieldName, sprintf('Dir-%s-Size-%s-Lum-%s',Sdir,Ssize,Slum),u)),end
+        end
     end
 
     if u ~= eNeuron(end)

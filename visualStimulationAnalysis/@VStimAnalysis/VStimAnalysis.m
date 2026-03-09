@@ -55,13 +55,29 @@ classdef (Abstract) VStimAnalysis < handle
             obj.spikeSortingFolder=obj.findFolderInExperiment(obj.dataObj.recordingDir,'kilosort');
         end
 
-        function printFig(obj,f,figName)
+        function printFig(obj,f,figName,params)
+            arguments (Input)
+                obj
+                f
+                figName
+                params.PaperFig logical = false %print fig in corresponding folder for paper figures
+            end
             %Prints plots in the relevant folder
             %f - figure handle
             %figName - the name of the figure in the figure folder
             set(f,'PaperPositionMode','auto');
-            disp(['Printing fig: ',obj.visualStimPlotsFolder,filesep,figName]);
-            print([obj.visualStimPlotsFolder,filesep,figName],'-djpeg','-vector','-r300');
+            
+            if params.PaperFig
+
+                parts = split(obj.visualStimPlotsFolder, filesep);
+                out = [fullfile(parts{1:2}), filesep, 'Paper_figs'];
+
+                %disp(['Printing fig: ',obj.visualStimPlotsFolder,filesep,figName]);
+                print([out,filesep,figName],'-djpeg','-vector','-r300');
+            else
+                disp(['Printing fig: ',obj.visualStimPlotsFolder,filesep,figName]);
+                print([obj.visualStimPlotsFolder,filesep,figName],'-djpeg','-vector','-r300');
+            end
         end
 
         function results = getStimLFP(obj,params)
