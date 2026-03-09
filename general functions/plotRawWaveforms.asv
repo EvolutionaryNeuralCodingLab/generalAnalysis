@@ -1,0 +1,266 @@
+function plotRawWaveforms(obj, unitID, params)
+% plotRawWaveforms - Plot raw spike waveforms from KS4 output, Phy-style
+%                    Optionally plots an auto-correlogram.
+%
+% INPUTS:
+%   obj    - Visual stimulation object with spikeSortingFolder and dataObj
+%   unitID - cluster ID to plot (single unit)
+%   params - (optional) struct with any of the following fields:
+%
+%   WAVEFORM params:
+%       nWaveforms    - number of random waveforms to plot      (default: 100)
+%       nChanAround   - channels above/below max amp channel    (default: 4)
+%       nPre          - samples before spike peak               (default: 20)
+%       nPost         - samples after spike peak                (default: 61)
+%
+%   CORRELOGRAM params:
+%       showCorr      - plot auto-correlogram                   (default: false)
+%       corrWin       - correlogram half-window in ms           (default: 100)
+%       corrBin       - correlogram bin size in ms              (default: 1)
+%
+% EXAMPLE:
+%   % Just waveforms with defaults
+%   plotRawWaveforms(obj, 42)
+%
+%   % Custom params
+%   params.nWaveforms  = 200;
+%   params.nChanAround = 6;
+%   params.showCorr    = true;
+%   params.corrWin     = 50;
+%   params.corrBin     = 0.5;
+%   plotRawWaveforms(obj, 42, params)
+
+arguments (Input)
+    obj
+    unitID      (1,1) double
+    params.nWaveforms  = 200;
+    params.nChanAround = 6;
+    params.showCorr    = true;
+    params.corrWin     = 50;
+    params.corrBin     = 0.5;
+end
+
+%% Parse params with defaults
+params = parseParams(params);
+
+%% Paths
+ksDir        = obj.spikeSortingFolder;
+recordingDir = obj.dataObj.recordingDir;
+
+%% Settings from obj
+n_channels  = str2double(obj.dataObj.nSavedChansImec);
+sample_rate = obj.dataObj.samplingFrequency;
+uV_per_bit  = unique(obj.dataObj.MicrovoltsPerAD);
+
+fprintf('Settings — nCh: %d | Fs: %d Hz | uV/bit: %.4f\n', ...
+    n_channels, sample_rate, uV_per_bit);
+
+%% Find binary file
+binFiles = dir(fullfile(recordingDir, '*.bin'));
+if isempty(binFiles), binFiles = dir(fullfile(recordingDir, '*.dat')); end
+if isempty(binFiles), error('No .bin or .dat file found in: %s', recordingDir); end
+binPath = fullfile(recordingDir, binFiles(1).name);
+fprintf('Using binary file: %s\n', binPath);
+
+%% Load KS4 output
+spike_times    = readNPY(fullfile(ksDir, 'spike_times.npy'));
+spike_clusters = readNPY(fullfile(ksDir, 'spike_clusters.npy'));
+templates      = readNPY(fullfile(ksDir, 'templates.npy'));        % [nUnits x T x nCh]
+chan_map        = readNPY(fullfile(ksDir, 'channel_map.npy'));      % [nCh x 1], 0-indexed
+chan_pos        = readNPY(fullfile(ksDir, 'channel_positions.npy'));% [nCh x 2]
+
+%% Find template index for this unit
+unit_ids = (0 : size(templates, 1) - 1)';
+tmpl_idx = find(unit_ids == unitID);
+if isempty(tmpl_idx)
+    error('Unit %d not found in templates.npy', unitID);
+end
+
+%% Find best channel (max peak-to-peak across template channels)
+unit_template = squeeze(templates(tmpl_idx, :, :));  % [T x nCh]
+p2p           = max(unit_template) - min(unit_template);
+[~, best_tmpl_chan] = max(p2p);
+
+% Channels to extract: nChanAround above/below best channel
+chan_indices = (best_tmpl_chan - params.nChanAround) : (best_tmpl_chan + params.nChanAround);
+chan_indices = chan_indices(chan_indices >= 1 & chan_indices <= size(templates, 3));
+n_chans_plot = numel(chan_indices);
+
+% Index of best channel within the plotted subset
+best_local_idx = find(chan_indices == best_tmpl_chan);
+
+% Map to binary file channels (1-indexed for MATLAB)
+bin_chans    = chan_map(chan_indices) + 1;
+best_bin_chan = bin_chans(best_local_idx);
+
+%% Get spike times for this unit
+st = double(spike_times(spike_clusters == unitID));
+if numel(st) < 2, error('Unit %d has fewer than 2 spikes.', unitID); end
+fprintf('Unit %d: %d total spikes, extracting %d waveforms\n', ...
+    unitID, numel(st), min(params.nWaveforms, numel(st)));
+
+idx    = randperm(numel(st), min(params.nWaveforms, numel(st)));
+st_sub = st(idx);
+
+%% Extract waveforms from binary
+waveform_len = params.nPre + params.nPost + 1;
+finfo        = dir(binPath);
+n_samp_total = finfo.bytes / (n_channels * 2);
+fid          = fopen(binPath, 'rb');
+
+waveforms = NaN(n_chans_plot, waveform_len, numel(st_sub));
+
+for si = 1:numel(st_sub)
+    s0 = st_sub(si) - params.nPre;
+    s1 = st_sub(si) + params.nPost;
+    if s0 < 1 || s1 > n_samp_total, continue; end
+
+    fseek(fid, (s0 - 1) * n_channels * 2, 'bof');
+    raw = fread(fid, [n_channels, waveform_len], '*int16');
+    if size(raw, 2) < waveform_len, continue; end
+
+    waveforms(:, :, si) = double(raw(bin_chans, :)) * uV_per_bit;
+end
+fclose(fid);
+
+% Baseline subtract (mean of pre-spike window)
+baseline  = mean(waveforms(:, 1:params.nPre, :), 2, 'omitnan');
+waveforms = waveforms - baseline;
+
+%% Compute correlogram if requested
+if params.showCorr
+    [ccg_counts, ccg_bins] = computeACG(st, sample_rate, params.corrWin, params.corrBin);
+end
+
+%% ---- Build layout ----
+t_ms    = (-params.nPre : params.nPost) / sample_rate * 1000;
+mean_wf = mean(waveforms, 3, 'omitnan');
+std_wf  = std(waveforms,  0, 3, 'omitnan');
+
+chan_depths       = chan_pos(chan_indices, 2);
+[~, depth_order] = sort(chan_depths, 'descend');  % shallowest at top
+
+colors = lines(n_chans_plot);
+fig    = figure('Color', 'w', 'Name', sprintf('Unit %d', unitID));
+
+if params.showCorr
+    % Two-column layout: waveforms | correlogram
+    outer = tiledlayout(fig, 1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+    title(outer, sprintf('Unit %d  |  %d waveforms  |  best ch: %d', ...
+        unitID, numel(st_sub), best_bin_chan), 'FontSize', 12);
+
+    % Left: nested layout for per-channel waveforms
+    ax_wf_container         = nexttile(outer, 1);
+    wf_layout               = tiledlayout(ax_wf_container.Parent, n_chans_plot, 1, ...
+                                  'TileSpacing', 'none', 'Padding', 'compact');
+    wf_layout.Layout.Tile   = 1;
+    xlabel(wf_layout, 'Time (ms)');
+
+    % Right: correlogram axes
+    ax_corr = nexttile(outer, 2);
+else
+    % Single-column layout: waveforms only
+    wf_layout = tiledlayout(fig, n_chans_plot, 1, ...
+        'TileSpacing', 'none', 'Padding', 'compact');
+    title(wf_layout, sprintf('Unit %d  |  %d waveforms  |  best ch: %d', ...
+        unitID, numel(st_sub), best_bin_chan), 'FontSize', 12);
+    xlabel(wf_layout, 'Time (ms)');
+end
+
+%% Plot one tile per channel
+wf_axes = gobjects(n_chans_plot, 1);
+for ci = 1:n_chans_plot
+    plot_ci     = depth_order(ci);
+    ax          = nexttile(wf_layout);
+    wf_axes(ci) = ax;
+
+    % Individual waveforms (translucent)
+    wf_ci = squeeze(waveforms(plot_ci, :, :));
+    plot(ax, t_ms, wf_ci, 'Color', [colors(plot_ci,:), 0.15], 'LineWidth', 0.5);
+    hold(ax, 'on');
+
+    % Std shading
+    upper = mean_wf(plot_ci,:) + std_wf(plot_ci,:);
+    lower = mean_wf(plot_ci,:) - std_wf(plot_ci,:);
+    fill(ax, [t_ms, fliplr(t_ms)], [upper, fliplr(lower)], ...
+        colors(plot_ci,:), 'FaceAlpha', 0.2, 'EdgeColor', 'none');
+
+    % Mean waveform
+    plot(ax, t_ms, mean_wf(plot_ci,:), 'Color', colors(plot_ci,:), 'LineWidth', 2);
+
+    xline(ax, 0, '--k', 'Alpha', 0.3);
+
+    % Highlight best channel with yellow background
+    if plot_ci == best_local_idx
+        set(ax, 'Color', [1 1 0.85]);
+    end
+
+    % Channel label + depth
+    ylabel(ax, sprintf('ch%d\n%.0fµm', bin_chans(plot_ci), chan_depths(plot_ci)), ...
+        'FontSize', 7, 'Rotation', 0, 'HorizontalAlignment', 'right');
+
+    if ci < n_chans_plot
+        set(ax, 'XTickLabel', []);
+    end
+    box(ax, 'off');
+end
+
+% Shared amplitude scale across all channels
+linkaxes(wf_axes, 'y');
+
+%% Plot correlogram
+if params.showCorr
+    bar(ax_corr, ccg_bins, ccg_counts, 1, ...
+        'FaceColor', [0.3 0.5 0.8], 'EdgeColor', 'none');
+    hold(ax_corr, 'on');
+    xline(ax_corr, 0, '--k', 'Alpha', 0.4);
+
+    % Shade refractory period (±2 ms)
+    ylims = ylim(ax_corr);
+    patch(ax_corr, [-2 2 2 -2], [0 0 ylims(2) ylims(2)], ...
+        'r', 'FaceAlpha', 0.1, 'EdgeColor', 'none');
+
+    xlabel(ax_corr, 'Lag (ms)');
+    ylabel(ax_corr, 'Spike count');
+    title(ax_corr, sprintf('ACG  |  bin %.1f ms  |  win ±%d ms', ...
+        params.corrBin, params.corrWin), 'FontSize', 10);
+    xlim(ax_corr, [-params.corrWin params.corrWin]);
+    box(ax_corr, 'off');
+end
+
+end % main function
+
+
+%% =========================================================================
+function params = parseParams(params)
+% Fill in defaults for any missing fields
+if ~isfield(params, 'nWaveforms'),  params.nWaveforms  = 100;   end
+if ~isfield(params, 'nChanAround'), params.nChanAround = 4;     end
+if ~isfield(params, 'nPre'),        params.nPre        = 20;    end
+if ~isfield(params, 'nPost'),       params.nPost       = 61;    end
+if ~isfield(params, 'showCorr'),    params.showCorr    = false; end
+if ~isfield(params, 'corrWin'),     params.corrWin     = 100;   end  % ms
+if ~isfield(params, 'corrBin'),     params.corrBin     = 1;     end  % ms
+end
+
+
+%% =========================================================================
+function [counts, bin_centers] = computeACG(spike_times_samples, fs, win_ms, bin_ms)
+% Compute auto-correlogram for a single unit
+%   spike_times_samples - spike times in samples
+%   fs                  - sampling rate (Hz)
+%   win_ms              - half-window in ms
+%   bin_ms              - bin size in ms
+
+st_ms       = spike_times_samples / fs * 1000;   % convert to ms
+edges       = -win_ms : bin_ms : win_ms;
+bin_centers = edges(1:end-1) + bin_ms / 2;
+counts      = zeros(1, numel(bin_centers));
+
+for i = 1:numel(st_ms)
+    diffs      = st_ms - st_ms(i);                         % lag to all other spikes
+    diffs(i)   = NaN;                                       % exclude self
+    diffs      = diffs(diffs > -win_ms & diffs < win_ms);  % within window
+    counts     = counts + histcounts(diffs, edges);
+end
+end
