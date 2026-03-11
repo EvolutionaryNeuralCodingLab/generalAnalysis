@@ -161,3 +161,5 @@ plot(squeeze(mean(wf.waveFormsMean(1,:,:), 2)));
 
 %%
 plotRawWaveforms(vs, 47, showCorr=true, corrWin=50, corrBin=0.5)
+
+plotRawWaveforms_spatially(vs, 47, showCorr=true, corrWin=50, corrBin=0.5,nChanAround=10)
