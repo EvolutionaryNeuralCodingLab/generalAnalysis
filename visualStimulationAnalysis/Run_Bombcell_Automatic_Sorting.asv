@@ -159,7 +159,22 @@ wf = getWaveForms(gwfparams);      % wf.waveForms: [units x waveforms x channels
 figure;
 plot(squeeze(mean(wf.waveFormsMean(1,:,:), 2)));
 
-%%
-plotRawWaveforms(vs, 47, showCorr=true, corrWin=50, corrBin=0.5)
+%% Check low amp waveforms 10 neurons per experiment
 
-plotRawWaveforms_spatially(vs, 47, showCorr=true, corrWin=50, corrBin=0.5,nChanAround105)
+PVexps = [49:54,64:97];
+idx = randi(length(PVexps), 1, 4);
+selected = PVexps(idx);
+
+
+
+for i = selected
+    NP = loadNPclassFromTable(53);
+    vs = linearlyMovingBallAnalysis(NP,Session=1);
+
+    p = vs.dataObj.convertPhySorting2tIc(vs.spikeSortingFolder,0,1,1);
+    phy_IDg = p.phy_ID(string(p.label') == 'good');
+
+
+    plotRawWaveforms(vs, [47:50], showCorr=true, corrWin=50, corrBin=0.5)
+
+end

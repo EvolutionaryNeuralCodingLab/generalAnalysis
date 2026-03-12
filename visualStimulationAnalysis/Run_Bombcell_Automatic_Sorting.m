@@ -7,12 +7,12 @@ exp = [49:54,64:97];%
 for ex =  exp%GoodRecordingsPV%allGoodRec %GoodRecordings%GoodRecordingsPV%GoodRecordingsPV%selecN{1}(1,:) %1:size(data,1)
     %%%%%%%%%%%% Load data and data paremeters
     %1. Load NP class
-    ex=69
+    ex=53
     NP = loadNPclassFromTable(ex);
     vs = linearlyMovingBallAnalysis(NP,Session=1);
     KSversion =4;
 
-    [qMetric,unitType]=NP.getBombCell(NP.recordingDir+"\kilosort4",0,KSversion);
+    [qMetric,unitType]=NP.getBombCell(NP.recordingDir+"\kilosort4",0,KSversion,1);
 
     %convertPhySorting2tIc(obj,pathToPhyResults,tStart,BombCelled)
 
@@ -159,7 +159,22 @@ wf = getWaveForms(gwfparams);      % wf.waveForms: [units x waveforms x channels
 figure;
 plot(squeeze(mean(wf.waveFormsMean(1,:,:), 2)));
 
-%%
-plotRawWaveforms(vs, 47, showCorr=true, corrWin=50, corrBin=0.5)
+%% Check low amp waveforms 10 neurons per experiment
 
-plotRawWaveforms_spatially(vs, 47, showCorr=true, corrWin=50, corrBin=0.5,nChanAround=10)
+PVexps = [49:54,64:97];
+idx = randi(length(PVexps), 1, 4);
+selected = PVexps(idx);
+
+
+
+for i = selected
+    NP = loadNPclassFromTable(53);
+    vs = linearlyMovingBallAnalysis(NP,Session=1);
+
+    p = vs.dataObj.convertPhySorting2tIc(vs.spikeSortingFolder,0,1,1);
+    phy_IDg = p.phy_ID(string(p.label') == 'good');
+
+
+    plotRawWaveforms(vs, [47:50], showCorr=true, corrWin=50, corrBin=0.5)
+
+end

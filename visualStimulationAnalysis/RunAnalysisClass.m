@@ -61,8 +61,8 @@ end
 %[49:54,84:90,92:96] %All SDG experiments
 %solve MBR
 %bootsrapRespBase
-VStimAnalysis.PlotZScoreComparison([49:54,64:97],{'MB','RG'},StatMethod='bootsrapRespBase', overwrite=false,ComparePairs={'MB','RG'},PaperFig=false,...
-    overwriteResponse=false,overwriteStats=false)%[49:54,57:91] %%Check why I have different array dimensions in MBR
+VStimAnalysis.PlotZScoreComparison([49:54,64:97],{'MB','RG'},StatMethod='bootsrapRespBase', overwrite=true,ComparePairs={'MB','RG'},PaperFig=true,...
+    overwriteResponse=true,overwriteStats=true)%[49:54,57:91] %%Check why I have different array dimensions in MBR
 
 %% Gratings
 
