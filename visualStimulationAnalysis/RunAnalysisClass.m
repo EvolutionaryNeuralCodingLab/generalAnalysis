@@ -70,7 +70,7 @@ VStimAnalysis.PlotZScoreComparison([49:54,64:97] ,{'MB','RG'},StatMethod='bootsr
 plotPSTH_MultiExp([49:54,64:97], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=false);
 
 %% Calculate spatial tuning
-SpatialTuningIndex([49:54,64:97], overwrite=true)
+SpatialTuningIndex([49:54,64:97], indexType = "L_geometric",overwrite=true)
 
 %% Gratings
 

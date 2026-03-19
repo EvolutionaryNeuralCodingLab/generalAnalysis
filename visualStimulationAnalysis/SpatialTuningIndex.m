@@ -8,7 +8,7 @@ arguments
     params.statType   string        = "BootstrapPerNeuron"
     params.speed      double        = 1
     params.plot       logical       = true
-    params.indexType  string        = "L_combined"  % L_amplitude, L_geometric, L_combined
+    params.indexType  string        = "L_amplitude"  % L_amplitude, L_geometric, L_combined
     params.onOff      double        = 1             % 1=on, 2=off (rectGrid only)
     params.sizeIdx    double        = 1
     params.lumIdx     double        = 1
@@ -83,19 +83,21 @@ if ~goto_plot
             continue
         end
 
+        obj_s = linearlyMovingBallAnalysis(NP);
+
         nameParts  = split(NP.recordingName, '_');
         animalName = nameParts{1};
 
         % ----------------------------------------------------------
         % Find union of responsive neurons across ALL stim types
         % ----------------------------------------------------------
-        % Get phy IDs and responsive units for each stim type
+
+        % Get phy IDs once — same for all stim types
+        p_s     = NP.convertPhySorting2tIc(obj_s.spikeSortingFolder);
+        phy_IDg = p_s.phy_ID(string(p_s.label') == 'good');
+
         respPhyIDs_all = cell(1, nStim);
-        phyIDs_all     = cell(1, nStim);
-
-        p_s      = obj_s.dataObj.convertPhySorting2tIc(obj_s.spikeSortingFolder);
-        phy_IDg  = p_s.phy_ID(string(p_s.label') == 'good');
-
+        respU_all      = cell(1, nStim);  % ADD — stores respU indices per stim
 
         for s = 1:nStim
             stimType = params.stimTypes(s);
@@ -113,7 +115,6 @@ if ~goto_plot
                     Stats = obj_s.ShufflingAnalysis;
                 end
 
- 
                 try
                     switch stimType
                         case "linearlyMovingBall"
@@ -126,30 +127,30 @@ if ~goto_plot
                     pvals = Stats.pvalsResponse;
                 end
 
-                respU              = find(pvals < 0.05);
-                phyIDs_all{s}      = phy_IDg;           % all good unit phy IDs for this stim
-                respPhyIDs_all{s}  = phy_IDg(respU);    % only responsive ones
+                respU             = find(pvals < 0.05);
+                respU_all{s}      = respU;           % ADD — index into gridSpikeRate dim 3
+                respPhyIDs_all{s} = phy_IDg(respU);  % phy IDs of responsive neurons
                 fprintf('  [%s] %d responsive neuron(s).\n', stimType, numel(respU));
 
             catch ME
                 warning('Could not get pvals for %s exp %d: %s', stimType, ex, ME.message);
-                phyIDs_all{s}     = [];
+                respU_all{s}      = [];
                 respPhyIDs_all{s} = [];
             end
         end
 
-        % Union of responsive phy IDs across stim types
+        % Intersection of responsive phy IDs across stim types
         sharedPhyIDs = respPhyIDs_all{1};
         for s = 2:nStim
-            sharedPhyIDs = union(sharedPhyIDs, respPhyIDs_all{s});
+            sharedPhyIDs = intersect(sharedPhyIDs, respPhyIDs_all{s});
         end
 
         if isempty(sharedPhyIDs)
-            fprintf('  No responsive neurons in exp %d — skipping.\n', ex);
+            fprintf('  No neurons responsive to all stim types in exp %d — skipping.\n', ex);
             continue
         end
 
-        fprintf('  %d neuron(s) responsive to at least one stim type in exp %d.\n', numel(sharedPhyIDs), ex);
+        fprintf('  %d neuron(s) responsive to all stim types in exp %d.\n', numel(sharedPhyIDs), ex);
 
 
         for s = 1:nStim
@@ -182,17 +183,27 @@ if ~goto_plot
 
             switch stimType
                 case "rectGrid"
-                    % Select onOff from both
-                    gridSpikeRateSelected = gridSpikeRate(:,:,:,params.onOff,:,:);   % [nGrid nGrid nN nSize nLum] -- but with singleton onOff removed
-                    gridShuffSelected     = gridSpikeRateShuff(:,:,:,:,params.onOff,:,:); % [nGrid nGrid nN nShuffle nSize nLum]
+                    gridSpikeRateSelected = gridSpikeRate(:,:,:,params.onOff,:,:);
+                    gridShuffSelected     = gridSpikeRateShuff(:,:,:,:,params.onOff,:,:);
+
+                    % Remove onOff singleton at dim 4 for rate: [9 9 nN 1 nSize nLum] -> [9 9 nN nSize nLum]
+                    gridSpikeRateSelected = reshape(gridSpikeRateSelected, ...
+                        [size(gridSpikeRateSelected,1), size(gridSpikeRateSelected,2), ...
+                        size(gridSpikeRateSelected,3), size(gridSpikeRateSelected,5), ...
+                        size(gridSpikeRateSelected,6)]);
+
+                    % Remove onOff singleton at dim 5 for shuff: [9 9 nN nShuffle 1 nSize nLum] -> [9 9 nN nShuffle nSize nLum]
+                    gridShuffSelected = reshape(gridShuffSelected, ...
+                        [size(gridShuffSelected,1), size(gridShuffSelected,2), ...
+                        size(gridShuffSelected,3), size(gridShuffSelected,4), ...
+                        size(gridShuffSelected,6), size(gridShuffSelected,7)]);
                 case "linearlyMovingBall"
                     gridSpikeRateSelected = gridSpikeRate;       % [nGrid nGrid nN nSize nLum]
                     gridShuffSelected     = gridSpikeRateShuff;  % [nGrid nGrid nN nShuffle nSize nLum]
             end
 
-            % Find indices in this stim's good units that match sharedPhyIDs
-            [~, neuronIdx] = ismember(sharedPhyIDs, phyIDs_all{s});
-            neuronIdx      = neuronIdx(neuronIdx > 0); % remove any not found in this stim
+            % Find which indices of THIS stim's gridSpikeRate correspond to sharedPhyIDs
+            [~, neuronIdx] = ismember(sharedPhyIDs, phy_IDg(respU_all{s}));
 
             gridSpikeRateSelected = gridSpikeRateSelected(:,:,neuronIdx,:,:);
             gridShuffSelected     = gridShuffSelected(:,:,neuronIdx,:,:,:);
@@ -202,8 +213,12 @@ if ~goto_plot
 
             % Get dimensions explicitly
             nN    = size(gridSpikeRateSelected, 3);
-            nSize = size(gridSpikeRateSelected, 5);
-            nLum  = size(gridSpikeRateSelected, 6);
+            nSize = size(gridSpikeRateSelected, 4);
+            nLum  = size(gridSpikeRateSelected, 5);
+            nGrid = size(gridSpikeRateSelected, 1);
+
+            fprintf('gridSpikeRateSelected size before reshape: %s\n', num2str(size(gridSpikeRateSelected)));
+            fprintf('Expected: [%d %d %d %d %d]\n', nGrid, nGrid, nN, nSize, nLum);
 
             % Reshape both to clean [nGrid nGrid nN nSize nLum]
             gridSpikeRateSelected = reshape(gridSpikeRateSelected, [nGrid nGrid nN nSize nLum]);
@@ -213,7 +228,6 @@ if ~goto_plot
             maxDist  = sqrt(2) * (nGrid - 1);
 
             % Average over shuffles
-
 
             % ----------------------------------------------------------
             % Compute indices
@@ -229,7 +243,8 @@ if ~goto_plot
                     rateFlat      = reshape(gridSpikeRateSelected(:,:,:,si,li), [nCells, nN]);
                     rateFlatShuff = reshape(gridShuffMean(:,:,:,si,li),          [nCells, nN]);
 
-                    L_amplitude = zeros(nN, 1);
+                    L_amplitude_diff = zeros(nN, 1);
+                    L_amplitude_ratio = zeros(nN, 1);
                     L_geometric = zeros(nN, 1);
                     L_combined  = zeros(nN, 1);
 
@@ -258,9 +273,14 @@ if ~goto_plot
                         if meanAll      == 0, meanAll      = eps; end
                         if meanAllShuff == 0, meanAllShuff = eps; end
 
-                        L_amplitude(u) = ...
+                        L_amplitude_diff(u) = ...
                             (meanTop - meanRest) / meanAll - ...
                             (meanTopShuff - meanRestShuff) / meanAllShuff;
+
+                        shuffleNorm = (meanTopShuff - meanRestShuff) / meanAllShuff;
+                        if shuffleNorm == 0, shuffleNorm = eps; end
+
+                        L_amplitude_ratio(u) = ((meanTop - meanRest) / meanAll) / shuffleNorm;
 
                         % Geometric
                         [rowIdx,      colIdx]      = ind2sub([nGrid nGrid], topIdx);
@@ -278,13 +298,14 @@ if ~goto_plot
                         end
 
                         L_geometric(u) = (1 - D) - (1 - DShuff);
-                        L_combined(u)  = L_amplitude(u) * L_geometric(u);
+                        L_combined(u)  = L_amplitude_diff(u) * L_geometric(u);
 
                     end
 
                     % Build rows for this condition
                     rows             = table();
-                    rows.L_amplitude = L_amplitude;
+                    rows.L_amplitude_diff = L_amplitude_diff;
+                    rows.L_amplitude_ratio = L_amplitude_ratio;
                     rows.L_geometric = L_geometric;
                     rows.L_combined  = L_combined;
                     rows.stimulus    = categorical(repmat({char(stimType)}, nN, 1));
@@ -385,7 +406,7 @@ if params.plot
     [fig, ~] = plotSwarmBootstrapWithComparisons(tblPlot, pairs, ps, {'value'}, ...
         yLegend     = params.yLegend, ...
         yMaxVis     = max(params.yMaxVis, V1max), ...
-        diff        = false, ...
+        diff        = true, ...
         Alpha       = params.Alpha, ...
         plotMeanSem = true);
 
