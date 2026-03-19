@@ -3,8 +3,8 @@ function results = BootstrapPerNeuron(obj, params)
 arguments (Input)
     obj
     params.nBoot = 10000
-    params.EmptyTrialPerc = 0.6
-    params.FilterEmptyResponses = false
+    params.EmptyTrialPerc = 0.7 %If empty trials per category are higher than EmptyTrialPerc then filter
+    params.FilterEmptyResponses = true
     params.overwrite = false
 end
 % Computes per-neuron z-scores of stimulus responses vs baseline using bootstrap
@@ -24,10 +24,61 @@ end
 p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
 label = string(p.label');
 goodU = p.ic(:,label == 'good'); %somatic neurons
+responseParams = obj.ResponseWindow;
+
 
 
 if isempty(goodU)
     warning('%s has No somatic Neurons, skipping experiment/n',obj.dataObj.recordingName)
+    results = [];
+    fprintf('Saving results to file.\n');
+     if isequal(obj.stimName, 'linearlyMovingBall')
+        % S.(fieldName).BootResponse = respBoot;
+        % S.(fieldName).BootBaseline = baseBoot;
+        S.Speed1.BootDiff = [];
+        S.Speed1.pvalsResponse = [];
+        S.Speed1.ZScoreU = []; 
+        S.Speed1.ObsDiff = [];
+        S.Speed1.ObsReponse = [];
+        S.Speed1.ObsBaseline = [];
+
+        if isfield(responseParams, "Speed2")
+            S.Speed2.BootDiff = [];
+            S.Speed2.pvalsResponse = [];
+            S.Speed2.ZScoreU = [];
+            S.Speed2.ObsDiff = [];
+            S.Speed2.ObsReponse = [];
+            S.Speed2.ObsBaseline = [];
+        end
+    elseif isequal(obj.stimName,'StaticDriftingGrating')
+        % S.(fieldName).BootResponse = respBoot;
+        % S.(fieldName).BootBaseline = baseBoot;
+        S.Moving.BootDiff = [];
+        S.Moving.pvalsResponse = [];
+        S.Moving.ZScoreU = [];
+        S.Moving.ObsDiff = [];
+        S.Moving.ObsReponse = [];
+        S.Moving.ObsBaseline = [];
+
+        S.Static.BootDiff = [];
+        S.Static.pvalsResponse = [];
+        S.Static.ZScoreU = [];
+        S.Static.ObsDiff = [];
+        S.Static.ObsReponse = [];
+        S.Static.ObsBaseline = [];
+    else
+        % S.BootResponse = respBoot;
+        % S.BootBaseline = baseBoot;
+        S.BootDiff = [];
+        S.pvalsResponse = [];
+        S.ZScoreU = []; 
+        S.ObsDiff = [];
+        S.ObsReponse = [];
+        S.ObsBaseline = [];
+    end
+
+    S.params = params;
+    save(obj.getAnalysisFileName,'-struct', 'S');
     return
 end
 
@@ -40,7 +91,6 @@ catch
 end
 
 
-responseParams = obj.ResponseWindow;
 
 %%If it is a moving stimulus with speed cathegories
 if isfield(responseParams, "Speed1")

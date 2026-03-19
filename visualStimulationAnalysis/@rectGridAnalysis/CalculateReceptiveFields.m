@@ -19,6 +19,8 @@ arguments (Input)
     params.durationOff = 3000;
     params.offsetR = 50; %Response after onset of stim
     params.TakeAllStimDur = true %calculate the receptive fields taking into account the whole window
+    params.statType string = "BootstrapPerNeuron"
+    params.nGrid = 9
 end
 
 
@@ -39,10 +41,18 @@ if isfile(obj.getAnalysisFileName) && ~params.overwrite
 end
 
 NeuronResp = obj.ResponseWindow;
-Stats = obj.ShufflingAnalysis;
-goodU = NeuronResp.goodU;
+
+% Stats struct for p-values
+if params.statType == "BootstrapPerNeuron"
+    Stats = obj.BootstrapPerNeuron;
+else
+    Stats = obj.ShufflingAnalysis;
+end
+
 p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
 phy_IDg = p.phy_ID(string(p.label') == 'good');
+label  = string(p.label');
+goodU  = p.ic(:, label == 'good');
 
 pvals = Stats.pvalsResponse;
 C = NeuronResp.C;
@@ -76,8 +86,10 @@ if params.TakeAllStimDur
     params.durationOff = NeuronResp.stimInter;
 end
 
-[Mr] = BuildBurstMatrix(goodU,round(p.t/params.bin),round((directimesSorted+params.offsetR)/params.bin),round(params.duration/params.bin));
-[Mro] = BuildBurstMatrix(goodU,round(p.t/params.bin),round((directimesSorted+stimDur)/params.bin),round(params.durationOff/params.bin));
+durationMin = min([params.duration params.durationOff]);
+
+[Mr] = BuildBurstMatrix(goodU,round(p.t/params.bin),round((directimesSorted+params.offsetR)/params.bin),round(durationMin/params.bin));
+[Mro] = BuildBurstMatrix(goodU,round(p.t/params.bin),round((directimesSorted+stimDur)/params.bin),round(durationMin/params.bin));
 
 % Mr = Mr.*(1000/params.bin); %convert to seconds
 % Mro = Mro.*(1000/params.bin); %convert to seconds
@@ -182,7 +194,7 @@ else
 
     %%Create summary of identical trials
 
-    for u = 1:length(goodU)
+    for u = 1:size(goodU,2)
        
 
         for o = 1:2
@@ -215,6 +227,10 @@ VideoScreen = zeros(screenRed,screenRed,size(C,1)/trialDiv);
 
 rectData = obj.VST.rectData;
 
+% Before the loop:
+XcStore = zeros(1, size(C,1)/trialDiv);
+YcStore = zeros(1, size(C,1)/trialDiv);
+
 j=1;
 
 for i = 1:trialDiv:length(C)
@@ -228,6 +244,9 @@ for i = 1:trialDiv:length(C)
 
     Yc = round((rectData.Y4{1,C(i,3)}(C(i,2))-rectData.Y1{1,C(i,3)}(C(i,2)))/2)+rectData.Y1{1,C(i,3)}(C(i,2));%...
     Yc = Yc/params.reduceFactor;
+
+    XcStore(j) = Xc; % still in pixel coords at this point
+    YcStore(j) = Yc;
 
     r = round((rectData.X2{1,C(i,3)}(C(i,2))-rectData.X1{1,C(i,3)}(C(i,2)))/2);
     r= r/params.reduceFactor;
@@ -255,8 +274,61 @@ for i = 1:trialDiv:length(C)
 
 end
 
-%  M = MrMean(:,u)'./Nbase(u);
+%%%%%%%%%% Spike rate grid map
+nGrid = params.nGrid;
+xEdges = linspace(0, screenSide(3)/params.reduceFactor, nGrid+1); % reduced pixel coords
+yEdges = linspace(0, screenSide(4)/params.reduceFactor, nGrid+1);
 
+gridSpikeRate      = zeros(nGrid, nGrid, nN, 2, nSize, nLums);
+gridSpikeRateShuff = zeros(nGrid, nGrid, nN, nShuffle, 2, nSize, nLums);
+trialCount         = zeros(nGrid, nGrid, nSize, nLums);
+
+jj = 1;
+for i = 1:trialDiv:nT
+
+    xBin = discretize(XcStore(jj), xEdges);
+    yBin = discretize(YcStore(jj), yEdges);
+
+    if isnan(xBin) || isnan(yBin)
+        jj = jj + 1;
+        continue
+    end
+
+    sizeIdx = find(uSize == C(i,3));
+    lumIdx  = find(uLums == C(i,4));
+
+    trialCount(yBin, xBin, sizeIdx, lumIdx) = trialCount(yBin, xBin, sizeIdx, lumIdx) + 1;
+
+    % On and off response
+    onRate  = reshape(mean(mean(Mr( i:i+trialDiv-1,:,:), 1), 3) .* (1000/params.bin), [1 1 nN]);
+    offRate = reshape(mean(mean(Mro(i:i+trialDiv-1,:,:), 1), 3) .* (1000/params.bin), [1 1 nN]);
+
+    gridSpikeRate(yBin, xBin, :, 1, sizeIdx, lumIdx) = gridSpikeRate(yBin, xBin, :, 1, sizeIdx, lumIdx) + onRate;
+    gridSpikeRate(yBin, xBin, :, 2, sizeIdx, lumIdx) = gridSpikeRate(yBin, xBin, :, 2, sizeIdx, lumIdx) + offRate;
+
+    for s = 1:nShuffle
+        shuffRate = reshape(mean(mean(shuffledData(i:i+trialDiv-1,:,:,s), 1), 3), [1 1 nN]);
+        gridSpikeRateShuff(yBin, xBin, :, s, sizeIdx, lumIdx) = ...
+            gridSpikeRateShuff(yBin, xBin, :, s, sizeIdx, lumIdx) + shuffRate;
+    end
+
+    jj = jj + 1;
+end
+
+% Normalize by trial count
+for si = 1:nSize
+    for li = 1:nLums
+        tc = max(trialCount(:,:,si,li), 1); % [nGrid x nGrid]
+        for s = 1:nShuffle
+            gridSpikeRateShuff(:,:,:,s,si,li) = gridSpikeRateShuff(:,:,:,s,si,li) ./ tc;
+        end
+        for oi = 1:2
+            gridSpikeRate(:,:,:,oi,si,li) = gridSpikeRate(:,:,:,oi,si,li) ./ tc;
+        end
+    end
+end
+
+%%%%%% Convolution
 VD = reshape(VideoScreen,[1 1 1 size(VideoScreen,1) size(VideoScreen,1) size(VideoScreen,3)]);
 VD = repmat(VD,[1,1,1,1,1,1,nN]);
 
@@ -265,7 +337,7 @@ NanPos = isnan(MrMean);
 
 MrMean(NanPos) = 0;
 
-Res = reshape(MrMean,[size(MrMean,1),size(MrMean,2),size(MrMean,3),1,1,size(MrMean,4),nN]).*1000;
+Res = reshape(MrMean,[size(MrMean,1),size(MrMean,2),size(MrMean,3),1,1,size(MrMean,4),nN]);
 
 %Take mean
 RFu = reshape(mean(VD.*Res,6),[size(MrMean,1),size(MrMean,2),size(MrMean,3),size(VD,4),size(VD,4),nN]);
@@ -297,6 +369,10 @@ S.RFu = RFu;
 S.RFuFilt = RFuFilt;
 
 S.shuffledData = shuffledData;
+
+S.gridSpikeRateShuff = gridSpikeRateShuff;
+
+S.gridSpikeRate = gridSpikeRate;
 
 S.params = params;
 

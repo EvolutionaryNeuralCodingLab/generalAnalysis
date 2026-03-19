@@ -4,10 +4,9 @@
 %
 exp = [49:54,64:97];%
 %tiledlayout(numel(exp),1)
-for ex =  exp%GoodRecordingsPV%allGoodRec %GoodRecordings%GoodRecordingsPV%GoodRecordingsPV%selecN{1}(1,:) %1:size(data,1)
+for ex =  exp(2:end)%GoodRecordingsPV%allGoodRec %GoodRecordings%GoodRecordingsPV%GoodRecordingsPV%selecN{1}(1,:) %1:size(data,1)
     %%%%%%%%%%%% Load data and data paremeters
     %1. Load NP class
-    ex=53
     NP = loadNPclassFromTable(ex);
     vs = linearlyMovingBallAnalysis(NP,Session=1);
     KSversion =4;
@@ -15,7 +14,9 @@ for ex =  exp%GoodRecordingsPV%allGoodRec %GoodRecordings%GoodRecordingsPV%GoodR
     [qMetric,unitType]=NP.getBombCell(NP.recordingDir+"\kilosort4",0,KSversion,1);
 
     %convertPhySorting2tIc(obj,pathToPhyResults,tStart,BombCelled)
-
+end
+%%
+for ex =  exp
     %
     % goodUnits = unitType == 1;
     % muaUnits = unitType == 2;
@@ -166,15 +167,29 @@ idx = randi(length(PVexps), 1, 4);
 selected = PVexps(idx);
 
 
-
-for i = selected
-    NP = loadNPclassFromTable(53);
+%%
+selected =69; 
+for i = selected(1:end)
+    NP = loadNPclassFromTable(i);
     vs = linearlyMovingBallAnalysis(NP,Session=1);
 
-    p = vs.dataObj.convertPhySorting2tIc(vs.spikeSortingFolder,0,1,1);
+    p = vs.dataObj.convertPhySorting2tIc(vs.spikeSortingFolder);
     phy_IDg = p.phy_ID(string(p.label') == 'good');
 
+    [param, qMetric, fractionRPVs_allTauR] = bc.load.loadSavedMetrics([NP.recordingDir filesep 'qMetrics']);
 
-    plotRawWaveforms(vs, [47:50], showCorr=true, corrWin=50, corrBin=0.5)
+    [~ ,idx] = sort(qMetric.rawAmplitude(ismember(qMetric.phy_clusterID,phy_IDg)));
+    
+    %Select units with lowest amplitude
+    selecUnits = qMetric.phy_clusterID(ismember(qMetric.phy_clusterID,phy_IDg));
+    selecUnits = selecUnits(idx(1:min([10 numel(selecUnits)])));
 
+    selecUnits = 104;
+    
+    plotRawWaveforms(vs, selecUnits, showCorr=true, corrWin=50, corrBin=0.5,nChanAround=6)
+
+    qMetric.signalToNoiseRatio(qMetric.phy_clusterID == 630,:)
+     % q = qMetric(ismember(qMetric.phy_clusterID,selecUnits),:);
 end
+
+[qMetric,unitType]=NP.getBombCell(NP.recordingDir+"\kilosort4",1,KSversion,0);

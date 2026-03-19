@@ -5,7 +5,7 @@ data = readtable(excelFile);
 
 %%
 %% Rect Grid
-for ex = 52 %84:91
+for ex = [49:54,64:97] %84:91
     NP = loadNPclassFromTable(ex); %73 81
     vsRe = rectGridAnalysis(NP);
     % vsRe.getSessionTime("overwrite",true);
@@ -70,7 +70,7 @@ VStimAnalysis.PlotZScoreComparison([49:54,64:97] ,{'MB','RG'},StatMethod='bootsr
 plotPSTH_MultiExp([49:54,64:97], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=false);
 
 %% Calculate spatial tuning
-SpatialTuningIndex([49:54,64:97], overwrite=true)
+SpatialTuningIndex([52:54,64:97])
 
 %% Gratings
 

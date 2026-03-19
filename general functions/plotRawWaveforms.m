@@ -25,7 +25,7 @@ arguments (Input)
     obj
     unitIDs               (1,:) double
     params.nWaveforms     (1,1) double  = 100
-    params.nChanAround    (1,1) double  = 10
+    params.nChanAround    (1,1) double  = 8
     params.nPre           (1,1) double  = 20
     params.nPost          (1,1) double  = 61
     params.showCorr       (1,1) logical = false

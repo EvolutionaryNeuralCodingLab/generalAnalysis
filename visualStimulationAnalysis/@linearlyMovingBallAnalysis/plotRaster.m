@@ -6,7 +6,7 @@ arguments (Input)
     params.analysisTime = datetime('now')
     params.inputParams = false
     params.preBase = 200
-    params.bin = 15
+    params.bin = 30
     params.exNeurons = 1
     params.AllSomaticNeurons = false
     params.AllResponsiveNeurons = false
@@ -15,16 +15,25 @@ arguments (Input)
     params.MergeNtrials =1
     params.oneTrial = false
     params.GaussianLength = 10
+    params.Gaussian logical = false
     params.MaxVal_1 =true
     params.useNormTrialWindow = false
     params.OneDirection string = "all"
     params.OneLuminosity string = "all"
     params.PaperFig logical = false
+    params.statType string = "BootstrapPerNeuron"
     
 end
 
 NeuronResp = obj.ResponseWindow;
-Stats = obj.ShufflingAnalysis;
+
+if params.statType == "BootstrapPerNeuron"
+    Stats = obj.BootstrapPerNeuron;
+else
+    Stats = obj.ShufflingAnalysis;
+end
+
+
 
 if params.speed ~= "max"
     fieldName =  sprintf('Speed%d',  str2double(params.speed));
@@ -46,12 +55,13 @@ else
 
 end
 
-goodU = NeuronResp.goodU;
 p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
 phy_IDg = p.phy_ID(string(p.label') == 'good');
 pvals = Stats.(fieldName).pvalsResponse;
 stimDur = NeuronResp.(fieldName).stimDur;
 stimInter = NeuronResp.stimInter;
+label = string(p.label');
+goodU = p.ic(:,label == 'good'); %somatic neurons
 
 C = NeuronResp.(fieldName).C;
 
@@ -73,9 +83,9 @@ end
 if params.OneLuminosity ~= "all"
     switch params.OneLuminosity
         case "black"
-            C = NeuronResp.(fieldName).C(round(C(:,6), 2)==1,:);
+            C = C(round(C(:,6), 2)==1,:);
         case "white"
-            C = NeuronResp.(fieldName).C(round(C(:,6), 2)==255,:);
+            C = C(round(C(:,6), 2)==255,:);
         otherwise
             error("Unknown inputPa value: %s", params.OneLuminosity)
     end
@@ -121,7 +131,9 @@ end
 
 [Mr] = BuildBurstMatrix(goodU(:,eNeuron),round(p.t/params.bin),round((directimesSorted-preBase)/params.bin),round((stimDur+preBase*2)/params.bin));
 
-[Mr]=ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
+if params.Gaussian
+    [Mr]=ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
+end
 
 channels = goodU(1,eNeuron);
 
@@ -257,15 +269,50 @@ for u = eNeuron
         maxRespIn = maxRespIn-1;
         X = squeeze(Mr2(maxRespIn*trialDivision+1:maxRespIn*trialDivision + trialDivision,:,:));
         window = 500; %in ms
-        % Moving mean across 2nd dimension
-        mm = movmean(X, round(window/params.bin), 2, 'Endpoints', 'discard');
-        % Average across rows to get kernel score
-        score = mean(mm, 1);
-        % Find max kernel location
-        [maxVal, idx] = max(score);
+
+
+        % % Moving mean across 2nd dimension
+        % mm = movmean(X, round(window/params.bin), 2, 'Endpoints', 'discard');
+        % % Average across rows to get kernel score
+        % score = mean(mm, 1);
+        % % Find max kernel location
+        % [maxVal, idx] = max(score);
+
+        X(X>1) = 1;
+        [n_rows, n_cols] = size(X);
+        n_windows = n_cols - round(window/params.bin) + 1;
+
+        % Compute mean for every sliding window in every row
+        % Result: 20 x n_windows matrix
+        window_means = zeros(n_rows, n_windows);
+        for col = 1:n_windows
+            window_means(:, col) = mean(X(:, col:col+round(window/params.bin)-1), 2);
+        end
+
+        % Find the overall maximum mean across all rows and windows
+        [~, linear_idx] = max(window_means(:));
+
+        % Convert linear index to (row, col) — col = start of window
+        [best_row, best_col] = ind2sub(size(window_means), linear_idx);
 
         % Kernel column range
-        start = idx;
+        start = best_col*params.bin;
+
+
+        % % --- Plot ---
+        % figure;
+        % imagesc(X);
+        % colorbar;
+        % axis tight;
+        % hold on;
+        % 
+        % % Highlight the full best row (horizontal span)
+        % rectangle('Position', [0.5, best_row - 0.5, n_cols, 1], ...
+        %     'EdgeColor', 'r', 'LineWidth', 1.5, 'LineStyle', '--');
+        % 
+        % % Highlight the selected window (column span within best row)
+        % rectangle('Position', [best_col - 0.5, best_row - 0.5, round(window/params.bin), 1], ...
+        %     'EdgeColor', 'y', 'LineWidth', 2.5);
 
     else
         if params.useNormTrialWindow
@@ -292,15 +339,20 @@ for u = eNeuron
         'k','FaceAlpha',0.1,'EdgeColor','none')
 
 
-    TrialM = squeeze(Mr2(trials,:,round((preBase+start)/params.bin):round((preBase+start+window)/params.bin)))';
+    % TrialM = squeeze(Mr2(trials,round((preBase+start)/params.bin):round((preBase+start+window)/params.bin)))';
+    % 
+    % [mxTrial TrialNumber] = max(sum(TrialM));
 
-    [mxTrial TrialNumber] = max(sum(TrialM));
+    RasterTrials = trials(best_row);
 
-    RasterTrials = trials(TrialNumber);
+    % patch([(preBase+start)/params.bin (preBase+start+window)/params.bin (preBase+start+window)/params.bin (preBase+start)/params.bin],...
+    %     [RasterTrials-0.5 RasterTrials-0.5 RasterTrials+0.5 RasterTrials+0.5],...
+    %     'r','FaceAlpha',0.3,'EdgeColor','none')
 
-    patch([(preBase+start)/params.bin (preBase+start+window)/params.bin (preBase+start+window)/params.bin (preBase+start)/params.bin],...
+    patch([(start)/params.bin (start+window)/params.bin (start+window)/params.bin (start)/params.bin],...
         [RasterTrials-0.5 RasterTrials-0.5 RasterTrials+0.5 RasterTrials+0.5],...
         'r','FaceAlpha',0.3,'EdgeColor','none')
+
 
 
 
@@ -362,7 +414,7 @@ for u = eNeuron
     xlabel('Time [s]','FontSize',10,'FontName','helvetica');
 
     ylims = ylim;
-    yticks([round(ylims(2)/10)*5 round(ylims(2)/10)*10])
+    yticks([round(ylims(2)/10)*5 ceil(ylims(2)/10)*10])
 
 
     %%%%PLot raw data several trials one
@@ -370,19 +422,21 @@ for u = eNeuron
     
     %Mark selected trial
    
-    bin3 = 2;
+    bin3 = 1;
     trialM = BuildBurstMatrix(goodU(:,u),round(p.t/bin3),round((directimesSorted+start)/bin3),round((window)/bin3));
     TrialM = squeeze(trialM(trials,:,:))';
     
-    [mxTrial TrialNumber] = max(sum(TrialM));
+    [mxTrial TrialNumber] = max(mean(TrialM));
 
-    RasterTrials = trials(TrialNumber);
+    %RasterTrials = trials(TrialNumber);
+
+    RasterTrials = trials(best_row); 
 
     chan = goodU(1,u);
 
     subplot(18,1,[1 3])
 
-    startTimes = directimesSorted(RasterTrials)+start;
+    startTimes = directimesSorted(RasterTrials)+start-preBase;
 
     freq = "AP"; %or "LFP"
 

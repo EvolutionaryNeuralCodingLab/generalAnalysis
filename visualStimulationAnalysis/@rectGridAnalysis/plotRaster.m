@@ -6,7 +6,7 @@ arguments (Input)
     params.analysisTime = datetime('now')
     params.inputParams = false
     params.preBase = 200
-    params.bin = 40
+    params.bin = 15
     params.exNeurons = []
     params.AllSomaticNeurons = false
     params.AllResponsiveNeurons = true
@@ -18,12 +18,19 @@ arguments (Input)
     params.plotPatch logical = true
     params.PaperFig logical = false
     params.stim2show = 300
+    params.statType string = "BootstrapPerNeuron"
     
 end
 
 
 NeuronResp = obj.ResponseWindow;
-Stats = obj.ShufflingAnalysis;
+
+if params.statType == "BootstrapPerNeuron"
+    Stats = obj.BootstrapPerNeuron;
+else
+    Stats = obj.ShufflingAnalysis;
+end
+
 directimesSorted = NeuronResp.C(:,1)';
 
 nSize = numel(unique(NeuronResp.C(:,3)));
@@ -38,10 +45,11 @@ end
 
 proportionTrials = 1/(numel(NeuronResp.C(:,1))/numel(directimesSorted));
 
-goodU = NeuronResp.goodU;
 p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
 phy_IDg = p.phy_ID(string(p.label') == 'good');
 pvals = Stats.pvalsResponse;
+label = string(p.label');
+goodU = p.ic(:,label == 'good'); %somatic neurons
 
 
 stimDur = NeuronResp.stimDur;
@@ -111,7 +119,7 @@ for u = eNeuron
         trialsPerCath = trialsPerCath/mergeTrials;
         nT = nT/mergeTrials;
     else
-        Mr2=Mr(:,u,:);
+        Mr2=Mr(:,ur,:);
         mergeTrials =1;
     end
 
@@ -288,15 +296,18 @@ for u = eNeuron
     % pos1 = cb.Position(1);
     % cb.Position(1) = pos1 + 0.03;
 
+    figName = sprintf('%s-rect-GRid-raster-eNeuron-%d-Lum-%d',obj.dataObj.recordingName,u,params.selectedLum);
+
 
     if params.PaperFig
-        obj.printFig(fig,sprintf('%s-rect-GRid-raster-eNeuron-%d',obj.dataObj.recordingName,u),PaperFig = params.PaperFig)
+        obj.printFig(fig,figName,PaperFig = params.PaperFig)
     elseif params.overwrite
-        obj.printFig(fig,sprintf('%s-rect-GRid-raster-eNeuron-%d',obj.dataObj.recordingName,u))
+        obj.printFig(fig,figName)
     end
 
 
     %%Plot raw data
+
 
     maxRespIn = maxRespIn-1;
 
@@ -345,10 +356,11 @@ for u = eNeuron
         tr = numel(ind);
     end
 
+    figName = sprintf('%s-rect-GRid-rawData-%d-Trials-raster-eNeuron-%d-Lum%d',obj.dataObj.recordingName,tr,u,params.selectedLum);
     if params.PaperFig
-        obj.printFig(fig2,sprintf('%s-rect-GRid-rawData-%d-Trials-raster-eNeuron-%d',obj.dataObj.recordingName,tr,u),PaperFig = params.PaperFig)
+        obj.printFig(fig2,figName,PaperFig = params.PaperFig)
     elseif params.overwrite
-        obj.printFig(fig2,sprintf('%s-rect-GRid-rawData-%d-Trials-raster-eNeuron-%d',obj.dataObj.recordingName,u))
+        obj.printFig(fig2,figName)
     end
 
     %prettify_plot
