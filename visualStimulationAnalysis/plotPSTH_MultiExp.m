@@ -9,24 +9,41 @@ arguments
     params.speed      string        = "max"
     params.alpha      double        = 0.05
     params.shadeSTD   logical       = true
-    params.postStim   double        = 500    % ms after stim onset to include
-    params.preBase    double        = 200    % ms of baseline before stim onset
-    params.overwrite  logical       = false  % force recompute even if file exists
-    params.TakeTopPercentTrials double = 0.3 %Percentage of highest spiking rate trials to take to calculate PSTHs
-    params.zScore     logical       = false  % normalize firing rate to z-score using baseline
-     params.PaperFig  logical       = false  %Is this going to be used in the paper? 
+    params.postStim   double        = 500
+    params.preBase    double        = 200
+    params.overwrite  logical       = false
+    params.TakeTopPercentTrials double = 0.3
+    params.zScore     logical       = false
+    params.PaperFig   logical       = false
+    params.byDepth    logical       = false  % plot 3 depth bins per stim type
 end
 
 % -------------------------------------------------------------------------
-% Build save path using first experiment to get the analysis folder
-% This mirrors the convention used in PlotZScoreComparison
+% Load depth info from saved file (only if byDepth is requested)
 % -------------------------------------------------------------------------
+if params.byDepth
+    depthFile = 'W:\Large_scale_mapping_NP\lizards\Combined_lizard_analysis\NeuronDepths.mat';
+    if ~exist(depthFile, 'file')
+        error('NeuronDepths.mat not found. Run getNeuronDepths() first.');
+    end
+    D = load(depthFile);
+    depthTable    = D.depthTable;
+    depthBinEdges = D.depthBinEdges;
+    nDepthBins    = 3;
+    fprintf('Depth bins loaded:\n');
+    fprintf('  Bin 1 (shallow): %.0f - %.0f um\n', depthBinEdges(1), depthBinEdges(2));
+    fprintf('  Bin 2 (middle) : %.0f - %.0f um\n', depthBinEdges(2), depthBinEdges(3));
+    fprintf('  Bin 3 (deep)   : %.0f - %.0f um\n', depthBinEdges(3), depthBinEdges(4));
+else
+    nDepthBins = 1;
+end
 
-% Load first experiment just to get the folder path
+% -------------------------------------------------------------------------
+% Build save path
+% -------------------------------------------------------------------------
 NP_first = loadNPclassFromTable(exList(1));
-vs_first  = linearlyMovingBallAnalysis(NP_first);  % used only for path
+vs_first  = linearlyMovingBallAnalysis(NP_first);
 
-% Build the save directory path
 p = extractBefore(vs_first.getAnalysisFileName, 'lizards');
 p = [p 'lizards'];
 if ~exist([p '\Combined_lizard_analysis'], 'dir')
@@ -35,79 +52,66 @@ if ~exist([p '\Combined_lizard_analysis'], 'dir')
 end
 saveDir = [p '\Combined_lizard_analysis'];
 
-% Build filename — includes stim types so different comparisons don't clash
-stimLabel   = strjoin(params.stimTypes, '-');  % e.g. "rectGrid-linearlyMovingBall"
-nameOfFile  = sprintf('\\Ex_%d-%d_Combined_PSTHs_%s.mat', ...
-    exList(1), exList(end), stimLabel);
+stimLabel   = strjoin(params.stimTypes, '-');
+depthSuffix = '';
+if params.byDepth; depthSuffix = '_byDepth'; end
+nameOfFile  = sprintf('\\Ex_%d-%d_Combined_PSTHs_%s%s.mat', ...
+    exList(1), exList(end), stimLabel, depthSuffix);
 
 % -------------------------------------------------------------------------
-% Decide whether to run the experiment loop or load from disk
-% forloop = true  → compute PSTHs from scratch
-% forloop = false → load saved struct and skip to plotting
+% Decide whether to recompute or load
 % -------------------------------------------------------------------------
 if exist([saveDir nameOfFile], 'file') == 2 && ~params.overwrite
-    % File exists and overwrite is off — check if expList matches
     S = load([saveDir nameOfFile]);
     if isequal(S.expList, exList)
         fprintf('Loading saved PSTHs from:\n  %s\n', [saveDir nameOfFile]);
-        forloop = false;  % skip computation, go straight to plot
+        forloop = false;
     else
         fprintf('Experiment list mismatch — recomputing.\n');
-        forloop = true;   % expList changed, recompute
+        forloop = true;
     end
 else
-    forloop = true;  % file doesn't exist or overwrite requested
+    forloop = true;
 end
 
 % =========================================================================
-% EXPERIMENT LOOP — only runs if forloop is true
+% EXPERIMENT LOOP
 % =========================================================================
 if forloop
 
     nStim = numel(params.stimTypes);
     nExp  = numel(exList);
 
-    % One cell per stim type, grows one row per experiment
-    psthAll = cell(1, nStim);
-    for s = 1:nStim
-        psthAll{s} = [];
-    end
+    % psthAll{s,b} — s = stim type, b = depth bin (1 if byDepth is off)
+    psthAll = cell(nStim, nDepthBins);
 
-    % Locked time window — set from first valid experiment
-    lockedPreBase  = [];
-    lockedNBins    = [];
-    lockedEdges    = [];
+    lockedPreBase = [];
+    lockedNBins   = [];
+    lockedEdges   = [];
 
-    % ------------------------------------------------------------------
-    % LOOP OVER EXPERIMENTS
-    % ------------------------------------------------------------------
     for ei = 1:nExp
 
         ex = exList(ei);
         fprintf('\n=== Experiment %d ===\n', ex);
 
-        % Load NP data for this experiment
         try
             NP = loadNPclassFromTable(ex);
         catch ME
             warning('Could not load experiment %d: %s', ex, ME.message);
-            % Add NaN placeholder row if window is already locked
             for s = 1:nStim
-                if ~isempty(psthAll{s})
-                    psthAll{s} = [psthAll{s}; NaN(1, lockedNBins)];
+                for b = 1:nDepthBins
+                    if ~isempty(psthAll{s,b})
+                        psthAll{s,b} = [psthAll{s,b}; NaN(1, lockedNBins)];
+                    end
                 end
             end
             continue
         end
 
-        % --------------------------------------------------------------
-        % LOOP OVER STIMULUS TYPES
-        % --------------------------------------------------------------
         for s = 1:nStim
 
             stimType = params.stimTypes(s);
 
-            % Build analysis object for this stim type
             try
                 switch stimType
                     case "rectGrid"
@@ -123,71 +127,54 @@ if forloop
                 end
             catch ME
                 warning('Could not build %s for exp %d: %s', stimType, ex, ME.message);
-                if ~isempty(psthAll{s})
-                    psthAll{s} = [psthAll{s}; NaN(1, lockedNBins)];
+                for b = 1:nDepthBins
+                    if ~isempty(psthAll{s,b})
+                        psthAll{s,b} = [psthAll{s,b}; NaN(1, lockedNBins)];
+                    end
                 end
                 continue
             end
 
-            % ----------------------------------------------------------
-            % Extract data structures
-            % ----------------------------------------------------------
-
-            % ResponseWindow holds trial timing and spike data
             NeuronResp = obj.ResponseWindow;
 
-            % Stats struct for p-values
             if params.statType == "BootstrapPerNeuron"
                 Stats = obj.BootstrapPerNeuron;
             else
                 Stats = obj.ShufflingAnalysis;
             end
 
-            % Resolve speed field name
             if params.speed ~= "max" && isequal(obj.stimName,'linearlyMovingBall')
-                fieldName = 'Speed2';
-                startStim = 0;
+                fieldName = 'Speed2'; startStim = 0;
             elseif isequal(obj.stimName,'linearlyMovingBall')
-                fieldName = 'Speed1';
-                startStim = 0;
+                fieldName = 'Speed1'; startStim = 0;
             elseif isequal(params.stimTypes,'StaticGrating')
-                fieldName = 'Static';
-                startStim = 0;
-
+                fieldName = 'Static'; startStim = 0;
             elseif isequal(params.stimTypes,'MovingGrating')
-                startStim = obj.VST.static_time*1000;
-                fieldName = 'Moving';
+                startStim = obj.VST.static_time*1000; fieldName = 'Moving';
             else
                 startStim = 0;
             end
 
-            % Spike trains of somatic (good) units
             p_sort = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
             label  = string(p_sort.label');
             goodU  = p_sort.ic(:, label == 'good');
 
-            % P-values for each unit
             try
-                pvals   = Stats.(fieldName).pvalsResponse;
+                pvals = Stats.(fieldName).pvalsResponse;
             catch
-                pvals   = Stats.pvalsResponse;
+                pvals = Stats.pvalsResponse;
             end
 
-            % Trial onset times in ms
             try
-            C  = NeuronResp.(fieldName).C;
+                C = NeuronResp.(fieldName).C;
             catch
                 C = NeuronResp.C;
             end
             directimesSorted = C(:, 1)' + startStim;
 
-            % Use params.preBase directly — no formula needed
-            preBase = params.preBase;
-
-            % Total trial window = baseline + post-stim period
+            preBase     = params.preBase;
             windowTotal = preBase + params.postStim;
 
-            % Lock in time window from first valid experiment
             if isempty(lockedPreBase)
                 lockedPreBase = preBase;
                 lockedEdges   = 0 : params.binWidth : windowTotal;
@@ -197,125 +184,143 @@ if forloop
                     lockedPreBase, params.postStim, lockedNBins);
             end
 
-            % ----------------------------------------------------------
-            % Find responsive neurons
-            % ----------------------------------------------------------
             eNeurons = find(pvals < params.alpha);
 
             if isempty(eNeurons)
                 fprintf('  [%s] No responsive neurons in exp %d.\n', stimType, ex);
-                if ~isempty(psthAll{s})
-                    psthAll{s} = [psthAll{s}; NaN(1, lockedNBins)];
+                for b = 1:nDepthBins
+                    if ~isempty(psthAll{s,b})
+                        psthAll{s,b} = [psthAll{s,b}; NaN(1, lockedNBins)];
+                    end
                 end
                 continue
             end
 
-            fprintf('  [%s] %d responsive neuron(s) in exp %d.\n', ...
-                stimType, ex, numel(eNeurons));
+            fprintf('  [%s] %d responsive neuron(s) in exp %d.\n', stimType, ex, numel(eNeurons));
 
             % ----------------------------------------------------------
-            % Build PSTH for each responsive neuron
-            % BuildBurstMatrix returns nTrials x 1 x nTimeBins
-            % Window: from (trialOnset - preBase) for windowTotal ms
+            % Build PSTH per neuron
             % ----------------------------------------------------------
             psthRateNeurons = zeros(numel(eNeurons), lockedNBins);
+            neuronBinIdx    = zeros(numel(eNeurons), 1);
 
             for ni = 1:numel(eNeurons)
                 u = eNeurons(ni);
 
-                % Spike matrix: rows = trials, cols = time bins (1ms each)
+                % Assign depth bin
+                if params.byDepth
+                    depthRow = depthTable.Experiment == ex & depthTable.Unit == u;
+                    if ~any(depthRow)
+                        neuronBinIdx(ni) = 0;  % unknown depth — skip
+                        continue
+                    end
+                    unitDepth = depthTable.Depth_um(depthRow);
+                    if unitDepth <= depthBinEdges(2)
+                        neuronBinIdx(ni) = 1;
+                    elseif unitDepth <= depthBinEdges(3)
+                        neuronBinIdx(ni) = 2;
+                    else
+                        neuronBinIdx(ni) = 3;
+                    end
+                else
+                    neuronBinIdx(ni) = 1;  % all neurons in single bin
+                end
+
                 MRhist = BuildBurstMatrix( ...
                     goodU(:, u), ...
                     round(p_sort.t), ...
                     round(directimesSorted - lockedPreBase), ...
                     round(windowTotal));
+                MRhist = squeeze(MRhist);
 
-               
-
-                % Remove singleton dimensions → nTrials x nTimeBins
-                MRhist  = squeeze(MRhist);
-
-                 if ~isempty(params.TakeTopPercentTrials)
-                     MeanTrial = mean(MRhist,2);
-                     [~, ind] = sort(MeanTrial,'descend');
-
-                     takeTrials = ind(1:round(numel(MeanTrial)*params.TakeTopPercentTrials));
-
-                     MRhist = MRhist(takeTrials,:);
-
+                if ~isempty(params.TakeTopPercentTrials)
+                    MeanTrial  = mean(MRhist, 2);
+                    [~, ind]   = sort(MeanTrial, 'descend');
+                    takeTrials = ind(1:round(numel(MeanTrial)*params.TakeTopPercentTrials));
+                    MRhist     = MRhist(takeTrials, :);
                 end
-                nTrials = size(MRhist, 1);
 
-                % Convert to spike times in ms
-                spikeTimes = repmat((1:size(MRhist, 2)), nTrials, 1);
+                nTrials    = size(MRhist, 1);
+                spikeTimes = repmat((1:size(MRhist,2)), nTrials, 1);
                 spikeTimes = spikeTimes(logical(MRhist));
-
-                % Bin into locked edges and convert to spk/s
-                counts = histcounts(spikeTimes, lockedEdges);
+                counts     = histcounts(spikeTimes, lockedEdges);
                 psthRateNeurons(ni, :) = (counts / (params.binWidth * nTrials)) * 1000;
             end
 
-            % Average across responsive neurons → 1 x lockedNBins
-            psthExp = mean(psthRateNeurons, 1, 'omitnan');
-
-            if params.zScore
-                baselineBins = tAxis < lockedPreBase;
-                baselineMean = mean(psthExp(baselineBins));
-                baselineStd  = std(psthExp(baselineBins));
-                if baselineStd > 0
-                    psthExp = (psthExp - baselineMean) / baselineStd;
-                else
-                    warning('  [%s] Baseline std is zero for exp %d — skipping experiment.', stimType, ex);
-                    if ~isempty(psthAll{s})
-                        psthAll{s} = [psthAll{s}; NaN(1, lockedNBins)];
+            % ----------------------------------------------------------
+            % Average per depth bin and append
+            % ----------------------------------------------------------
+            for b = 1:nDepthBins
+                binNeurons = neuronBinIdx == b;
+                if ~any(binNeurons)
+                    fprintf('  [%s] No neurons in depth bin %d for exp %d.\n', stimType, b, ex);
+                    if ~isempty(psthAll{s,b})
+                        psthAll{s,b} = [psthAll{s,b}; NaN(1, lockedNBins)];
                     end
-                    continue  % skip to next experiment, do not append raw rates
+                    continue
                 end
+
+                psthExp = mean(psthRateNeurons(binNeurons, :), 1, 'omitnan');
+
+                if params.zScore
+                    baselineBins = tAxis < lockedPreBase;
+                    baselineMean = mean(psthExp(baselineBins));
+                    baselineStd  = std(psthExp(baselineBins));
+                    if baselineStd > 0
+                        psthExp = (psthExp - baselineMean) / baselineStd;
+                    else
+                        warning('  [%s] Bin %d: baseline std is zero for exp %d.', stimType, b, ex);
+                        if ~isempty(psthAll{s,b})
+                            psthAll{s,b} = [psthAll{s,b}; NaN(1, lockedNBins)];
+                        end
+                        continue
+                    end
+                end
+
+                psthAll{s,b} = [psthAll{s,b}; psthExp(:)'];
+                fprintf('  [%s] Bin %d: %d neuron(s) in exp %d.\n', stimType, b, sum(binNeurons), ex);
             end
 
-            % Append as new row — guaranteed lockedNBins wide
-            psthAll{s} = [psthAll{s}; psthExp(:)'];
-
-        end % end stim loop
-    end % end experiment loop
+        end % stim loop
+    end % experiment loop
 
     % ------------------------------------------------------------------
-    % Save results to struct
+    % Save
     % ------------------------------------------------------------------
-    S.expList      = exList;           % experiment list for future matching
-    S.lockedEdges  = lockedEdges;      % bin edges used (ms from trial start)
-    S.lockedPreBase = lockedPreBase;   % baseline duration in ms
-    S.params       = params;           % all parameters used
+    S.expList       = exList;
+    S.lockedEdges   = lockedEdges;
+    S.lockedPreBase = lockedPreBase;
+    S.params        = params;
 
-    % Save one field per stim type, named by stim e.g. S.rectGrid
     for s = 1:numel(params.stimTypes)
-        stimField      = matlab.lang.makeValidName(params.stimTypes(s)); % safe field name
-        S.(stimField)  = psthAll{s};   % nExp x nBins PSTH matrix
+        stimField = matlab.lang.makeValidName(params.stimTypes(s));
+        for b = 1:nDepthBins
+            S.(sprintf('%s_bin%d', stimField, b)) = psthAll{s,b};
+        end
     end
 
     save([saveDir nameOfFile], '-struct', 'S');
     fprintf('\nSaved PSTHs to:\n  %s\n', [saveDir nameOfFile]);
 
 else
-    % ------------------------------------------------------------------
-    % Load psthAll from saved struct
-    % ------------------------------------------------------------------
+    % Load psthAll from disk
     lockedEdges   = S.lockedEdges;
     lockedPreBase = S.lockedPreBase;
 
-    psthAll = cell(1, numel(params.stimTypes));
+    psthAll = cell(numel(params.stimTypes), nDepthBins);
     for s = 1:numel(params.stimTypes)
-        stimField   = matlab.lang.makeValidName(params.stimTypes(s));
-        if isfield(S, stimField)
-            psthAll{s} = S.(stimField);  % load the nExp x nBins matrix
-        else
-            % Stim type not found in saved file — warn and leave empty
-            warning('Stim type "%s" not found in saved file.', params.stimTypes(s));
-            psthAll{s} = [];
+        stimField = matlab.lang.makeValidName(params.stimTypes(s));
+        for b = 1:nDepthBins
+            fieldKey = sprintf('%s_bin%d', stimField, b);
+            if isfield(S, fieldKey)
+                psthAll{s,b} = S.(fieldKey);
+            else
+                warning('Field "%s" not found in saved file.', fieldKey);
+                psthAll{s,b} = [];
+            end
         end
     end
-
-end % end forloop
+end
 
 % =========================================================================
 % PLOT
@@ -324,43 +329,37 @@ end % end forloop
 tAxis     = lockedEdges(1:end-1);
 tAxisPlot = tAxis - lockedPreBase;
 
-colors = lines(numel(params.stimTypes));
+baseColors  = lines(numel(params.stimTypes));
+depthShades = [0.6, 0.35, 0.1];  % light → dark for shallow → deep
+binLabels   = {'shallow', 'middle', 'deep'};
 
-fig = figure;
-set(fig, 'Units', 'centimeters', 'Position', [5 5 9 10]);  % single axis now
-
-% ------------------------------------------------------------------
-% Map stimulus type names to short legend labels
-% ------------------------------------------------------------------
 stimLegendMap = containers.Map(...
     {'linearlyMovingBall', 'rectGrid', 'MovingGrating', 'StaticGrating'}, ...
     {'MB',                 'SB',       'MG',            'SG'});
 
 % ------------------------------------------------------------------
-% First pass: compute mean/sem for all stim types and find global ylim
+% First pass: global ylim
 % ------------------------------------------------------------------
-meanAll = cell(1, numel(params.stimTypes));
-semAll  = cell(1, numel(params.stimTypes));
-yMax    = 0;
-yMin    = inf;
+yMax = 0;
+yMin = inf;
+
+meanAll = cell(numel(params.stimTypes), nDepthBins);
+semAll  = cell(numel(params.stimTypes), nDepthBins);
 
 for s = 1:numel(params.stimTypes)
-    data = psthAll{s};
-    if isempty(data)
-        continue
+    for b = 1:nDepthBins
+        data = psthAll{s,b};
+        if isempty(data); continue; end
+        validRows = ~all(isnan(data), 2);
+        data      = data(validRows, :);
+        if isempty(data); continue; end
+        meanAll{s,b} = mean(data, 1, 'omitnan');
+        semAll{s,b}  = std(data, 0, 1, 'omitnan') / sqrt(sum(~isnan(data(:,1))));
+        yMax = max(yMax, max(meanAll{s,b} + semAll{s,b}));
+        yMin = min(yMin, min(meanAll{s,b} - semAll{s,b}));
     end
-    validRows  = ~all(isnan(data), 2);
-    data       = data(validRows, :);
-    if isempty(data)
-        continue
-    end
-    meanAll{s} = mean(data, 1, 'omitnan');
-    semAll{s}  = std(data, 0, 1, 'omitnan') / sqrt(sum(~isnan(data(:,1))));
-    yMax = max(yMax, max(meanAll{s} + semAll{s}));
-    yMin = min(yMin, min(meanAll{s} - semAll{s}));
 end
 
-% Y limits with 10% padding
 yPad = (yMax - yMin) * 0.1;
 if params.zScore
     yLims = [yMin - yPad, yMax + yPad];
@@ -369,94 +368,90 @@ else
 end
 
 % ------------------------------------------------------------------
-% Single axis plot — all stim types overlaid
+% Plot
 % ------------------------------------------------------------------
+fig = figure;
+set(fig, 'Units', 'centimeters', 'Position', [5 5 9 10]);
 ax = axes(fig);
 hold(ax, 'on');
 
-legendHandles = gobjects(numel(params.stimTypes), 1);  % store line handles for legend
+legendHandles = [];
+legendLabels  = {};
 
 for s = 1:numel(params.stimTypes)
 
-    data = psthAll{s};
-    if isempty(data)
-        continue
-    end
-    validRows = ~all(isnan(data), 2);
-    data      = data(validRows, :);
-    if isempty(data)
-        continue
-    end
-
-    meanPSTH = meanAll{s};
-    semPSTH  = semAll{s};
-
-    % Get short legend label for this stim type
     stimKey = char(params.stimTypes(s));
     if isKey(stimLegendMap, stimKey)
-        legendLabel = stimLegendMap(stimKey);
+        shortName = stimLegendMap(stimKey);
     else
-        legendLabel = stimKey;  % fallback to full name if not in map
+        shortName = stimKey;
     end
 
-    % Shade ±SEM band
-    if params.shadeSTD && size(data, 1) > 1
-        upper = meanPSTH + semPSTH;
-        lower = meanPSTH - semPSTH;
-        xFill = [tAxisPlot(:)', fliplr(tAxisPlot(:)')];
-        yFill = [upper(:)',     fliplr(lower(:)')    ];
-        fill(ax, xFill, yFill, colors(s,:), 'FaceAlpha', 0.2, 'EdgeColor', 'none');
+    for b = 1:nDepthBins
+
+        data = psthAll{s,b};
+        if isempty(data); continue; end
+        validRows = ~all(isnan(data), 2);
+        data      = data(validRows, :);
+        if isempty(data); continue; end
+
+        meanPSTH = meanAll{s,b};
+        semPSTH  = semAll{s,b};
+
+        % Color and label depend on mode
+        if params.byDepth
+            lineColor   = baseColors(s,:) * (1 - depthShades(b));
+            legendLabel = sprintf('%s %s (%.0f-%.0f um)', ...
+                shortName, binLabels{b}, depthBinEdges(b), depthBinEdges(b+1));
+        else
+            lineColor   = baseColors(s,:);
+            legendLabel = shortName;
+        end
+
+        % SEM shading
+        if params.shadeSTD && size(data,1) > 1
+            upper = meanPSTH + semPSTH;
+            lower = meanPSTH - semPSTH;
+            xFill = [tAxisPlot(:)', fliplr(tAxisPlot(:)')];
+            yFill = [upper(:)',     fliplr(lower(:)')    ];
+            fill(ax, xFill, yFill, lineColor, 'FaceAlpha', 0.15, 'EdgeColor', 'none');
+        end
+
+        % Mean line
+        h = plot(ax, tAxisPlot(:)', meanPSTH(:)', ...
+            'Color', lineColor, 'LineWidth', 1.5);
+
+        legendHandles(end+1) = h; %#ok<AGROW>
+        legendLabels{end+1}  = legendLabel; %#ok<AGROW>
+
+        fprintf('  [%s] n=%d experiments in plot.\n', legendLabel, sum(validRows));
     end
-
-    % Mean PSTH line — store handle for legend
-    legendHandles(s) = plot(ax, tAxisPlot(:)', meanPSTH(:)', ...
-        'Color', colors(s,:), 'LineWidth', 1.5, 'DisplayName', legendLabel);
-
-    % Number of contributing experiments as text
-    nValid = sum(validRows);
-    fprintf('  [%s] n=%d experiments in plot.\n', legendLabel, nValid);
-
 end
 
-% Stim onset and end of post-stim window
 xline(ax, 0,               'k--', 'LineWidth', 1.2, 'HandleVisibility', 'off');
 xline(ax, params.postStim, 'k--', 'LineWidth', 1.2, 'HandleVisibility', 'off');
 
-% Y label
-if params.zScore
-    yLabel = 'Z-score';
-else
-    yLabel = '[spk/s]';
-end
+if params.zScore; yLabel = 'Z-score'; else; yLabel = '[spk/s]'; end
 
 xlabel(ax, 'Time re. stim onset [ms]', 'FontName', 'helvetica', 'FontSize', 8);
 ylabel(ax, yLabel,                      'FontName', 'helvetica', 'FontSize', 8);
 xlim(ax, [tAxisPlot(1) tAxisPlot(end)]);
 ylim(ax, yLims);
 
-% Legend — only show valid handles (skip stim types with no data)
-validHandles = legendHandles(isgraphics(legendHandles));
-legend(validHandles, 'Location', 'northeast', 'FontName', 'helvetica', 'FontSize', 8);
+legend(legendHandles, legendLabels, 'Location', 'northeast', ...
+    'FontName', 'helvetica', 'FontSize', 7);
 
-ax.FontName = 'helvetica';
-ax.FontSize  = 8;
+ax.FontName       = 'helvetica';
+ax.FontSize       = 8;
+ax.YAxis.FontSize = 8;
+ax.XAxis.FontSize = 8;
 hold(ax, 'off');
 
 sgtitle(sprintf('N = %d', numel(exList)), 'FontName', 'helvetica', 'FontSize', 11);
-
-ax = gca;
-ax.YAxis.FontSize = 8;
-ax.YAxis.FontName = 'helvetica';
-
-ax = gca;
-ax.XAxis.FontSize = 8;
-ax.XAxis.FontName = 'helvetica';
-
-set(fig, 'Units', 'centimeters');
-set(fig, 'Position', [20 20 5 6]);
+set(fig, 'Units', 'centimeters', 'Position', [20 20 8 6]);
 
 if params.PaperFig
-    vs_first.printFig(fig, sprintf('PSTH-comparison-%s-%s', ...
+    vs_first.printFig(fig, sprintf('PSTH-depth-%s-%s', ...
         params.stimTypes(1), params.stimTypes(2)), PaperFig = params.PaperFig)
 end
 

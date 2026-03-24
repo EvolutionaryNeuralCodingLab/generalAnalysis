@@ -8,7 +8,7 @@ arguments
     params.statType   string        = "BootstrapPerNeuron"
     params.speed      double        = 1
     params.plot       logical       = true
-    params.indexType  string        = "L_amplitude"  % L_amplitude, L_geometric, L_combined
+    params.indexType  string        = "L_amplitude"  % L_amplitude_diff,L_amplitude_ratio, L_geometric, L_combined
     params.onOff      double        = 1             % 1=on, 2=off (rectGrid only)
     params.sizeIdx    double        = 1
     params.lumIdx     double        = 1

@@ -284,6 +284,7 @@ gridSpikeRateShuff = zeros(nGrid, nGrid, nN, nShuffle, 2, nSize, nLums);
 trialCount         = zeros(nGrid, nGrid, nSize, nLums);
 
 jj = 1;
+
 for i = 1:trialDiv:nT
 
     xBin = discretize(XcStore(jj), xEdges);
