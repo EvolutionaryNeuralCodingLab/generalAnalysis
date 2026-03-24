@@ -68,7 +68,10 @@ end
 VStimAnalysis.PlotZScoreComparison([49:54,64:97] ,{'MB','RG'},StatMethod='bootsrapRespBase', overwrite=false,ComparePairs={'MB','RG'},PaperFig=true,...
     overwriteResponse=false,overwriteStats=false)%[49:54,57:91] %%Check why I have different array dimensions in MBR
 %% PSTH for all experiments
-plotPSTH_MultiExp([49:54,64:72,84:97], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=false, byDepth=true);
+plotPSTH_MultiExp([49:54,64:72,84:97], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=false, byDepth=true, smooth=50, stimTypes=["linearlyMovingBall"]);
+
+%%
+plotPSTH_MultiExp([49:54,64:97], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=false, byDepth=false);
 
 %% Calculate spatial tuning
 SpatialTuningIndex([49:54,64:97], indexType =  "L_amplitude_ratio" ,overwrite=true, topPercent = 20)

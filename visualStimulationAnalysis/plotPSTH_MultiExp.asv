@@ -3,23 +3,23 @@ function plotPSTH_MultiExp(exList, params)
 arguments
     exList double
     params.stimTypes  (1,:) string  = ["rectGrid", "linearlyMovingBall"]
+    params.bin        double        = 30
     params.binWidth   double        = 10
-    params.smooth     double        = 0      % smoothing window in ms (0 = no smoothing)
     params.statType   string        = "BootstrapPerNeuron"
     params.speed      string        = "max"
     params.alpha      double        = 0.05
     params.shadeSTD   logical       = true
-    params.postStim   double        = 2000
+    params.postStim   double        = 500
     params.preBase    double        = 200
     params.overwrite  logical       = false
     params.TakeTopPercentTrials double = 0.3
     params.zScore     logical       = false
     params.PaperFig   logical       = false
-    params.byDepth    logical       = false  % plot 3 depth bins per stim type
+    params.byDepth    logical       = false
 end
 
 % -------------------------------------------------------------------------
-% Load depth info from saved file (only if byDepth is requested)
+% Load depth info (only if byDepth requested)
 % -------------------------------------------------------------------------
 if params.byDepth
     depthFile = 'W:\Large_scale_mapping_NP\lizards\Combined_lizard_analysis\NeuronDepths.mat';
@@ -82,12 +82,12 @@ if forloop
     nStim = numel(params.stimTypes);
     nExp  = numel(exList);
 
-    % psthAll{s,b} — s = stim type, b = depth bin (1 if byDepth is off)
     psthAll = cell(nStim, nDepthBins);
 
     lockedPreBase = [];
     lockedNBins   = [];
     lockedEdges   = [];
+    tAxis         = [];  % FIX 3: initialise here so it is always defined
 
     for ei = 1:nExp
 
@@ -98,10 +98,13 @@ if forloop
             NP = loadNPclassFromTable(ex);
         catch ME
             warning('Could not load experiment %d: %s', ex, ME.message);
-            for s = 1:nStim
-                for b = 1:nDepthBins
-                    if ~isempty(psthAll{s,b})
-                        psthAll{s,b} = [psthAll{s,b}; NaN(1, lockedNBins)];
+            % FIX 4: only append NaN rows if window is already locked
+            if ~isempty(lockedNBins)
+                for s = 1:nStim
+                    for b = 1:nDepthBins
+                        if ~isempty(psthAll{s,b})
+                            psthAll{s,b} = [psthAll{s,b}; NaN(1, lockedNBins)];
+                        end
                     end
                 end
             end
@@ -118,18 +121,20 @@ if forloop
                         obj = rectGridAnalysis(NP);
                     case "linearlyMovingBall"
                         obj = linearlyMovingBallAnalysis(NP);
-                    case 'StaticGrating'
+                    case "StaticGrating"
                         obj = StaticDriftingGratingAnalysis(NP);
-                    case 'MovingGrating'
+                    case "MovingGrating"
                         obj = StaticDriftingGratingAnalysis(NP);
                     otherwise
                         error('Unknown stimType: %s', stimType);
                 end
             catch ME
                 warning('Could not build %s for exp %d: %s', stimType, ex, ME.message);
-                for b = 1:nDepthBins
-                    if ~isempty(psthAll{s,b})
-                        psthAll{s,b} = [psthAll{s,b}; NaN(1, lockedNBins)];
+                if ~isempty(lockedNBins)
+                    for b = 1:nDepthBins
+                        if ~isempty(psthAll{s,b})
+                            psthAll{s,b} = [psthAll{s,b}; NaN(1, lockedNBins)];
+                        end
                     end
                 end
                 continue
@@ -143,22 +148,25 @@ if forloop
                 Stats = obj.ShufflingAnalysis;
             end
 
-            if params.speed ~= "max" && isequal(obj.stimName,'linearlyMovingBall')
-                fieldName = 'Speed2'; startStim = 0;
-            elseif isequal(obj.stimName,'linearlyMovingBall')
-                fieldName = 'Speed1'; startStim = 0;
-            elseif isequal(params.stimTypes,'StaticGrating')
-                fieldName = 'Static'; startStim = 0;
-            elseif isequal(params.stimTypes,'MovingGrating')
-                startStim = obj.VST.static_time*1000; fieldName = 'Moving';
-            else
-                startStim = 0;
+            % FIX 1+2: initialise fieldName and use stimType (loop var) not params.stimTypes
+            fieldName = '';
+            startStim = 0;
+            if params.speed ~= "max" && isequal(obj.stimName, 'linearlyMovingBall')
+                fieldName = 'Speed2';
+            elseif isequal(obj.stimName, 'linearlyMovingBall')
+                fieldName = 'Speed1';
+            elseif isequal(stimType, 'StaticGrating')   % FIX 2
+                fieldName = 'Static';
+            elseif isequal(stimType, 'MovingGrating')   % FIX 2
+                fieldName = 'Moving';
+                startStim = obj.VST.static_time * 1000;
             end
 
             p_sort = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
             label  = string(p_sort.label');
             goodU  = p_sort.ic(:, label == 'good');
 
+            % Use fieldName if set, otherwise fall back to top-level fields
             try
                 pvals = Stats.(fieldName).pvalsResponse;
             catch
@@ -179,7 +187,7 @@ if forloop
                 lockedPreBase = preBase;
                 lockedEdges   = 0 : params.binWidth : windowTotal;
                 lockedNBins   = numel(lockedEdges) - 1;
-                tAxis         = lockedEdges(1:end-1);
+                tAxis         = lockedEdges(1:end-1);  % FIX 3: set alongside lockedEdges
                 fprintf('  Locked window: preBase=%d ms, postStim=%d ms, nBins=%d\n', ...
                     lockedPreBase, params.postStim, lockedNBins);
             end
@@ -196,7 +204,7 @@ if forloop
                 continue
             end
 
-            fprintf('  [%s] %d responsive neuron(s) in exp %d.\n', stimType, ex, numel(eNeurons));
+            fprintf('  [%s] %d responsive neuron(s) in exp %d.\n', stimType, numel(eNeurons), ex);
 
             % ----------------------------------------------------------
             % Build PSTH per neuron
@@ -211,7 +219,7 @@ if forloop
                 if params.byDepth
                     depthRow = depthTable.Experiment == ex & depthTable.Unit == u;
                     if ~any(depthRow)
-                        neuronBinIdx(ni) = 0;  % unknown depth — skip
+                        neuronBinIdx(ni) = 0;  % unknown — will be skipped
                         continue
                     end
                     unitDepth = depthTable.Depth_um(depthRow);
@@ -223,7 +231,7 @@ if forloop
                         neuronBinIdx(ni) = 3;
                     end
                 else
-                    neuronBinIdx(ni) = 1;  % all neurons in single bin
+                    neuronBinIdx(ni) = 1;
                 end
 
                 MRhist = BuildBurstMatrix( ...
@@ -330,7 +338,7 @@ tAxis     = lockedEdges(1:end-1);
 tAxisPlot = tAxis - lockedPreBase;
 
 baseColors  = lines(numel(params.stimTypes));
-depthShades = [0.05, 0.45, 0.78];  % light → dark for shallow → deep
+depthShades = [0.6, 0.35, 0.1];  % light → dark for shallow → deep
 binLabels   = {'shallow', 'middle', 'deep'};
 
 stimLegendMap = containers.Map(...
@@ -398,14 +406,6 @@ for s = 1:numel(params.stimTypes)
         meanPSTH = meanAll{s,b};
         semPSTH  = semAll{s,b};
 
-        % Smooth if requested
-        if params.smooth > 0
-            smoothBins = round(params.smooth / params.binWidth);  % convert ms to bins
-            meanPSTH   = smoothdata(meanPSTH, 'gaussian', smoothBins);
-            semPSTH    = smoothdata(semPSTH,  'gaussian', smoothBins);
-        end
-
-        % Color and label depend on mode
         if params.byDepth
             lineColor   = baseColors(s,:) * (1 - depthShades(b));
             legendLabel = sprintf('%s %s (%.0f-%.0f um)', ...
@@ -415,20 +415,18 @@ for s = 1:numel(params.stimTypes)
             legendLabel = shortName;
         end
 
-        % SEM shading
         if params.shadeSTD && size(data,1) > 1
             upper = meanPSTH + semPSTH;
             lower = meanPSTH - semPSTH;
             xFill = [tAxisPlot(:)', fliplr(tAxisPlot(:)')];
             yFill = [upper(:)',     fliplr(lower(:)')    ];
-            fill(ax, xFill, yFill, lineColor, 'FaceAlpha', 0.08, 'EdgeColor', 'none');
+            fill(ax, xFill, yFill, lineColor, 'FaceAlpha', 0.15, 'EdgeColor', 'none');
         end
 
-        % Mean line
         h = plot(ax, tAxisPlot(:)', meanPSTH(:)', ...
             'Color', lineColor, 'LineWidth', 1.5);
 
-        legendHandles(end+1) = h; %#ok<AGROW>
+        legendHandles(end+1) = h;        %#ok<AGROW>
         legendLabels{end+1}  = legendLabel; %#ok<AGROW>
 
         fprintf('  [%s] n=%d experiments in plot.\n', legendLabel, sum(validRows));

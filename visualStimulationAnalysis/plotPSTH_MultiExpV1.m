@@ -5,6 +5,7 @@ arguments
     params.stimTypes  (1,:) string  = ["rectGrid", "linearlyMovingBall"]
     params.bin        double        = 30
     params.binWidth   double        = 10
+    params.smooth     double        = 0      % smoothing window in ms (0 = no smoothing)
     params.statType   string        = "BootstrapPerNeuron"
     params.speed      string        = "max"
     params.alpha      double        = 0.05
@@ -390,6 +391,7 @@ for s = 1:numel(params.stimTypes)
 
     meanPSTH = meanAll{s};
     semPSTH  = semAll{s};
+
 
     % Get short legend label for this stim type
     stimKey = char(params.stimTypes(s));
