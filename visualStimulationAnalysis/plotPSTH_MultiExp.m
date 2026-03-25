@@ -9,7 +9,7 @@ arguments
     params.speed      string        = "max"
     params.alpha      double        = 0.05
     params.shadeSTD   logical       = true
-    params.postStim   double        = 2000
+    params.postStim   double        = 500
     params.preBase    double        = 200
     params.overwrite  logical       = false
     params.TakeTopPercentTrials double = 0.3

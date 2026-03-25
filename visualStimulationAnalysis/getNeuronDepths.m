@@ -57,7 +57,7 @@ for ei = 1:numel(exList)
 
     % Channel IDs (0-based) → Y positions → real depths
     channelIDs   = goodU(1, :);                               % 1 x nGoodUnits, 0-based
-    yPos         = NP.chLayoutPositions(2, channelIDs + 1);   % 1 x nGoodUnits
+    yPos         = NP.chLayoutPositions(2, channelIDs);   % 1 x nGoodUnits
     neuronDepths = coor_Z - yPos;                             % 1 x nGoodUnits, in um
 
     % Accumulate table columns
