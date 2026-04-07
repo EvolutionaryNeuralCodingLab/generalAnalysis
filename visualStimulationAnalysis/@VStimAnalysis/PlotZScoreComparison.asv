@@ -274,10 +274,8 @@ if forloop
             vsFFF.ResponseWindow('overwrite',params.overwriteResponse,'durationWindow',params.RespDurationWin);
             if isequal(params.StatMethod,'ObsWindow')
                 vsFFF.ShufflingAnalysis('overwrite',params.overwriteStats,"N_bootstrap", params.shuffles);
-            elseif isequal(params.StatMethod,'bootsrapRespBase')
+            else
                 vsFFF.BootstrapPerNeuron('overwrite',params.overwriteStats);
-            elseif isequal(params.StatMethod,'maxPermuteTest')
-                vsFFF.StatisticsPerNeuron('overwrite',params.overwriteStats);
             end
         end
 
@@ -289,7 +287,7 @@ if forloop
             statsFFF =  vsFFF.ShufflingAnalysis;
             statsNI =  vsNI.ShufflingAnalysis;
             statsNV =  vsNV.ShufflingAnalysis;
-        elseif isequal(params.StatMethod,'bootsrapRespBase')
+        else
             statsMB = vs.BootstrapPerNeuron;
             statsRG =  vsR.BootstrapPerNeuron;
             statsMBR =  vsBr.BootstrapPerNeuron;
@@ -297,14 +295,6 @@ if forloop
             statsFFF =  vsFFF.BootstrapPerNeuron;
             statsNI =  vsNI.BootstrapPerNeuron;
             statsNV =  vsNV.BootstrapPerNeuron;
-        else
-            statsMB = vs.StatisticsPerNeuron;
-            statsRG =  vsR.StatisticsPerNeuron;
-            statsMBR =  vsBr.StatisticsPerNeuron;
-            statsSDG =  vsG.StatisticsPerNeuron;
-            statsFFF =  vsFFF.StatisticsPerNeuron;
-            statsNI =  vsNI.StatisticsPerNeuron;
-            statsNV =  vsNV.StatisticsPerNeuron;
         end
 
         rwRG = vsR.ResponseWindow;
@@ -389,32 +379,32 @@ if forloop
 
         if ~isequal(params.StatMethod,'ObsWindow')
 
-            spkR_NV =  mean(statsNV.ObsResponse,1);
-            spkR_NI =  mean(statsNI.ObsResponse,1);
+            spkR_NV =  mean(statsNV.ObsReponse,1);
+            spkR_NI =  mean(statsNI.ObsReponse,1);
 
             try
-                spkR_SDGs =  mean(statsSDG.Static.ObsResponse,1);
-                spkR_SDGm =  mean(statsSDG.Moving.ObsResponse,1);
+                spkR_SDGs =  mean(statsSDG.Static.ObsReponse,1);
+                spkR_SDGm =  mean(statsSDG.Moving.ObsReponse,1);
 
             catch             
-                spkR_SDGs =  mean(statsSDG.ObsResponse,1);
-                spkR_SDGm =  mean(statsSDG.ObsResponse,1);
+                spkR_SDGs =  mean(statsSDG.ObsReponse,1);
+                spkR_SDGm =  mean(statsSDG.ObsReponse,1);
             end
 
-            spkR_FFF =  mean(statsFFF.ObsResponse,1);
+            spkR_FFF =  mean(statsFFF.ObsReponse,1);
 
             try
-                spkR_MBR =  mean(statsMBR.Speed1.ObsResponse,1);
+                spkR_MBR =  mean(statsMBR.Speed1.ObsReponse,1);
             catch 
-                spkR_MBR =  mean(statsMBR.ObsResponse,1);
+                spkR_MBR =  mean(statsMBR.ObsReponse,1);
             end
 
-            spkR_RG =  mean(statsRG.ObsResponse,1);
+            spkR_RG =  mean(statsRG.ObsReponse,1);
 
             if isfield(statsMB, 'Speed2')
-                spkR_MB = mean(statsMB.Speed2.ObsResponse);
+                spkR_MB = mean(statsMB.Speed2.ObsReponse);
             else
-                spkR_MB = mean(statsMB.Speed1.ObsResponse);
+                spkR_MB = mean(statsMB.Speed1.ObsReponse);
             end
 
         end

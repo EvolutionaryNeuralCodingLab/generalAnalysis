@@ -7,7 +7,8 @@ arguments (Input)
     params.inputParams = false
     params.preBase = 200
     params.bin = 15
-    params.exNeurons = []
+    params.exNeurons double = []
+    params.exNeuronsPhyID double = []   % alternative to exNeurons: specify neurons by phy cluster ID
     params.AllSomaticNeurons = false
     params.AllResponsiveNeurons = true
     params.fixedWindow = true
@@ -51,6 +52,18 @@ pvals = Stats.pvalsResponse;
 label = string(p.label');
 goodU = p.ic(:,label == 'good'); %somatic neurons
 
+% Convert phy IDs to unit indices if exNeuronsPhyID is provided.
+% This overrides exNeurons if both are set — phy ID is more explicit.
+if ~isempty(params.exNeuronsPhyID)
+    [found, neuronIdx] = ismember(params.exNeuronsPhyID, phy_IDg);
+    if any(~found)
+        warning('The following phy IDs were not found in good units and will be skipped: %s', ...
+            num2str(params.exNeuronsPhyID(~found)));
+    end
+    params.exNeurons = neuronIdx(found);  % convert to regular indices
+    fprintf('  Converted phy IDs [%s] -> unit indices [%s]\n', ...
+        num2str(params.exNeuronsPhyID(found)), num2str(params.exNeurons));
+end
 
 stimDur = NeuronResp.stimDur;
 stimInter = NeuronResp.stimInter;
@@ -310,9 +323,13 @@ for u = eNeuron
 
 
     maxRespIn = maxRespIn-1;
-
+    % 
     trialsPerCath = length(directimesSorted)/(length(unique(seqMatrix)));
     trials = maxRespIn*trialsPerCath+1:maxRespIn*trialsPerCath + trialsPerCath;
+    bin3 = 1;
+    trialM = BuildBurstMatrix(goodU(:,u),round(p.t/bin3),round((directimesSorted+start)/bin3),round((window)/bin3));
+    TrialM = squeeze(trialM(trials,:,:))';
+
 
     chan = goodU(1,u);
 
@@ -331,8 +348,8 @@ for u = eNeuron
     end
     fig2 = figure;
 
-    [fig2, mx, mn] = PlotRawDataNP(obj,fig = fig2,c = chan, startTimes = startTimes(ind),...
-        window = window,spikeTimes = spikes(ind,:));
+    [fig2, mx, mn] = PlotRawDataNP(obj,fig = fig2,chan = chan, startTimes = startTimes(ind),...
+        window = window,spikeTimes = spikes(ind,:)); % 
     %
     % xline(-start/1000,'r','LineWidth',1.5)
     % xline((stimDur+abs(start))/1000,'r','LineWidth',1.5)

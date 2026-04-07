@@ -334,6 +334,12 @@ if params.diff && ~isempty(pValues) && numel(pValues) >= 1
     
     % Draw significance stars
 
+    fprintf('size(x1): %s\n', num2str(size(x1)));
+    fprintf('size(yText): %s\n', num2str(size(yText)));
+    fprintf('size(maxVisible): %s\n', num2str(size(maxVisible)));
+    fprintf('size(bracketPad): %s\n', num2str(size(bracketPad)));
+    fprintf('size(vals): %s\n', num2str(size(vals)));
+    fprintf('size(yMaxVis): %s\n', num2str(size(yMaxVis)));
     if pValues(1) < 1e-3
         txt = '***';
         if pValues(1) == 0

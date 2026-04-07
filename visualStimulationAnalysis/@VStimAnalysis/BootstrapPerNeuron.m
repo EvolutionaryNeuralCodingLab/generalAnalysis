@@ -142,6 +142,11 @@ for s=1:x
  
     end
 
+    if isequal(obj.stimName, 'linearlyMovingBall')
+
+
+    end
+
     %Mr = BuildBurstMatrix(goodU,round(p.t),round(directimesSorted),round(stimDur+ responseParams.params.durationWindow)); %response matrix
     Mr = BuildBurstMatrix(goodU,round(p.t),round(directimesSorted),round(stimDur)); %response matrix
     Mb = BuildBurstMatrix(goodU,round(p.t),round(directimesSorted-0.75*obj.VST.interTrialDelay*1000),round(0.75*obj.VST.interTrialDelay*1000)); %baseline matrix
@@ -158,31 +163,30 @@ for s=1:x
         for i=1:trialsCat:size(Mr,1)
 
             for u = 1:size(goodU,2)
-                tempM = responses(i:i+trialsCat-1,u);
-                emptyRows = all(tempM == 0, 2);
-                perc = sum(emptyRows) / size(tempM,1);
+                emptyRows = all(responses(i:i+trialsCat-1, u) == 0, 2);
+                perc = sum(emptyRows) / trialsCat;
 
                 if perc >= params.EmptyTrialPerc
-                    responses(i:i+trialsCat-1, u) = zeros(1,trialsCat);
-                    baselines(i:i+trialsCat-1, u) = zeros(1,trialsCat);% Store z-scores for neurons with sufficient trials
+                    rowsToRemove = [rowsToRemove; (i:i+trialsCat-1)'];  % collect indices
                 end
             end
         end
     end
 
-
     Diff = responses - baselines;
 
-    bootDiff = bootstrp(params.nBoot,@mean,Diff);
+    Diff(rowsToRemove, :) = [];  % remove before permutation test
 
-    pVal = mean(bootDiff <= 0); 
-                    %Test the proportion of times the difference is greater or equal than 0
-    bootBase = bootstrp(params.nBoot,@mean,baselines);
-    stdDiff = std(bootDiff);
-    
-    stdBase = std(bootBase);
+    % Generate all sign matrices at once: [nTrials × nBoot]
+    signs = 2 * randi(2, size(Diff,1), params.nBoot) - 3;
 
-    z = mean(bootDiff,1) ./ stdDiff;
+    % Matrix multiply to get all null means at once: [nBoot × nNeurons]
+    nullDist = (signs' * Diff) / size(Diff, 1);
+
+    pVal = mean(nullDist >= ObsMeanDiff);
+
+    % True z-score: normalize by baseline variability
+    z = mean(Diff, 1) ./ std(baselines, 1);
    
 
     if isfield(responseParams, "Speed1")
@@ -228,3 +232,4 @@ results = S;
 % p_sh = mean(D_sh <= 0);
 
 end
+%% 

@@ -8,6 +8,7 @@ arguments (Input)
     params.preBase = 200
     params.bin = 30
     params.exNeurons = 1
+     params.exNeuronsPhyID double = []   % alternative to exNeurons: specify neurons by phy cluster ID
     params.AllSomaticNeurons = false
     params.AllResponsiveNeurons = false
     params.SelectedWindow = true
@@ -62,6 +63,19 @@ stimDur = NeuronResp.(fieldName).stimDur;
 stimInter = NeuronResp.stimInter;
 label = string(p.label');
 goodU = p.ic(:,label == 'good'); %somatic neurons
+
+% Convert phy IDs to unit indices if exNeuronsPhyID is provided.
+% This overrides exNeurons if both are set — phy ID is more explicit.
+if ~isempty(params.exNeuronsPhyID)
+    [found, neuronIdx] = ismember(params.exNeuronsPhyID, phy_IDg);
+    if any(~found)
+        warning('The following phy IDs were not found in good units and will be skipped: %s', ...
+            num2str(params.exNeuronsPhyID(~found)));
+    end
+    params.exNeurons = neuronIdx(found);  % convert to regular indices
+    fprintf('  Converted phy IDs [%s] -> unit indices [%s]\n', ...
+        num2str(params.exNeuronsPhyID(found)), num2str(params.exNeurons));
+end
 
 C = NeuronResp.(fieldName).C;
 
@@ -128,6 +142,7 @@ else
     eNeuron = params.exNeurons;
     pvals = [eNeuron;pvals(eNeuron)];
 end
+
 
 [Mr] = BuildBurstMatrix(goodU(:,eNeuron),round(p.t/params.bin),round((directimesSorted-preBase)/params.bin),round((stimDur+preBase*2)/params.bin));
 

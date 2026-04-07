@@ -17,6 +17,7 @@ arguments
     params.PaperFig   logical       = false
     params.climPrctile double = 90   % percentile for color limit — lower = more contrast
     params.climNeg double = 0   % fixed negative z-score limit (absolute value)
+     params.colormap string = "gray"
 end
 
 % -------------------------------------------------------------------------
@@ -370,8 +371,8 @@ for s = 1:nStim
     % imagesc: x = time, y = neuron index
     imagesc(ax, tAxisPlot, 1:size(data,1), data);
     clim(ax, cLims);
-    %colormap(ax, flipud(gray));  % white = low, black = high
-    if params.zScore
+    colormap(ax, flipud(gray));  % white = low, black = high
+    if params.zScore && params.colormap ~= "gray"
         cLimPos = prctile(allValues, params.climPrctile);
         cLims   = [-params.climNeg, cLimPos];
 

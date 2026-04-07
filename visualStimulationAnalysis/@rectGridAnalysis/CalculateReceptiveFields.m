@@ -12,281 +12,229 @@ arguments (Input)
     params.fixedWindow = false
     params.noEyeMoves = false
     params.delay = 250
-    params.nShuffle = 20 %Number of shuffles to generate shuffled receptive fields. 
+    params.nShuffle = 20                % Number of shuffles to generate shuffled receptive fields
     params.testConvolution = false
     params.reduceFactor = 20;
-    params.duration = 300; %response window
-    params.durationOff = 3000;
-    params.offsetR = 50; %Response after onset of stim
-    params.TakeAllStimDur = true %calculate the receptive fields taking into account the whole window
+    params.duration = 300;              % Response window (ms)
+    params.durationOff = 3000;          % Off-response window (ms)
+    params.offsetR = 50;                % Response after onset of stim (ms)
+    params.TakeAllStimDur = true        % Use whole stim window for RF calculation
     params.statType string = "BootstrapPerNeuron"
     params.nGrid = 9
 end
 
-
-if params.inputParams,disp(params),return,end
+if params.inputParams, disp(params), return, end
 
 filename = obj.getAnalysisFileName;
 
-
+% -------------------------------------------------------------------------
+% Load from file if it exists and overwrite is false
+% -------------------------------------------------------------------------
 if isfile(obj.getAnalysisFileName) && ~params.overwrite
-    if nargout==1
+    if nargout == 1
         fprintf('Loading saved results from file.\n');
-        results=load(filename);
+        results = load(filename);
     else
         fprintf('Analysis already exists (use overwrite option to recalculate).\n');
     end
-
     return
 end
 
 NeuronResp = obj.ResponseWindow;
 
-% Stats struct for p-values
+% Select statistics struct for p-values based on statType parameter
 if params.statType == "BootstrapPerNeuron"
     Stats = obj.BootstrapPerNeuron;
 else
     Stats = obj.ShufflingAnalysis;
 end
 
-p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
-phy_IDg = p.phy_ID(string(p.label') == 'good');
-label  = string(p.label');
-goodU  = p.ic(:, label == 'good');
+% Extract spike-sorted unit data: phy IDs, labels, and spike train matrix
+p       = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
+phy_IDg = p.phy_ID(string(p.label') == 'good');  % phy IDs of good units
+label   = string(p.label');
+goodU   = p.ic(:, label == 'good');               % spike train matrix for good units
 
-pvals = Stats.pvalsResponse;
-C = NeuronResp.C;
-stimDur = NeuronResp.stimDur;
+% Get p-values and trial metadata from response window
+pvals    = Stats.pvalsResponse;
+C        = NeuronResp.C;        % trial condition matrix: [stimOn, pos, size, lum, ...]
+stimDur  = NeuronResp.stimDur;  % stimulus duration (ms)
 
+% Select all statistically responsive neurons (p < 0.05)
 if params.AllResponsiveNeurons
-    respU = find(pvals<0.05);
+    respU = find(pvals < 0.05);
     if isempty(respU)
         fprintf('No responsive neurons.\n')
         return
     end
 end
 
-if params.exNeurons >0
+% Override with manually specified neuron indices if provided
+if params.exNeurons > 0
     respU = params.exNeurons;
 end
 
+% Extract stimulus layout: positions, sizes, luminosities
 seqMatrix = obj.VST.pos;
-sizes = obj.VST.tilingRatios;
-uSize = unique(sizes);
-nSize = length(uSize);
-uLums = unique(obj.VST.rectLuminosity(obj.VST.luminosities));
-nLums = length(uLums); %%mAKE IT TO BE ABLE TO COMPARE TWO LUMINOSITIES. 
+sizes     = obj.VST.tilingRatios;
+uSize     = unique(sizes);
+nSize     = length(uSize);
+uLums     = unique(obj.VST.rectLuminosity(obj.VST.luminosities));
+nLums     = length(uLums);
 
-trialDiv  = length(seqMatrix)/length(unique(seqMatrix))/nSize/nLums;
-directimesSorted = C(:,1)';
+% Number of trial repetitions per unique condition (pos x size x lum)
+trialDiv = length(seqMatrix) / length(unique(seqMatrix)) / nSize / nLums;
 
+% Sorted stimulus onset times
+directimesSorted = C(:, 1)';
+
+% Use full stimulus duration as response window if TakeAllStimDur is set
 if params.TakeAllStimDur
-    params.offsetR=0;
-    params.duration = stimDur;
+    params.offsetR   = 0;
+    params.duration  = stimDur;
     params.durationOff = NeuronResp.stimInter;
 end
 
+% Use the shorter of on/off windows to keep matrix sizes consistent
 durationMin = min([params.duration params.durationOff]);
 
-[Mr] = BuildBurstMatrix(goodU,round(p.t/params.bin),round((directimesSorted+params.offsetR)/params.bin),round(durationMin/params.bin));
-[Mro] = BuildBurstMatrix(goodU,round(p.t/params.bin),round((directimesSorted+stimDur)/params.bin),round(durationMin/params.bin));
+% Build spike count matrices for on-response (Mr) and off-response (Mro)
+[Mr]  = BuildBurstMatrix(goodU, round(p.t / params.bin), ...
+    round((directimesSorted + params.offsetR) / params.bin), ...
+    round(durationMin / params.bin));
+[Mro] = BuildBurstMatrix(goodU, round(p.t / params.bin), ...
+    round((directimesSorted + stimDur) / params.bin), ...
+    round(durationMin / params.bin));
 
-% Mr = Mr.*(1000/params.bin); %convert to seconds
-% Mro = Mro.*(1000/params.bin); %convert to seconds
+[nT, nN, NB] = size(Mr);  % nT=trials, nN=neurons, NB=time bins
 
-[nT,nN,NB] = size(Mr);
+% -------------------------------------------------------------------------
+% Build shuffle distributions for both on and off responses
+% Each shuffle randomly permutes trial order (dim 1) and time bin order
+% (dim 3) independently, breaking stimulus-response associations
+% -------------------------------------------------------------------------
+nShuffle = params.nShuffle;
 
+% On-response raster in spike/s, used as base for on-shuffles
+RasterOn  = Mr  .* (1000 / params.bin);  % [nT, nN, NB]
+% Off-response raster in spike/s, used as base for off-shuffles
+RasterOff = Mro .* (1000 / params.bin);  % [nT, nN, NB]
 
-%%%%%%%%%%%%%%%%%%%% Shuffle raster before point multiplication in order
-%%%%%%%%%%%%%%%%%%%% to calculate tuning index
-%%%%%%%%%%%%%%%%%%%% %%%%%%%%%%%%%%%%%%%%%%%%
+% Pre-allocate shuffle arrays: [nT, nN, NB, nShuffle]
+shuffledDataOn  = zeros(nT, nN, NB, nShuffle);
+shuffledDataOff = zeros(nT, nN, NB, nShuffle);
 
-nShuffle =params.nShuffle;
+for i = 1:nShuffle
+    idx1 = randperm(nT);   % shuffle trial order
+    idx3 = randperm(NB);   % shuffle time bin order within trial
 
-Raster = BuildBurstMatrix(goodU,round(p.t/params.bin),round((directimesSorted)/params.bin),round((stimDur)/params.bin));
-Raster = Raster.*(1000/params.bin);
-
-shuffledData = zeros(size(Raster,1), size(Raster,2), size(Raster,3), nShuffle);
-
-for i =1:nShuffle
-
-    % Shuffle along the first dimension
-    idx1 = randperm(size(Raster,1));
-
-    % Shuffle along the third dimension
-    idx3 = randperm(size(Raster,3));
-
-    shuffledData(:,:,:,i) = Raster(idx1, :, idx3);
-
+    shuffledDataOn( :,:,:,i) = RasterOn( idx1, :, idx3);
+    shuffledDataOff(:,:,:,i) = RasterOff(idx1, :, idx3);
 end
 
-if params.noEyeMoves
-    % EyePositionAnalysis
-    % Create spike Sums with NaNs when the eye is not present.
-    % 
-    % 
-    % file = dir (NP.recordingDir);
-    % filenames = {file.name};
-    % files= filenames(contains(filenames,"timeSnipsNoMov-31"));
-    % cd(NP.recordingDir)
-    % %Run eyePosition Analysis to find no movement timeSnips
-    % timeSnips = load(files{1}).timeSnips;
-    % timeSnipsMode = timeSnips(:,timeSnips(3,:) == mode(timeSnips(3,:)));
-    % 
-    % selecInd = [];
-    % for i = 1:size(timeSnipsMode,2)
-    % 
-    %     %Find stimOns and offs that are between each timeSnip
-    %     selecInd = [selecInd find(directimesSorted>=timeSnipsMode(1,i) & directimesSorted<(timeSnipsMode(2,i)-stimDur))];
-    % end
-    % 
-    % %MrC = nan(round(nT/trialDiv),nN, NB+NBo);
-    % 
-    % MrC = nan(round(nT/trialDiv),nN, NB);
-    % 
-    % 
-    % %%Create summary of identical trials
-    % 
-    % MrMean = nan(round(nT/trialDiv),nN);
-    % 
-    % for u = 1:length(goodU)
-    %     j=1;
-    % 
-    %     for i = 1:trialDiv:nT
-    % 
-    %         indexVal = selecInd(selecInd>=i & selecInd<=i+trialDiv-1);
-    % 
-    %         if ~isempty(indexVal)
-    % 
-    % 
-    %             meanRon =  reshape(mean(Mr(indexVal,u,:),1),[1,size(Mr,3)]);
-    % 
-    %             meanRoff =  reshape(mean(Mro(indexVal,u,:),1),[1,size(Mro,3)]);
-    % 
-    %             %meanBase =  reshape(mean(Mb1(indexVal,u,:),1),[1,size(Mb1,3)]);
-    % 
-    %             %MrC(j,u,:) = [meanRon-meanBase meanRoff-meanBase]; %Combine on and off response and substract to each the mean baseline
-    % 
-    %             MrC(j,u,:) = [meanRon];
-    %             MrMean(j,u) = mean(MrC(j,u,:),3);%-Nbase;
-    % 
-    %         else
-    %             2+2
-    %         end
-    % 
-    % 
-    %         j = j+1;
-    % 
-    %     end
-    % end
-    % 
-    % 2+2
+% -------------------------------------------------------------------------
+% NOTE: Original code used shuffledData (on only). We now use
+% shuffledDataOn / shuffledDataOff to keep on and off shuffles separate
+% and symmetric. gridSpikeRateShuff still uses shuffledDataOn for
+% backward compatibility (on response only).
+% -------------------------------------------------------------------------
 
+if params.noEyeMoves
+    % Eye movement exclusion path — not implemented (see commented code above)
 else
 
-    MrC = zeros(2,nLums,nSize,round(nT/trialDiv),nN, NB);
+    % Build per-condition mean spike rate: [2, nLums, nSize, nPos, nN, NB]
+    % dim 1: on(1) / off(2) response
+    % NOTE: dim order here is [onOff, nLums, nSize, ...] — not [onOff, nSize, nLums]
+    % (matches MrC indexing: MrC(o, uLums==..., uSize==..., j, u, :))
+    MrC = zeros(2, nLums, nSize, round(nT / trialDiv), nN, NB);
 
-    MRtotal = zeros(2,size(Mr,1),size(Mr,2),size(Mr,3)); %includes on and off response
+    % Stack on and off into a single 4D array for unified indexing
+    MRtotal        = zeros(2, size(Mr,1), size(Mr,2), size(Mr,3));
+    MRtotal(1,:,:,:) = Mr;   % on-response
+    MRtotal(2,:,:,:) = Mro;  % off-response
 
-    MRtotal(1,:,:,:) =  Mr;
-
-    MRtotal(2,:,:,:) =  Mro;
-
-    %%Create summary of identical trials
-
-    for u = 1:size(goodU,2)
-       
-
+    % Average over trialDiv repetitions for each unique condition
+    for u = 1:size(goodU, 2)
         for o = 1:2
-             j=1;
+            j = 1;
             for i = 1:trialDiv:nT
-
-                meanR = mean(squeeze(MRtotal(o,i:i+trialDiv-1,u,:))).*(1000/params.bin); %convert to spikes per second
-
-                MrC(o,uLums == C(i,4),uSize == C(i,3),j,u,:) =meanR; 
-
-                j = j+1;
+                % Mean over trialDiv reps, convert to spikes/s
+                meanR = mean(squeeze(MRtotal(o, i:i+trialDiv-1, u, :))) .* (1000 / params.bin);
+                MrC(o, uLums == C(i,4), uSize == C(i,3), j, u, :) = meanR;
+                j = j + 1;
             end
         end
     end
 
-    MrMean = mean(MrC,6);%-Nbase;
+    % Average over time bins to get mean rate per condition: [2, nLums, nSize, nPos, nN]
+    MrMean = mean(MrC, 6);
 
 end
 
+% -------------------------------------------------------------------------
+% Build position-indexed video frames: circle mask for each stimulus position
+% -------------------------------------------------------------------------
+screenSide = obj.VST.rect;
+screenRed  = screenSide(4) / params.reduceFactor;  % reduced screen resolution
+[x, y]     = meshgrid(1:screenRed, 1:screenRed);
 
-
-screenSide = obj.VST.rect; %Same as moving ball
-
-screenRed = screenSide(4)/params.reduceFactor;
-[x, y] = meshgrid(1:screenRed, 1:screenRed);
-
-pxyScreen = zeros(screenRed,screenRed);
-
-VideoScreen = zeros(screenRed,screenRed,size(C,1)/trialDiv);
+pxyScreen  = zeros(screenRed, screenRed);                          % cumulative position coverage
+VideoScreen = zeros(screenRed, screenRed, size(C,1) / trialDiv);  % per-position stimulus mask
 
 rectData = obj.VST.rectData;
 
-% Before the loop:
-XcStore = zeros(1, size(C,1)/trialDiv);
-YcStore = zeros(1, size(C,1)/trialDiv);
+% Store reduced-coordinate centres for each unique position (for grid binning)
+XcStore = zeros(1, size(C,1) / trialDiv);
+YcStore = zeros(1, size(C,1) / trialDiv);
 
-j=1;
-
+j = 1;
 for i = 1:trialDiv:length(C)
+    xyScreen = zeros(screenRed, screenRed)';
 
-    xyScreen = zeros(screenRed,screenRed)'; %%Make calculations if sizes>1 and if experiment is new and the shape is a circle.
+    % Compute circle centre in reduced pixel coordinates
+    Xc = round((rectData.X2{1,C(i,3)}(C(i,2)) - rectData.X1{1,C(i,3)}(C(i,2))) / 2) + ...
+         rectData.X1{1,C(i,3)}(C(i,2));
+    Xc = Xc / params.reduceFactor;
 
-    % string(obj.VST.shape) == "circle"  %%%Asumes that shape is circle
+    Yc = round((rectData.Y4{1,C(i,3)}(C(i,2)) - rectData.Y1{1,C(i,3)}(C(i,2))) / 2) + ...
+         rectData.Y1{1,C(i,3)}(C(i,2));
+    Yc = Yc / params.reduceFactor;
 
-    Xc = round((rectData.X2{1,C(i,3)}(C(i,2))-rectData.X1{1,C(i,3)}(C(i,2)))/2)+rectData.X1{1,C(i,3)}(C(i,2));%...
-    Xc = Xc/params.reduceFactor;
-
-    Yc = round((rectData.Y4{1,C(i,3)}(C(i,2))-rectData.Y1{1,C(i,3)}(C(i,2)))/2)+rectData.Y1{1,C(i,3)}(C(i,2));%...
-    Yc = Yc/params.reduceFactor;
-
-    XcStore(j) = Xc; % still in pixel coords at this point
+    XcStore(j) = Xc;
     YcStore(j) = Yc;
 
-    r = round((rectData.X2{1,C(i,3)}(C(i,2))-rectData.X1{1,C(i,3)}(C(i,2)))/2);
-    r= r/params.reduceFactor;
+    % Circle radius in reduced pixels
+    r = round((rectData.X2{1,C(i,3)}(C(i,2)) - rectData.X1{1,C(i,3)}(C(i,2))) / 2) / params.reduceFactor;
 
-    % Calculate the distance of each point from the center
-    distances = sqrt((x - Xc).^2 + (y - Yc).^2);
-
-    % Set the values inside the circle to 1 (or any other value you prefer)
+    % Binary circle mask: 1 inside stimulus, 0 outside
+    distances               = sqrt((x - Xc).^2 + (y - Yc).^2);
     xyScreen(distances <= r) = 1;
 
-    %
-    %                 hold on; plot(rect.VSMetaData.allPropVal{21,1}.X1{1,C(i,3)}(C(i,2)),rect.VSMetaData.allPropVal{21,1}.Y1{1,C(i,3)}(C(i,2)),points{C(i,3)},MarkerSize=10)%,...
-    %                 hold on; plot(rect.VSMetaData.allPropVal{21,1}.X2{1,C(i,3)}(C(i,2)),rect.VSMetaData.allPropVal{21,1}.Y2{1,C(i,3)}(C(i,2)),points{C(i,3)},MarkerSize=10)
-    %                 hold on; plot(rect.VSMetaData.allPropVal{21,1}.X3{1,C(i,3)}(C(i,2)),rect.VSMetaData.allPropVal{21,1}.Y3{1,C(i,3)}(C(i,2)),points{C(i,3)},MarkerSize=10)%,...
-    %                 hold on; plot(rect.VSMetaData.allPropVal{21,1}.X4{1,C(i,3)}(C(i,2)),rect.VSMetaData.allPropVal{21,1}.Y4{1,C(i,3)}(C(i,2)),points{C(i,3)},MarkerSize=10)%,...
-    %                 hold on; plot(Xc,Yc,points{C(i,3)},MarkerSize=10);
-
-    %figure;imagesc(xyScreen')
-
     VideoScreen(:,:,j) = xyScreen';
-
-    pxyScreen = pxyScreen+xyScreen;
-
-    j = j+1;
-
+    pxyScreen          = pxyScreen + xyScreen;
+    j = j + 1;
 end
 
-%%%%%%%%%% Spike rate grid map
-nGrid = params.nGrid;
-xEdges = linspace(0, screenSide(3)/params.reduceFactor, nGrid+1); % reduced pixel coords
-yEdges = linspace(0, screenSide(4)/params.reduceFactor, nGrid+1);
+% -------------------------------------------------------------------------
+% Spike rate grid map: bin trials into nGrid x nGrid spatial grid
+% -------------------------------------------------------------------------
+nGrid  = params.nGrid;
 
+% Grid edges in reduced pixel coordinates
+xEdges = linspace(0, screenSide(3) / params.reduceFactor, nGrid + 1);
+yEdges = linspace(0, screenSide(4) / params.reduceFactor, nGrid + 1);
+
+% [nGrid, nGrid, nN, 2(on/off), nSize, nLums]
 gridSpikeRate      = zeros(nGrid, nGrid, nN, 2, nSize, nLums);
+% [nGrid, nGrid, nN, nShuffle, 2(on/off), nSize, nLums]
 gridSpikeRateShuff = zeros(nGrid, nGrid, nN, nShuffle, 2, nSize, nLums);
 trialCount         = zeros(nGrid, nGrid, nSize, nLums);
 
 jj = 1;
-
 for i = 1:trialDiv:nT
 
+    % Bin stimulus centre into grid cell
     xBin = discretize(XcStore(jj), xEdges);
     yBin = discretize(YcStore(jj), yEdges);
 
@@ -300,28 +248,31 @@ for i = 1:trialDiv:nT
 
     trialCount(yBin, xBin, sizeIdx, lumIdx) = trialCount(yBin, xBin, sizeIdx, lumIdx) + 1;
 
-    % On and off response
+    % Mean on/off rate over trialDiv reps, convert to spikes/s: [1,1,nN]
     onRate  = reshape(mean(mean(Mr( i:i+trialDiv-1,:,:), 1), 3) .* (1000/params.bin), [1 1 nN]);
     offRate = reshape(mean(mean(Mro(i:i+trialDiv-1,:,:), 1), 3) .* (1000/params.bin), [1 1 nN]);
 
     gridSpikeRate(yBin, xBin, :, 1, sizeIdx, lumIdx) = gridSpikeRate(yBin, xBin, :, 1, sizeIdx, lumIdx) + onRate;
     gridSpikeRate(yBin, xBin, :, 2, sizeIdx, lumIdx) = gridSpikeRate(yBin, xBin, :, 2, sizeIdx, lumIdx) + offRate;
 
+    % Accumulate shuffle spike rates (on response only, for grid)
     for s = 1:nShuffle
-        shuffRate = reshape(mean(mean(shuffledData(i:i+trialDiv-1,:,:,s), 1), 3), [1 1 nN]);
-        gridSpikeRateShuff(yBin, xBin, :, s, sizeIdx, lumIdx) = ...
-            gridSpikeRateShuff(yBin, xBin, :, s, sizeIdx, lumIdx) + shuffRate;
+        shuffRate = reshape(mean(mean(shuffledDataOn(i:i+trialDiv-1,:,:,s), 1), 3), [1 1 nN]);
+        gridSpikeRateShuff(yBin, xBin, :, s, 1, sizeIdx, lumIdx) = ...
+            gridSpikeRateShuff(yBin, xBin, :, s, 1, sizeIdx, lumIdx) + shuffRate;
     end
 
     jj = jj + 1;
 end
 
-% Normalize by trial count
+% Normalize grid maps by trial count per cell
 for si = 1:nSize
     for li = 1:nLums
-        tc = max(trialCount(:,:,si,li), 1); % [nGrid x nGrid]
+        tc = max(trialCount(:,:,si,li), 1);  % [nGrid, nGrid] — avoid divide-by-zero
         for s = 1:nShuffle
-            gridSpikeRateShuff(:,:,:,s,si,li) = gridSpikeRateShuff(:,:,:,s,si,li) ./ tc;
+            for oi = 1:2
+                gridSpikeRateShuff(:,:,:,s,oi,si,li) = gridSpikeRateShuff(:,:,:,s,oi,si,li) ./ tc;
+            end
         end
         for oi = 1:2
             gridSpikeRate(:,:,:,oi,si,li) = gridSpikeRate(:,:,:,oi,si,li) ./ tc;
@@ -329,55 +280,115 @@ for si = 1:nSize
     end
 end
 
-%%%%%% Convolution
-VD = reshape(VideoScreen,[1 1 1 size(VideoScreen,1) size(VideoScreen,1) size(VideoScreen,3)]);
-VD = repmat(VD,[1,1,1,1,1,1,nN]);
+% -------------------------------------------------------------------------
+% RF via point multiplication: weight VideoScreen frames by mean spike rate
+% VD:  [2, nLums, nSize, screenRed, screenRed, nPos, nN]  (after repmat)
+% Res: [2, nLums, nSize, 1,         1,         nPos, nN]
+% -------------------------------------------------------------------------
+nPos = size(VideoScreen, 3);  % number of unique stimulus positions
 
+% Reshape VideoScreen to broadcast across onOff/lum/size/neuron dims
+VD = reshape(VideoScreen, [1, 1, 1, screenRed, screenRed, nPos]);
+VD = repmat(VD, [1, 1, 1, 1, 1, 1, nN]);  % [1, 1, 1, screenRed, screenRed, nPos, nN]
 
-NanPos = isnan(MrMean);
-
+NanPos        = isnan(MrMean);
 MrMean(NanPos) = 0;
 
-Res = reshape(MrMean,[size(MrMean,1),size(MrMean,2),size(MrMean,3),1,1,size(MrMean,4),nN]);
+% Reshape MrMean to align position and neuron dims with VD
+Res = reshape(MrMean, [2, nLums, nSize, 1, 1, nPos, nN]);
 
-%Take mean
-RFu = reshape(mean(VD.*Res,6),[size(MrMean,1),size(MrMean,2),size(MrMean,3),size(VD,4),size(VD,4),nN]);
+% Weighted average across positions: [2, nLums, nSize, screenRed, screenRed, nN]
+RFu = reshape(mean(VD .* Res, 6), [2, nLums, nSize, screenRed, screenRed, nN]);
 
-offsetN = sqrt(max(seqMatrix));
+% -------------------------------------------------------------------------
+% Shuffle RF: same computation as RFu but using shuffled spike rates
+% Result: RFuShuffMean [2, nLums, nSize, screenRed, screenRed, nN]
+%         averaged across nShuffle, directly comparable to RFu
+% -------------------------------------------------------------------------
 
-TwoDGaussian = fspecial('gaussian',floor(size(RFu,4)/(offsetN/2)),screenRed/offsetN);
+% Pre-compute mean shuffle rate per trial by averaging over time bins
+% [nT, nN, nShuffle] — avoids recomputing inside the shuffle loop
 
-RFuFilt = zeros(size(RFu));
+shuffMeanRateOn  = reshape(mean(shuffledDataOn,  3), [nT, nN, nShuffle]);  % [nT, nN, nShuffle]
+shuffMeanRateOff = reshape(mean(shuffledDataOff, 3), [nT, nN, nShuffle]);  % [nT, nN, nShuffle]
 
+% Accumulate shuffle RFs across all nShuffle — [2, nLums, nSize, screenRed, screenRed, nN, nShuffle]
+RFuShuffAll = zeros(2, nLums, nSize, screenRed, screenRed, nN, nShuffle);
 
-for d = 1:size(RFu,1) %On off response
-    for s = 1:size(RFu,2) %Lums
-        for l = 1:size(RFu,3) %size
-            for ui =1:size(RFu,6) %units
-                slice = squeeze(RFu(d,s,l,:,:,ui));
+for sh = 1:nShuffle
 
-                slicek = conv2(slice,TwoDGaussian,'same');
+    % Build per-condition mean shuffle rate: [2, nLums, nSize, nPos, nN]
+    MrMeanShuff_sh = zeros(2, nLums, nSize, nPos, nN);
+    j = 1;
+    for i = 1:trialDiv:nT
+        li = find(uLums == C(i,4));
+        si = find(uSize == C(i,3));
 
-                RFuFilt(d,s,l,:,:,ui) =slicek;
+        % Average over trialDiv reps for this position
+        MrMeanShuff_sh(1, li, si, j, :) = mean(shuffMeanRateOn( i:i+trialDiv-1, :, sh), 1);  % on
+        MrMeanShuff_sh(2, li, si, j, :) = mean(shuffMeanRateOff(i:i+trialDiv-1, :, sh), 1);  % off
+        j = j + 1;
+    end
+
+    % Set NaNs to zero before multiplication (same as real RF path)
+    MrMeanShuff_sh(isnan(MrMeanShuff_sh)) = 0;
+
+    % Reshape to align with VD: [2, nLums, nSize, 1, 1, nPos, nN]
+    ResSh = reshape(MrMeanShuff_sh, [2, nLums, nSize, 1, 1, nPos, nN]);
+
+    % Weighted average across positions: [2, nLums, nSize, screenRed, screenRed, nN]
+    RFuShuffAll(:,:,:,:,:,:,sh) = reshape(mean(VD .* ResSh, 6), ...
+        [2, nLums, nSize, screenRed, screenRed, nN]);
+
+end
+
+% Average shuffle RFs across shuffles: [2, nLums, nSize, screenRed, screenRed, nN]
+% This is the shuffle baseline, directly comparable to RFu
+RFuShuffMean = mean(RFuShuffAll, 7);
+
+% -------------------------------------------------------------------------
+% Apply 2D Gaussian smoothing to both RFu and RFuShuffMean
+% Sigma and kernel size scale with screen resolution and position layout
+% -------------------------------------------------------------------------
+offsetN = sqrt(max(seqMatrix));  % number of positions along one screen axis
+
+TwoDGaussian = fspecial('gaussian', ...
+    floor(size(RFu, 4) / (offsetN / 2)), ...
+    screenRed / offsetN);
+
+RFuFilt          = zeros(size(RFu));       % smoothed RF
+RFuShuffMeanFilt = zeros(size(RFu));       % smoothed shuffle RF baseline
+
+for d = 1:size(RFu, 1)     % on/off
+    for s = 1:size(RFu, 2)  % lums
+        for l = 1:size(RFu, 3)  % sizes
+            for ui = 1:size(RFu, 6)  % neurons
+                slice                      = squeeze(RFu(d,s,l,:,:,ui));
+                RFuFilt(d,s,l,:,:,ui)      = conv2(slice, TwoDGaussian, 'same');
+
+                sliceSh                         = squeeze(RFuShuffMean(d,s,l,:,:,ui));
+                RFuShuffMeanFilt(d,s,l,:,:,ui)  = conv2(sliceSh, TwoDGaussian, 'same');
             end
         end
     end
 end
 
-% figure;imagesc(squeeze(RFu(2,:,:,:,:,83)));
-S.RFu = RFu;
+% -------------------------------------------------------------------------
+% Save results
+% -------------------------------------------------------------------------
+S.RFu              = RFu;               % [2, nLums, nSize, screenRed, screenRed, nN]  — NOTE: dim2=lums, dim3=size
+S.RFuFilt          = RFuFilt;           % Gaussian-smoothed version of RFu
+S.RFuShuffMean     = RFuShuffMean;      % Shuffle baseline RF [same dims as RFu]
+S.RFuShuffMeanFilt = RFuShuffMeanFilt;  % Gaussian-smoothed shuffle baseline
+S.shuffledData     = shuffledDataOn;    % Kept for backward compatibility (on-response shuffles)
+S.shuffledDataOff    = shuffledDataOff;
+S.gridSpikeRate      = gridSpikeRate;      % [nGrid, nGrid, nN, 2, nSize, nLums]
+S.gridSpikeRateShuff = gridSpikeRateShuff; % [nGrid, nGrid, nN, nShuffle, 2, nSize, nLums]
+S.params           = params;
 
-S.RFuFilt = RFuFilt;
+save(filename, '-struct', 'S');
+fprintf('Saved results to %s\n', filename);
 
-S.shuffledData = shuffledData;
-
-S.gridSpikeRateShuff = gridSpikeRateShuff;
-
-S.gridSpikeRate = gridSpikeRate;
-
-S.params = params;
-
-save(filename,'-struct','S');
+results = S;
 
 end
-
