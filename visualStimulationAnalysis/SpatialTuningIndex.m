@@ -5,7 +5,7 @@ arguments
     params.stimTypes  (1,:) string  = ["linearlyMovingBall", "rectGrid"]
     params.topPercent double        = 10
     params.overwrite  logical       = false
-    params.statType   string        = "BootstrapPerNeuron"
+    params.statType   string        = "maxPermuteTest"
     params.speed      double        = 1
     params.plot       logical       = true
     params.indexType  string        = "L_amplitude_diff"  % L_amplitude_diff, L_amplitude_ratio, L_geometric, L_combined
@@ -162,6 +162,8 @@ if ~goto_plot
                 % Select statistical test output
                 if params.statType == "BootstrapPerNeuron"
                     Stats = obj_s.BootstrapPerNeuron;
+                elseif params.statType == "maxPermuteTest"
+                     Stats = obj_s.StatisticsPerNeuron;
                 else
                     Stats = obj_s.ShufflingAnalysis;
                 end

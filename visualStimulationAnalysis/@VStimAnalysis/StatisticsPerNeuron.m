@@ -2,39 +2,63 @@ function results = StatisticsPerNeuron(obj, params)
 % StatisticsPerNeuron - Computes per-neuron response statistics vs baseline.
 %
 % For each neuron this function outputs:
-%   pVal    : p-value from a max-statistic sign-flip permutation test.
-%             Tests H0: no stimulus category drives a response above baseline.
-%             The max-statistic controls family-wise error rate across categories
-%             without requiring Bonferroni correction.
+%   pvalsResponse : p-value from a max-statistic sign-flip permutation test.
+%                   Tests H0: no stimulus category drives a response above baseline.
+%                   The max-statistic controls family-wise error rate across categories
+%                   without requiring Bonferroni correction.
 %
-%   ZScoreU : Leave-one-out (LOO) cross-validated z-score at the preferred
-%             stimulus category. On each LOO fold, the preferred category is
-%             identified on all-but-one trials, and the held-out trial contributes
-%             to the z-score estimate. This prevents winner's curse inflation that
-%             would otherwise scale with nCats, making z-scores non-comparable
-%             across stimuli with different category counts (e.g. rectGrid with
-%             81 positions vs moving ball with 4 directions).
+%   ZScoreU       : Data-driven z-score of neuronal response normalised by pooled
+%                   baseline SD. Three modes controlled by MovingWindow and UseLOO:
+%                   - MovingWindow=true : peak 300ms sliding window at preferred
+%                     category (argmax of MW), baseline corrected.
+%                   - MovingWindow=false, UseLOO=true : LOO cross-validated mean
+%                     Diff at preferred category — unbiased across stimuli.
+%                   - MovingWindow=false, UseLOO=false : direct mean Diff at
+%                     preferred category — faster but subject to winner's curse.
 %
-%   prefCat : Consensus preferred category — the category most frequently
-%             selected as preferred across all LOO folds.
+%   ZScorePermutation : Permutation z-score — observed max-statistic normalised
+%                   by the mean and SD of its own null distribution.
+%                   Quantifies how many SDs above the null the observed response is.
+%                   More comparable across stimuli than ZScoreU when stimulus
+%                   durations or category counts differ substantially.
+%                   Note: still partially affected by nCats and duration since
+%                   nullSD scales with both. Use alongside ZScoreU, not instead.
 %
-%   validCats: [nCats × nNeurons] logical mask. False where a category has
-%             >= EmptyTrialPerc fraction of zero-spike trials for a given neuron.
+%   prefCat       : Consensus preferred category index [1 × nNeurons].
+%
+%   validCats     : [nCats × nNeurons] logical mask. False where a category has
+%                   >= EmptyTrialPerc fraction of zero-spike trials.
+%
+%   pValTTest     : p-value from one-sample t-test against zero, pooled across
+%                   all valid categories per neuron.
+%
+%   tStat         : t-statistic corresponding to pValTTest [1 × nNeurons].
 %
 % Usage:
 %   results = obj.StatisticsPerNeuron()
-%   results = obj.StatisticsPerNeuron(nBoot=5000, overwrite=true)
+%   results = obj.StatisticsPerNeuron(nBoot=5000, UseLOO=false, overwrite=true)
 %
 % Reference for sign-flip permutation test:
 %   Nichols & Holmes (2002) Human Brain Mapping 15:1-25
 
 arguments (Input)
     obj
-    params.nBoot               = 10000  % number of permutation iterations for null distribution
-    params.EmptyTrialPerc      = 0.7    % exclude category if fraction of zero-spike trials >= this threshold
-    params.FilterEmptyResponses = true  % whether to apply empty-trial category filtering
-    params.overwrite           = false  % if true, recompute even if a saved file already exists
-    params.randomSeed          = 42     % fixed seed for reproducible permutation results (required for publication)
+    params.nBoot                = 10000  % number of permutation iterations for null distribution
+    params.EmptyTrialPerc       = 0.7    % exclude category if fraction of zero-spike trials >= this threshold
+    params.FilterEmptyResponses = false  % whether to apply empty-trial category filtering
+    params.overwrite            = false  % if true, recompute even if a saved file already exists
+    params.randomSeed           = 42     % fixed seed for reproducible permutation results (required for publication)
+    params.MovingWindowPval     = true   % if true: use per-trial sliding window max for pval
+                                         % if false: use full stimulus duration mean
+    params.UseLOO               = true   % if true: LOO cross-validated z-score (recommended)
+                                         % if false: direct z-score at preferred category (faster, inflated)
+                                         % ignored when MovingWindow=true (prefCat from argmax of MW)
+    params.CapStimDuration      = true   % if true: cap stimulus duration at MaxStimDuration ms
+                                         % before building response matrix. Ensures comparable
+                                         % analysis windows across stimuli with different durations.
+    params.MaxStimDuration      = 500    % maximum stimulus duration in ms when CapStimDuration=true.
+                                         % Should be set to the duration of the shortest stimulus
+                                         % (e.g. 500ms for rectGrid) for cross-stimulus comparability.
 end
 
 % -------------------------------------------------------------------------
@@ -92,45 +116,48 @@ end
 % -------------------------------------------------------------------------
 % Parse stimulus timing per condition
 % Stimulus type determines loop structure:
-%   linearlyMovingBall   → one or two speed conditions (Speed1, Speed2)
-%   StaticDriftingGrating → Static and Moving phases
-%   all others (rectGrid) → single condition
+%   linearlyMovingBall/Bar → one or two speed conditions (Speed1, Speed2)
+%   StaticDriftingGrating  → Static and Moving phases
+%   all others (rectGrid)  → single condition
 % -------------------------------------------------------------------------
 if isfield(responseParams, "Speed1")
     % BUG FIX: original code used length(obj.VST.speed) which returns total
-    % number of trials, not unique speeds — caused loop to run hundreds of times
-    nSpeeds = numel(unique(obj.VST.speed));  % number of distinct speed values
+    % number of trials — corrected to numel(unique(...)) for distinct speeds
+    nSpeeds = numel(unique(obj.VST.speed));
 
-    Times.Speed1      = responseParams.Speed1.C(:,1)';                                    % trial onset times [1 × nTrials]
-    Durations.Speed1  = responseParams.Speed1.stimDur;                                    % stimulus duration in ms
-    trialsCats.Speed1 = round(numel(Times.Speed1) / size(responseParams.Speed1.NeuronVals, 2));  % trials per category
+    Times.Speed1      = responseParams.Speed1.C(:,1)';
+    Durations.Speed1  = responseParams.Speed1.stimDur;
+    trialsCats.Speed1 = round(numel(Times.Speed1) / size(responseParams.Speed1.NeuronVals, 2));
+    MWs.Speed1        = responseParams.Speed1.NeuronVals(:,:,4)';  % [nCats × nNeurons]
 
     if nSpeeds > 1
         Times.Speed2      = responseParams.Speed2.C(:,1)';
         Durations.Speed2  = responseParams.Speed2.stimDur;
         trialsCats.Speed2 = round(numel(Times.Speed2) / size(responseParams.Speed2.NeuronVals, 2));
+        MWs.Speed2        = responseParams.Speed2.NeuronVals(:,:,4)';
     end
 
-    x = nSpeeds;  % number of loop iterations
+    x = nSpeeds;
 
 elseif isequal(obj.stimName, 'StaticDriftingGrating')
-    % Moving phase onset is shifted by static_time relative to trial onset
     Times.Moving      = responseParams.C(:,1)' + obj.VST.static_time * 1000;
     Durations.Moving  = responseParams.Moving.stimDur;
     trialsCats.Moving = round(numel(Times.Moving) / size(responseParams.Moving.NeuronVals, 2));
+    MWs.Moving        = responseParams.Moving.NeuronVals(:,:,4)';
 
     Times.Static      = responseParams.C(:,1)';
     Durations.Static  = responseParams.Static.stimDur;
     trialsCats.Static = round(numel(Times.Static) / size(responseParams.Static.NeuronVals, 2));
+    MWs.Static        = responseParams.Static.NeuronVals(:,:,4)';
 
-    FieldNames = {'Static', 'Moving'};  % loop will index these in order
+    FieldNames = {'Static', 'Moving'};
     x = 2;
 
 else
-    % Single-condition stimuli (rectGrid, etc.)
     directimesSorted = responseParams.C(:,1)';
     stimDur          = responseParams.stimDur;
     trialsCat        = round(numel(directimesSorted) / size(responseParams.NeuronVals, 2));
+    MW               = responseParams.NeuronVals(:,:,4)';  % [nCats × nNeurons]
     x = 1;
 end
 
@@ -139,64 +166,118 @@ end
 % =========================================================================
 for s = 1:x
 
-    % --- Assign condition-specific timing variables ---
+    % --- Assign condition-specific variables ---
     if isfield(responseParams, "Speed1")
-        fieldName        = sprintf('Speed%d', s);   % 'Speed1' or 'Speed2'
+        fieldName        = sprintf('Speed%d', s);
         directimesSorted = Times.(fieldName);
         stimDur          = Durations.(fieldName);
         trialsCat        = trialsCats.(fieldName);
+        MW               = MWs.(fieldName);
     end
 
     if isequal(obj.stimName, 'StaticDriftingGrating')
-        fieldName        = FieldNames{s};           % 'Static' or 'Moving'
+        fieldName        = FieldNames{s};
         directimesSorted = Times.(fieldName);
         stimDur          = Durations.(fieldName);
         trialsCat        = trialsCats.(fieldName);
+        MW               = MWs.(fieldName);
+    end
+
+    % -------------------------------------------------------------------------
+    % Cap stimulus duration if requested
+    % Ensures the response matrix covers the same time span across stimuli,
+    % preventing winner's curse inflation in moving window analyses caused by
+    % longer stimuli providing more windows to search over.
+    % For moving ball (2.3s) vs rectGrid (0.5s), capping at 500ms makes the
+    % number of sliding window positions comparable.
+    % Warning is issued when capping occurs so the user is aware.
+    % -------------------------------------------------------------------------
+    if params.CapStimDuration && stimDur > params.MaxStimDuration
+        fprintf(['Warning: stimulus duration (%.0f ms) exceeds MaxStimDuration ' ...
+                 '(%.0f ms) — capping response window for %s.\n'], ...
+                 stimDur, params.MaxStimDuration, obj.stimName);
+        effectiveStimDur = params.MaxStimDuration;  % capped duration used for Mr only
+    else
+        effectiveStimDur = stimDur;  % full duration — no capping needed
     end
 
     % --- Build spike count matrices ---
-    % Mr: spike counts in the response window (stimulus duration)
+    % Mr: response window — capped at effectiveStimDur if CapStimDuration=true
+    % Capping takes first MaxStimDuration ms of each trial, starting at stimulus onset
     Mr = BuildBurstMatrix(goodU, ...
         round(p.t), ...
         round(directimesSorted), ...
-        round(stimDur));
+        round(effectiveStimDur));  % capped or full duration
 
-    % Mb: spike counts in the baseline window (75% of inter-trial interval
-    % before each trial onset — conservative buffer to avoid overlap with
-    % the preceding stimulus)
+    % Mb: baseline window — always uses 75% of inter-trial interval
+    % Duration is independent of stimulus duration so no capping needed
     Mb = BuildBurstMatrix(goodU, ...
         round(p.t), ...
         round(directimesSorted - 0.75 * obj.VST.interTrialDelay * 1000), ...
         round(0.75 * obj.VST.interTrialDelay * 1000));
 
-    responses = mean(Mr, 3);        % mean spike count over time bins: [nTrials × nNeurons]
-    baselines = mean(Mb, 3);        % mean spike count over baseline bins: [nTrials × nNeurons]
-    Diff      = responses - baselines;  % per-trial response minus baseline: [nTrials × nNeurons]
+    % Always compute full-duration means — needed for empty-trial filtering
+    % and for the non-moving-window z-score path regardless of MovingWindow flag
+    responses = mean(Mr, 3);   % mean spikes/ms over response window: [nTrials × nNeurons]
+    baselines = mean(Mb, 3);   % mean spikes/ms over baseline window: [nTrials × nNeurons]
 
-    nNeurons = size(goodU, 2);              % number of good units
+    % -------------------------------------------------------------------------
+    % Compute Diff — method depends on MovingWindow flag
+    % MovingWindow=true : per-trial sliding window max, applied identically to
+    %                     Mr and Mb so null distribution uses the same operation
+    % MovingWindow=false: full duration mean, appropriate for sustained responses
+    % -------------------------------------------------------------------------
+    if params.MovingWindowPval
+        winSize = responseParams.params.durationWindow;  % sliding window size in ms/bins
+
+        % Guard: both response and baseline must be at least as long as winSize
+        assert(size(Mr,3) >= winSize, ...
+            ['Response window (%d ms) shorter than durationWindow (%d ms). ' ...
+             'Reduce durationWindow or increase MaxStimDuration.'], ...
+            size(Mr,3), winSize);
+        assert(size(Mb,3) >= winSize, ...
+            ['Baseline window (%d ms) shorter than durationWindow (%d ms). ' ...
+             'Reduce durationWindow or increase interTrialDelay.'], ...
+            size(Mb,3), winSize);
+
+        % movmean along dim 3 — vectorised sliding window mean, no loop needed
+        % 'Endpoints','discard' removes partial windows at array edges
+        mrMov = movmean(Mr, winSize, 3, 'Endpoints', 'discard');  % [nTrials × nNeurons × nStepsR]
+        mbMov = movmean(Mb, winSize, 3, 'Endpoints', 'discard');  % [nTrials × nNeurons × nStepsB]
+
+        % Per-trial maximum over all valid window positions: [nTrials × nNeurons]
+        responsesMW = max(mrMov, [], 3);
+        baselinesMW = max(mbMov, [], 3);
+
+        % Per-trial moving window difference — used for permutation test and z-score
+        Diff = responsesMW - baselinesMW;  % [nTrials × nNeurons]
+
+    else
+        % Full duration mean — appropriate for sustained/spatially localised responses
+        Diff = responses - baselines;  % [nTrials × nNeurons]
+    end
+
+    nNeurons = size(goodU, 2);                   % number of good units
     nCats    = round(size(Diff,1) / trialsCat);  % number of stimulus categories
 
     % Sanity check: total trials must equal nCats × trialsCat
     assert(size(Diff,1) == nCats * trialsCat, ...
-        'Trial count (%d) is not evenly divisible by trialsCat (%d). Check responseParams.', ...
+        'Trial count (%d) not evenly divisible by trialsCat (%d). Check responseParams.', ...
         size(Diff,1), trialsCat);
 
     % -------------------------------------------------------------------------
     % Category-level empty-trial filtering
-    % Mark a category as invalid for a given neuron if the fraction of trials
-    % with zero spikes meets or exceeds EmptyTrialPerc.
-    % Invalid categories are excluded (not zeroed) to avoid biasing Diff toward 0.
+    % Uses full-duration responses (not moving window) for the zero-spike check
+    % because MW inflates apparent spike counts for silent trials
     % -------------------------------------------------------------------------
-    validCats = true(nCats, nNeurons);  % [nCats × nNeurons]; true = include in analysis
+    validCats = true(nCats, nNeurons);  % [nCats × nNeurons]; true = include
 
     if params.FilterEmptyResponses
-        % Reshape responses to [trialsCat × nCats × nNeurons] for category indexing
-        responsesReshaped = reshape(responses, trialsCat, nCats, nNeurons);
-
+        responsesReshaped = reshape(responses, trialsCat, nCats, nNeurons);  % [trialsCat × nCats × nNeurons]
         for c = 1:nCats
             for u = 1:nNeurons
-                emptyTrials = responsesReshaped(:, c, u) == 0;   % logical: zero-spike trials
-                perc        = sum(emptyTrials) / trialsCat;       % fraction of empty trials
+                emptyTrials = responsesReshaped(:, c, u) == 0;  % zero-spike trials in this category
+                perc        = sum(emptyTrials) / trialsCat;      % fraction of empty trials
                 if perc >= params.EmptyTrialPerc
                     validCats(c, u) = false;  % exclude category c for neuron u
                 end
@@ -204,165 +285,231 @@ for s = 1:x
         end
     end
 
-    % Neurons where ALL categories are invalid — statistics are undefined
+    % Neurons where ALL categories are invalid — statistics undefined
     noValidCat = all(~validCats, 1);  % [1 × nNeurons]
 
     % -------------------------------------------------------------------------
-    % Reshape Diff into category structure
-    % DiffReshaped: [trialsCat × nCats × nNeurons]
-    % -------------------------------------------------------------------------
-    DiffReshaped = reshape(Diff, trialsCat, nCats, nNeurons);
-
-    % -------------------------------------------------------------------------
     % Observed max-statistic
-    % For each neuron: maximum mean response-minus-baseline across valid categories.
-    % Invalid categories are set to -Inf so they cannot contribute to the max.
+    % Maximum mean Diff across valid categories per neuron [1 × nNeurons]
     % -------------------------------------------------------------------------
-    catMeans            = squeeze(mean(DiffReshaped, 1));   % [nCats × nNeurons]
-    catMeansMasked      = catMeans;
-    catMeansMasked(~validCats) = -Inf;                      % exclude invalid categories
-    ObsStat             = max(catMeansMasked, [], 1);        % [1 × nNeurons]
+    DiffReshaped = reshape(Diff, trialsCat, nCats, nNeurons);         % [trialsCat × nCats × nNeurons]
+    catMeans     = reshape(mean(DiffReshaped, 1), nCats, nNeurons);   % [nCats × nNeurons]
+
+    catMeansMasked             = catMeans;
+    catMeansMasked(~validCats) = -Inf;            % invalid categories cannot be preferred
+    ObsStat                    = max(catMeansMasked, [], 1);  % [1 × nNeurons]
 
     % -------------------------------------------------------------------------
     % Max-statistic sign-flip permutation test
     %
-    % H0: for each trial the sign of (response - baseline) is random,
-    %     meaning response and baseline are drawn from the same distribution.
-    %
-    % Under H0, randomly flipping the sign of each trial's difference is
-    % equivalent to randomly reassigning which window is "response" and which
-    % is "baseline". Repeating this nBoot times builds a null distribution of
-    % the max category mean under H0.
-    %
-    % Taking the MAX across categories at each permutation automatically
-    % controls family-wise error rate (FWER) across categories without
-    % requiring Bonferroni correction (Nichols & Holmes 2002).
-    %
-    % Fully vectorised using pagemtimes for efficiency — no loop over nBoot.
+    % H0: sign of Diff is random per trial (response = baseline distribution).
+    % Sign-flipping simulates H0 without parametric assumptions.
+    % Taking MAX across categories controls FWER (Nichols & Holmes 2002).
+    % Fully vectorised via pagemtimes — no loop over nBoot.
     % -------------------------------------------------------------------------
 
     % Generate all sign vectors at once: [nTrials × nBoot], values ±1
-    signs = 2 * randi(2, size(Diff,1), params.nBoot) - 3;
+    signs  = 2 * randi(2, size(Diff,1), params.nBoot) - 3;
 
     % Reshape signs to match category structure: [trialsCat × nCats × nBoot]
-    % This maps each trial's sign flip to its correct category slot
     signsR = reshape(signs, trialsCat, nCats, params.nBoot);
 
-    % Permute for pagemtimes — pages correspond to categories:
+    % Permute for pagemtimes:
     %   DiffRp  : [nNeurons × trialsCat × nCats]
     %   signsRp : [trialsCat × nBoot    × nCats]
-    DiffRp  = permute(DiffReshaped, [3 1 2]);   % [nNeurons × trialsCat × nCats]
-    signsRp = permute(signsR,       [1 3 2]);   % [trialsCat × nBoot    × nCats]
+    DiffRp  = permute(DiffReshaped, [3 1 2]);
+    signsRp = permute(signsR,       [1 3 2]);
 
-    % Batched matrix multiply over category pages:
-    %   for each category: [nNeurons × trialsCat] × [trialsCat × nBoot] = [nNeurons × nBoot]
-    %   result: [nNeurons × nBoot × nCats]
+    % Batched matrix multiply over category pages: [nNeurons × nBoot × nCats]
     catMeansAll = pagemtimes(DiffRp, signsRp) / trialsCat;
 
-    % Permute to [nCats × nNeurons × nBoot] for masking and max operation
+    % Permute to [nCats × nNeurons × nBoot] for masking and max
     catMeansAll = permute(catMeansAll, [3 1 2]);
 
-    % Exclude invalid categories from null distribution (same mask as observed stat)
-    validCats3D = repmat(validCats, 1, 1, params.nBoot);  % [nCats × nNeurons × nBoot]
+    % Exclude invalid categories from null distribution
+    validCats3D               = repmat(validCats, 1, 1, params.nBoot);  % [nCats × nNeurons × nBoot]
     catMeansAll(~validCats3D) = -Inf;
 
-    % Max across categories for each permutation and neuron: [nBoot × nNeurons]
-    nullMax = squeeze(max(catMeansAll, [], 1))';   % squeeze: [nNeurons × nBoot], then transpose
+    % Null distribution: max across categories for each permutation [nBoot × nNeurons]
+    % reshape instead of squeeze — safe when nNeurons=1 or nCats=1
+    nullMax = reshape(max(catMeansAll, [], 1), params.nBoot, nNeurons);
 
-    % p-value: proportion of null max-statistics >= observed max-statistic
-    % One-tailed test for excitatory responses
+    % p-value: proportion of null max-statistics >= observed (one-tailed, excitatory)
     pVal             = mean(nullMax >= ObsStat, 1);  % [1 × nNeurons]
-    pVal(noValidCat) = NaN;                          % undefined for neurons with no valid categories
+    pVal(noValidCat) = NaN;
 
     % -------------------------------------------------------------------------
-    % Leave-one-out (LOO) cross-validated z-score
-    %
-    % With only ~10 trials per category, split-half would leave only 5 trials
-    % for each half — too few for stable estimates. LOO maximises data usage:
-    %   - Selection set: all (trialsCat - 1) trials → identify preferred category
-    %   - Test set:      the single held-out trial  → contributes to z-score
-    %
-    % The preferred category is selected independently of the test trial on
-    % every fold, preventing winner's curse inflation that would otherwise
-    % differ across stimuli with different numbers of categories.
-    %
-    % Implementation is vectorised over categories and neurons.
-    % The only loop runs trialsCat times (e.g., 10) — negligible cost.
+    % Permutation z-score
+    % Observed stat normalised by the mean and SD of its own null distribution.
+    % Answers: "how many SDs above the null is this neuron's observed response?"
+    % Saved as a separate field from ZScoreU — the two metrics complement each
+    % other and are appropriate for different comparisons.
+    % Note: nullSD still partially scales with nCats and stimulus duration,
+    % so this metric is not perfectly comparable across stimuli — see methods.
     % -------------------------------------------------------------------------
+    nullMean          = mean(nullMax, 1);              % [1 × nNeurons] expected max under H0
+    nullSD            = std(nullMax,  1);              % [1 × nNeurons] variability of null max
+    zPerm             = (ObsStat - nullMean) ./ nullSD;% [1 × nNeurons] permutation z-score
+    zPerm(nullSD==0)  = 0;    % degenerate null — set to 0
+    zPerm(noValidCat) = NaN;  % undefined for fully invalid neurons
 
-    % Pre-compute sum across trials once: [1 × nCats × nNeurons]
-    % Subtracting one trial from the total is cheaper than recomputing the mean
-    totalSum = sum(DiffReshaped, 1);
+    % -------------------------------------------------------------------------
+    % Data z-score (ZScoreU)
+    % Three modes depending on MovingWindow and UseLOO flags:
+    %
+    % MovingWindow=true:
+    %   prefCat = argmax(MW) — MW is [nCats × nNeurons] peak firing rate
+    %   per category from sliding window already computed in ResponseWindow.
+    %   z_mean = MW at prefCat minus mean baseline (both in spikes/ms).
+    %   UseLOO is ignored in this mode.
+    %
+    % MovingWindow=false, UseLOO=true (recommended):
+    %   LOO cross-validated mean Diff at preferred category.
+    %   Preferred category identified on n-1 trials per fold.
+    %   Prevents winner's curse inflation that scales with nCats.
+    %
+    % MovingWindow=false, UseLOO=false:
+    %   Direct mean Diff at preferred category from all trials.
+    %   Faster but inflated when nCats is large — exploration only.
+    %
+    % All modes normalised by pooled baseline SD across all trials,
+    % more stable than per-category SD with few trials per category.
+    % -------------------------------------------------------------------------
+    sdBase = std(baselines, 0, 1);  % [1 × nNeurons] pooled baseline SD
 
-    % Pre-allocate accumulators
-    z_loo_acc    = zeros(1, nNeurons);      % accumulates held-out diff at preferred category
-    prefCatCount = zeros(nCats, nNeurons);  % tallies how often each category is preferred per fold
+    % if params.MovingWindowZS
+    %     % Preferred category = argmax of MW per neuron
+    %     % MW is [nCats × nNeurons] — already the best window mean per category
+    %     catMWMasked             = MW;
+    %     catMWMasked(~validCats) = -Inf;                     % exclude invalid categories
+    %     [~, prefCat]            = max(catMWMasked, [], 1);  % [1 × nNeurons]
+    % 
+    %     % Extract MW at preferred category using linear indexing
+    %     idx_pref  = prefCat + (0:nNeurons-1) * nCats;       % linear index into [nCats × nNeurons]
+    %     mwPrefCat = MW(idx_pref);                            % [1 × nNeurons] MW at preferred cat
+    %
+    %     % Baseline correct: both MW and mean(baselines) are in spikes/ms
+    %     z_mean = mwPrefCat - mean(baselines, 1);             % [1 × nNeurons]
+    %
+    % else
+    if nCats == 1
+        % Single category — preferred is trivially category 1
+        % LOO and direct z-score are identical with one category
+        prefCat = ones(1, nNeurons);   % only one category
+        z_mean  = mean(Diff, 1);       % mean over all trials [1 × nNeurons]
 
-    for k = 1:trialsCat
-        % Category mean on all trials except trial k: [nCats × nNeurons]
-        % Subtracting trial k from pre-computed total avoids recomputing the full mean
-        looMean = squeeze((totalSum - DiffReshaped(k,:,:)) / (trialsCat - 1));
+    elseif params.UseLOO
+        % --- LOO cross-validated z-score ---
+        % Pre-compute per-category sums for efficient LOO mean: [nCats × nNeurons]
+        totalSum = zeros(nCats, nNeurons);
+        for c = 1:nCats
+            rows          = (c-1)*trialsCat + 1 : c*trialsCat;  % trial rows for category c
+            totalSum(c,:) = sum(Diff(rows,:), 1);                % sum over trials
+        end
 
-        % Exclude invalid categories from selection
-        looMeanMasked             = looMean;
-        looMeanMasked(~validCats) = -Inf;
+        z_loo_acc    = zeros(1, nNeurons);      % accumulates held-out Diff at preferred cat
+        prefCatCount = zeros(nCats, nNeurons);  % tallies preferred category per fold
 
-        % Preferred category index on the selection data: [1 × nNeurons]
-        [~, prefCatLOO] = max(looMeanMasked, [], 1);
+        for k = 1:trialsCat
+            % LOO mean: subtract held-out trial k from total, divide by n-1
+            % Indexing (0:nCats-1)*trialsCat+k gives the kth trial of each category
+            looMean               = (totalSum - Diff((0:nCats-1)*trialsCat + k, :)) / (trialsCat - 1);
+            looMeanMasked         = looMean;
+            looMeanMasked(~validCats) = -Inf;               % exclude invalid categories
 
-        % Accumulate preferred category tally (used later for consensus prefCat)
-        idx            = sub2ind([nCats, nNeurons], prefCatLOO, 1:nNeurons);
-        prefCatCount(idx) = prefCatCount(idx) + 1;  % increment tally for this fold's choice
+            [~, prefCatLOO] = max(looMeanMasked, [], 1);   % [1 × nNeurons] preferred cat this fold
 
-        % Held-out trial k: diff values at all categories: [nCats × nNeurons]
-        testVals = squeeze(DiffReshaped(k,:,:));
+            % Linear index into [nCats × nNeurons]
+            idx               = prefCatLOO + (0:nNeurons-1) * nCats;
+            prefCatCount(idx) = prefCatCount(idx) + 1;     % tally this fold's choice
 
-        % Accumulate the held-out diff at the fold's preferred category
-        z_loo_acc = z_loo_acc + testVals(idx);  % [1 × nNeurons]
+            % Held-out trial contribution at preferred category
+            testVals  = Diff((0:nCats-1)*trialsCat + k, :);  % [nCats × nNeurons]
+            z_loo_acc = z_loo_acc + testVals(idx);            % accumulate held-out diff
+        end
+
+        z_mean       = z_loo_acc / trialsCat;         % mean held-out diff [1 × nNeurons]
+        [~, prefCat] = max(prefCatCount, [], 1);      % consensus preferred category
+
+    else
+        % --- Direct z-score (no LOO) ---
+        % Subject to winner's curse — use for exploration only
+        catMeansDir             = reshape(mean(DiffReshaped, 1), nCats, nNeurons);
+        catMeansDir(~validCats) = -Inf;
+        [~, prefCat]            = max(catMeansDir, [], 1);         % [1 × nNeurons]
+        idx                     = prefCat + (0:nNeurons-1) * nCats;
+        z_mean                  = catMeansDir(idx);                % [1 × nNeurons]
+    end
+    % end
+
+    % Normalise by pooled baseline SD
+    z              = z_mean ./ sdBase;  % [1 × nNeurons]
+    z(sdBase == 0) = 0;    % silent baseline — set to 0
+    z(noValidCat)  = NaN;  % no valid categories — undefined
+
+    % -------------------------------------------------------------------------
+    % One-sample t-test pooled across all valid categories
+    % H0: mean(Diff) = 0 across all valid trials.
+    % Pooling maximises df and avoids cherry-picking the preferred category.
+    % Permutation test is the primary criterion; t-test is a secondary check.
+    % -------------------------------------------------------------------------
+    pValTTest = zeros(1, nNeurons);
+    tStat     = zeros(1, nNeurons);
+
+    for u = 1:nNeurons
+        if noValidCat(u)
+            pValTTest(u) = NaN;
+            tStat(u)     = NaN;
+            continue
+        end
+
+        % Logical row mask: all trials belonging to valid categories for neuron u
+        validRows = false(size(Diff, 1), 1);
+        for c = 1:nCats
+            if validCats(c, u)
+                rows            = (c-1)*trialsCat + 1 : c*trialsCat;
+                validRows(rows) = true;
+            end
+        end
+
+        DiffValid            = Diff(validRows, u);              % valid trials for neuron u
+        [~, pValTTest(u), ~, stats] = ttest(DiffValid);        % one-sample t-test vs zero
+        tStat(u)             = stats.tstat;
     end
 
-    % Average LOO diff across all held-out trials: [1 × nNeurons]
-    z_loo_mean = z_loo_acc / trialsCat;
-
-    % Consensus preferred category: most frequently selected across LOO folds
-    % Used to extract baseline SD at a stable preferred location
-    [~, prefCat] = max(prefCatCount, [], 1);  % [1 × nNeurons]
-
-    % Baseline SD pooled across all trials and categories per neuron
-    % More stable than per-category SD, especially with few trials per category.
-    % Justified because baseline periods are pre-stimulus and should not vary
-    % systematically across stimulus categories.
-    sdBasePref = std(baselines, 0, 1);  % [1 × nNeurons] — std over all nTrials rows
-
-    % Final z-score: LOO mean diff normalised by baseline SD
-    z                  = z_loo_mean ./ sdBasePref;  % [1 × nNeurons]
-    z(sdBasePref == 0) = 0;    % silent baseline (no variability): set to 0
-    z(noValidCat)      = NaN;  % no valid categories: undefined
+    pValTTest(noValidCat) = NaN;
+    tStat(noValidCat)     = NaN;
 
     % -------------------------------------------------------------------------
     % Store results for this condition
     % -------------------------------------------------------------------------
     if isfield(responseParams, "Speed1") || isequal(obj.stimName, 'StaticDriftingGrating')
-        % Named sub-struct for multi-condition stimuli
-        S.(fieldName).pvalsResponse = pVal;       % [1 × nNeurons] permutation p-values
-        S.(fieldName).ZScoreU       = z;           % [1 × nNeurons] LOO cross-validated z-scores
-        S.(fieldName).ObsDiff       = Diff;        % [nTrials × nNeurons] raw trial differences
-        S.(fieldName).ObsResponse   = responses;   % [nTrials × nNeurons] response spike counts
-        S.(fieldName).ObsBaseline   = baselines;   % [nTrials × nNeurons] baseline spike counts
-        S.(fieldName).prefCat       = prefCat;     % [1 × nNeurons] consensus preferred category index
-        S.(fieldName).validCats     = validCats;   % [nCats × nNeurons] category validity mask
+        S.(fieldName).pvalsResponse      = pVal;        % [1 × nNeurons] permutation p-values
+        S.(fieldName).ZScoreU            = z;            % [1 × nNeurons] data z-score (LOO/direct/MW)
+        S.(fieldName).ZScorePermutation  = zPerm;        % [1 × nNeurons] permutation z-score
+        S.(fieldName).ObsDiff            = Diff;         % [nTrials × nNeurons] response minus baseline
+        S.(fieldName).ObsResponse        = responses;    % [nTrials × nNeurons] full-duration response
+        S.(fieldName).ObsBaseline        = baselines;    % [nTrials × nNeurons] baseline spike counts
+        S.(fieldName).prefCat            = prefCat;      % [1 × nNeurons] preferred category index
+        S.(fieldName).validCats          = validCats;    % [nCats × nNeurons] category validity mask
+        S.(fieldName).MaxMovWinResponse  = max(MW,[],1); % [1 × nNeurons] peak MW response across cats
+        S.(fieldName).pValTTest          = pValTTest;    % [1 × nNeurons] t-test p-values
+        S.(fieldName).tStat              = tStat;        % [1 × nNeurons] t-statistics
     else
-        % Flat struct for single-condition stimuli
-        S.pvalsResponse = pVal;
-        S.ZScoreU       = z;
-        S.ObsDiff       = Diff;
-        S.ObsResponse   = responses;
-        S.ObsBaseline   = baselines;
-        S.prefCat       = prefCat;
-        S.validCats     = validCats;
+        S.pvalsResponse     = pVal;
+        S.ZScoreU           = z;
+        S.ZScorePermutation = zPerm;
+        S.ObsDiff           = Diff;
+        S.ObsResponse       = responses;
+        S.ObsBaseline       = baselines;
+        S.prefCat           = prefCat;
+        S.validCats         = validCats;
+        S.MaxMovWinResponse = max(MW,[],1);
+        S.pValTTest         = pValTTest;
+        S.tStat             = tStat;
     end
 
-    S.params = params;  % store analysis parameters for reproducibility
+    S.params = params;  % store parameters alongside results for reproducibility
 
 end % end condition loop
 
@@ -378,32 +525,33 @@ end % end main function
 %% Local helper: build empty output struct when no neurons are found
 % =========================================================================
 function S = buildEmptyStruct(obj, responseParams)
-% buildEmptyStruct - Returns an empty results struct with correct field names.
+% buildEmptyStruct - Returns empty results struct with correct field names.
 % Ensures downstream code receives a consistent struct regardless of neuron count.
 
-    emptyFields = {'pvalsResponse','ZScoreU','ObsDiff','ObsResponse', ...
-                   'ObsBaseline','prefCat','validCats'};
+    emptyFields = {'pvalsResponse','ZScoreU','ZScorePermutation','ObsDiff', ...
+                   'ObsResponse','ObsBaseline','prefCat','validCats', ...
+                   'MaxMovWinResponse','pValTTest','tStat'};
 
-    if isequal(obj.stimName, 'linearlyMovingBall')
+    if isequal(obj.stimName, 'linearlyMovingBall') || isequal(obj.stimName, 'linearlyMovingBar')
         for f = emptyFields
-            S.Speed1.(f{1}) = [];  % empty Speed1 fields
+            S.Speed1.(f{1}) = [];
         end
         if isfield(responseParams, "Speed2")
             for f = emptyFields
-                S.Speed2.(f{1}) = [];  % empty Speed2 fields if second speed exists
+                S.Speed2.(f{1}) = [];
             end
         end
 
     elseif isequal(obj.stimName, 'StaticDriftingGrating')
         for cond = {'Static', 'Moving'}
             for f = emptyFields
-                S.(cond{1}).(f{1}) = [];  % empty fields for each grating condition
+                S.(cond{1}).(f{1}) = [];
             end
         end
 
     else
         for f = emptyFields
-            S.(f{1}) = [];  % flat empty struct for single-condition stimuli
+            S.(f{1}) = [];
         end
     end
 end

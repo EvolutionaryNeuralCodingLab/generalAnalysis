@@ -14,7 +14,7 @@ for ex = 69 %84:91
     % vsRe.getSyncedDiodeTriggers("overwrite",true);
     % % vsRe.plotSpatialTuningSpikes;
     % % vsRe.plotSpatialTuningLFP;
-    % vsRe.ResponseWindow('overwrite',true)
+     vsRe.ResponseWindow('overwrite',true)
     % results = vsRe.ShufflingAnalysis('overwrite',true);
     %vsRe.plotRaster(MergeNtrials=1,overwrite=true,AllResponsiveNeurons = true, selectedLum=[],oneTrial = true,PaperFig = true) %43
     vsRe.plotRaster(MergeNtrials=1,overwrite=true,exNeuronsPhyID=137, selectedLum=255,oneTrial = true,PaperFig = true) %43
@@ -29,7 +29,7 @@ vsRe.PlotReceptiveFields("exNeurons",18)
 
 %% Moving ball
 
-for ex = [[49:54,64:97]]%97  74:84  (Neurons, 96_74, )
+for ex = [96]%97  74:84  (Neurons, 96_74, )
     NP = loadNPclassFromTable(ex); %73 81
     vs = linearlyMovingBallAnalysis(NP,Session=1);
     % vs.getSessionTime("overwrite",true);
@@ -37,13 +37,13 @@ for ex = [[49:54,64:97]]%97  74:84  (Neurons, 96_74, )
     % % %vs.plotDiodeTriggers
     % vs.getSyncedDiodeTriggers("overwrite",true);
     % % %vs.plotSpatialTuningSpikes;
-    % r = vs.ResponseWindow('overwrite',true);
-    % results = vs.ShufflingAnalysis('overwrite',true);
-    % % vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'MergeNtrials',3)
-    % %vs.plotRaster('AllResponsiveNeurons',true,'overwrite',true,'MergeNtrials',2,'bin',5,'GaussianLength',30,'MaxVal_1', false)
-    % vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'speed',2,'MergeNtrials',3)
-    %vs.plotRaster('exNeuronsPhyID',288,'overwrite',true,'MergeNtrials',3,'PaperFig',true)
-    % % %vs.plotCorrSpikePattern
+    r = vs.ResponseWindow('overwrite',true);
+    % % results = vs.ShufflingAnalysis('overwrite',true);
+    % % % vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'MergeNtrials',3)
+    % % %vs.plotRaster('AllResponsiveNeurons',true,'overwrite',true,'MergeNtrials',2,'bin',5,'GaussianLength',30,'MaxVal_1', false)
+    % % vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'speed',2,'MergeNtrials',3)
+    % %vs.plotRaster('exNeuronsPhyID',288,'overwrite',true,'MergeNtrials',3,'PaperFig',true)
+    % % % %vs.plotCorrSpikePattern
     % vs.plotRaster('AllResponsiveNeurons',true,'overwrite',true,'OneDirection','up','OneLuminosity','white','MergeNtrials',1,'PaperFig',true)
 
     %vs.plotRaster('exNeurons',9,'AllResponsiveNeurons',false,'overwrite',true,'MergeNtrials',3,MaxVal_1=false)
@@ -55,19 +55,21 @@ for ex = [[49:54,64:97]]%97  74:84  (Neurons, 96_74, )
     result = vs.StatisticsPerNeuron('overwrite',true);
 end
 
-%% PlotZScoreComparison
+
+%% AllExpAnalysis
 %[49:54 57:81] MBR all experiments 'NV','NI'
 %[44:56,64:88] All experiments
 %[28:32,44,45,47,48,56,98] All SA experiments
 %Check triggers 45, SA82 44,45,47:54,56,64:88 
 % All stim: 'FFF','SDG','MBR','MB','RG','NI','NV'
-%[49:54,64:97] %All PV good experiments
+%[49:54,64:97] %All PV good experiments [49:54,64:85 87:97]
 % %%[89,90,92,93,95,96,97]  %Al NV and NI experiments 
 %[49:54,84:90,92:96] %All SDG experiments
 %solve MBR
 %bootsrapRespBase
-VStimAnalysis.PlotZScoreComparison([49:54,64:97] ,{'MB','RG'},StatMethod='maxPermuteTest', overwrite=true,ComparePairs={'MB','RG'},PaperFig=true,...
-    overwriteResponse=false,overwriteStats=true)%[49:54,57:91] %%Check why I have different array dimensions in MBR
+AllExpAnalysis([49:54,64:85 87:97] ,{'MB','RG'},StatMethod='maxPermuteTest', overwrite=true,ComparePairs={'MB','RG'},PaperFig=true,...
+    overwriteResponse=false,overwriteStats=true)%[49:54,57:91] %%Check why I have different array dimensions in MBR%%
+
 %% PSTH for all experiments
 plotPSTH_MultiExp([49:54], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=true, byDepth=false, smooth=50); %stimTypes=["linearlyMovingBall"]
 
@@ -75,7 +77,7 @@ plotPSTH_MultiExp([49:54], overwrite=true, zScore=true,TakeTopPercentTrials=[], 
 plotRaster_MultiExp([49:54,64:97], sortBy = "depth",overwrite=false,TakeTopPercentTrials=[])
 
 %% Calculate spatial tuning
-results= SpatialTuningIndex([49:54,64:97], indexType =  "L_amplitude_diff" ,overwrite=false, topPercent = 20,useRF=true,onOff=2);
+results= SpatialTuningIndex([49:54,64:97], indexType =  "L_amplitude_diff" ,overwrite=true, topPercent = 20,useRF=true,onOff=1);
 
 %% Get neuron depths
 getNeuronDepths([49:54,64:97]) %[49:54,64:72,84:97] %% PV140 missing depth coordinates
@@ -96,7 +98,7 @@ end
 
 %% movie
 
-for ex =  [89,90,92,93,95:97]
+for ex =  [90]
     NP = loadNPclassFromTable(ex); %73 81
     vs = movieAnalysis(NP);
     % vs.getSessionTime("overwrite",true);
@@ -104,9 +106,9 @@ for ex =  [89,90,92,93,95:97]
     % dT = vs.getDiodeTriggers;
     % vs.plotDiodeTriggers
     %vs.getSyncedDiodeTriggers("overwrite",true);
-    %r = vs.ResponseWindow('overwrite',true);
+    r = vs.ResponseWindow('overwrite',true);
     %results = vs.ShufflingAnalysis('overwrite',true);
-    vs.plotRaster('AllResponsiveNeurons',true,MergeNtrials=1,overwrite=true)
+    result = vs.StatisticsPerNeuron('overwrite',true);
 end
 
 
