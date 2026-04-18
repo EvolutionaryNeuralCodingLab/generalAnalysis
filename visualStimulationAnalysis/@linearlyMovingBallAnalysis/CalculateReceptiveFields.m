@@ -16,7 +16,7 @@ arguments (Input)
     params.nShuffle = 2 %Number of shuffles to generate shuffled receptive fields. 
     params.testConvolution = false
     params.reduceFactor = 20 %reduce factor for screen resolution
-    params.statType string = "BootstrapPerNeuron"
+    params.statType string = "maxPermutationTest"
     params.nGrid = 9
 end
 
@@ -44,7 +44,7 @@ NeuronResp = obj.ResponseWindow;
 if params.statType == "BootstrapPerNeuron"
     Stats = obj.BootstrapPerNeuron;
 else
-    Stats = obj.ShufflingAnalysis;
+    Stats = obj.StatisticsPerNeuron;
 end
 
 p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
@@ -63,7 +63,10 @@ if params.AllResponsiveNeurons
         fprintf('No responsive neurons.\n')
         return
     end
+else
+    respU = 1:size(goodU,2);
 end
+
 
 if params.exNeurons >0
     respU = params.exNeurons;

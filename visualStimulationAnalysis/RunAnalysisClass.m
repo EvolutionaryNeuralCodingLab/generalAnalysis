@@ -5,7 +5,7 @@ data = readtable(excelFile);
 
 %%
 %% Rect Grid
-for ex = 69 %84:91
+for ex = [49:54,64:66,68:85 87:97] %84:91
     NP = loadNPclassFromTable(ex); %73 81
     vsRe = rectGridAnalysis(NP);
     % vsRe.getSessionTime("overwrite",true);
@@ -14,45 +14,44 @@ for ex = 69 %84:91
     % vsRe.getSyncedDiodeTriggers("overwrite",true);
     % % vsRe.plotSpatialTuningSpikes;
     % % vsRe.plotSpatialTuningLFP;
-     vsRe.ResponseWindow('overwrite',true)
+     %vsRe.ResponseWindow('overwrite',true)
     % results = vsRe.ShufflingAnalysis('overwrite',true);
     %vsRe.plotRaster(MergeNtrials=1,overwrite=true,AllResponsiveNeurons = true, selectedLum=[],oneTrial = true,PaperFig = true) %43
-    vsRe.plotRaster(MergeNtrials=1,overwrite=true,exNeuronsPhyID=137, selectedLum=255,oneTrial = true,PaperFig = true) %43
-    vsRe.CalculateReceptiveFields('overwrite',true)
-    %[colorbarLims] = vsRe.PlotReceptiveFields(exNeurons=18,allStimParamsCombined=true,PaperFig=true,overwrite=true);
+    %vsRe.plotRaster(MergeNtrials=1,overwrite=true,AllResponsiveNeurons=false,exNeurons=21, selectedLum=255,oneTrial = true,PaperFig = true) %43
+    vsRe.CalculateReceptiveFields('overwrite',true,AllResponsiveNeurons=false)
+    %[colorbarLims] = vsRe.PlotReceptiveFields(exNeurons=21,allStimParamsCombined=false,PaperFig=true,overwrite=true);
     %result = vsRe.BootstrapPerNeuron('overwrite',true);
-    result = vsRe.StatisticsPerNeuron('overwrite',true);
+    %result = vsRe.StatisticsPerNeuron('overwrite',true);
 
 end
 % vsRe.CalculateReceptiveFields
-vsRe.PlotReceptiveFields("exNeurons",18)
+%vsRe.PlotReceptiveFields("exNeurons",18)
 
 %% Moving ball
 
-for ex = [96]%97  74:84  (Neurons, 96_74, )
+for ex =[49:54,64:66,68:85 87:97]%97  74:84  (Neurons, 96_74, )
     NP = loadNPclassFromTable(ex); %73 81
     vs = linearlyMovingBallAnalysis(NP,Session=1);
     % vs.getSessionTime("overwrite",true);
     % vs.getDiodeTriggers('extractionMethod','digitalTriggerDiode','overwrite',true);
     % % %vs.plotDiodeTriggers
     % vs.getSyncedDiodeTriggers("overwrite",true);
-    % % %vs.plotSpatialTuningSpikes;
-    r = vs.ResponseWindow('overwrite',true);
-    % % results = vs.ShufflingAnalysis('overwrite',true);
-    % % % vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'MergeNtrials',3)
-    % % %vs.plotRaster('AllResponsiveNeurons',true,'overwrite',true,'MergeNtrials',2,'bin',5,'GaussianLength',30,'MaxVal_1', false)
-    % % vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'speed',2,'MergeNtrials',3)
-    % %vs.plotRaster('exNeuronsPhyID',288,'overwrite',true,'MergeNtrials',3,'PaperFig',true)
-    % % % %vs.plotCorrSpikePattern
-    % vs.plotRaster('AllResponsiveNeurons',true,'overwrite',true,'OneDirection','up','OneLuminosity','white','MergeNtrials',1,'PaperFig',true)
-
-    %vs.plotRaster('exNeurons',9,'AllResponsiveNeurons',false,'overwrite',true,'MergeNtrials',3,MaxVal_1=false)
-    %vs.CalculateReceptiveFields('overwrite',true,testConvolution=false);   
-   % colorbarLims=vs.PlotReceptiveFields('exNeurons',82,'overwrite',true,'OneDirection','up','OneLuminosity','white','PaperFig',true);
+    % % % %vs.plotSpatialTuningSpikes;
+    % r = vs.ResponseWindow('overwrite',true);
+    % % % results = vs.ShufflingAnalysis('overwrite',true);
+    % % % % vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'MergeNtrials',3)
+    % % % %vs.plotRaster('AllResponsiveNeurons',true,'overwrite',true,'MergeNtrials',2,'bin',5,'GaussianLength',30,'MaxVal_1', false)
+    %vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'MergeNtrials',3,PaperFig=true)
+    % % %vs.plotRaster('exNeuronsPhyID',288,'overwrite',true,'MergeNtrials',3,'PaperFig',true)
+    % % % % %vs.plotCorrSpikePattern
+    %vs.plotRaster('exNeurons',82,'overwrite',true,'OneDirection','up','OneLuminosity','white','MergeNtrials',1,'PaperFig',false)
+    %vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'MergeNtrials',3,MaxVal_1=false,PaperFig=false)
+    vs.CalculateReceptiveFields('overwrite',true,testConvolution=false,AllResponsiveNeurons=false);   
+    %colorbarLims=vs.PlotReceptiveFields('exNeurons',82,'overwrite',true,'OneDirection','up','OneLuminosity','white','PaperFig',true);
     %result = vs.BootstrapPerNeuron('overwrite',true);%('overwrite',true);
     % pvals0_6Filter =result.Speed2.pvalsResponse';
     % compare = [pvals,pvalsNoFilt,pvals0_6Filter];
-    result = vs.StatisticsPerNeuron('overwrite',true);
+    %result = vs.StatisticsPerNeuron('overwrite',true);
 end
 
 
@@ -67,23 +66,24 @@ end
 %[49:54,84:90,92:96] %All SDG experiments
 %solve MBR
 %bootsrapRespBase
-AllExpAnalysis([49:54,64:85 87:97] ,{'MB','RG'},StatMethod='maxPermuteTest', overwrite=true,ComparePairs={'MB','RG'},PaperFig=true,...
-    overwriteResponse=false,overwriteStats=true)%[49:54,57:91] %%Check why I have different array dimensions in MBR%%
+[tempTableMW] = AllExpAnalysis([49:54,64:66, 68:85 87:97] ,{'SDGm','SDGs'},StatMethod='maxPermuteTest', overwrite=true,ComparePairs={'SDGm','SDGs'},PaperFig=true,...
+    overwriteResponse=false,overwriteStats=true);%[49:54,57:91] %%Check why I have different array dimensions in MBR%%
 
 %% PSTH for all experiments
-plotPSTH_MultiExp([49:54], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=true, byDepth=false, smooth=50); %stimTypes=["linearlyMovingBall"]
+plotPSTH_MultiExp([49:54,64:66,68:85 87:97], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=true, byDepth=false, smooth=50); %stimTypes=["linearlyMovingBall"]
 
-%%
-plotRaster_MultiExp([49:54,64:97], sortBy = "depth",overwrite=false,TakeTopPercentTrials=[])
+%% Raster for all experiment
+plotRaster_MultiExp([49:54,64:66,68:85 87:97], sortBy = "peak",overwrite=false,TakeTopPercentTrials=[])
 
 %% Calculate spatial tuning
-results= SpatialTuningIndex([49:54,64:97], indexType =  "L_amplitude_diff" ,overwrite=true, topPercent = 20,useRF=true,onOff=1);
+results= SpatialTuningIndex([49:54,64:66, 68:85 87:97], indexType =  "L_amplitude_diff" ,overwrite=false...
+    , topPercent = 40,useRF=true,onOff=1,unionResponsive = false,allResponsive=true, PaperFig=true);
 
 %% Get neuron depths
 getNeuronDepths([49:54,64:97]) %[49:54,64:72,84:97] %% PV140 missing depth coordinates
 %% Gratings
 
-for ex = [54 84:90]
+for ex = [49]
     NP = loadNPclassFromTable(ex); %73 81
     vs = StaticDriftingGratingAnalysis(NP);
     vs.getSessionTime("overwrite",true);
@@ -94,6 +94,7 @@ for ex = [54 84:90]
     r = vs.ResponseWindow('overwrite',true);
     results = vs.ShufflingAnalysis('overwrite',true);
     result = vs.BootstrapPerNeuron('overwrite',true);
+    vs.plotRaster
 end
 
 %% movie

@@ -1,4 +1,4 @@
-function fig = AllExpAnalysis(expList, Stims2Comp, params)
+function [tempTable] = AllExpAnalysis(expList, Stims2Comp, params)
 % PlotZScoreComparison - Compare z-scores and spike rates across visual stimuli
 %   across multiple Neuropixels recordings.
 %
@@ -95,6 +95,7 @@ arguments
                                       %   Recommended over the multi-stimulus mode.
                                       %   E.g. {'MB','RG'} or {'MB','RG';'MB','MBR'}
     params.PaperFig logical  = false  % If true, save figures via vs.printFig
+    params.useZmean logical  = true   % Instead of the spikerate from pvals response, use the max response-baseline - null distribution
 end
 
 % =========================================================================
@@ -269,7 +270,7 @@ if forloop
         % Static / Drifting Gratings (SDG)
         try
             vsG = StaticDriftingGratingAnalysis(NP);
-            params.StimsPresent{4} = 'SDG';
+            params.StimsPresent{4} = 'SDGm';
             if isempty(vsG.VST)
                 error('Gratings stimulus not found.\n')
             else
@@ -498,13 +499,22 @@ if forloop
         % (Speed2 is faster; the convention is to use the most salient speed)
         zScores_MB  = statsMB.Speed1.ZScoreU;
         pValuesMB   = statsMB.Speed1.pvalsResponse;
-        spkR_MB     = max(rwMB.Speed1.NeuronVals(:,:,4), [], 2);  % max across directions, col 4 = resp. rate
+        if params.useZmean
+            spkR_MB = statsMB.Speed1.z_mean; 
+        else
+            spkR_MB     = max(rwMB.Speed1.NeuronVals(:,:,4), [], 2);  % max across directions, col 4 = resp. rate
+        end
+
         spkDiff_MB  = max(rwMB.Speed1.NeuronVals(:,:,5), [], 2);  % col 5 = response – baseline
 
         if isfield(statsMB, 'Speed2')   % if a second (faster) speed was presented
             zScores_MB  = statsMB.Speed2.ZScoreU;
             pValuesMB   = statsMB.Speed2.pvalsResponse;
-            spkR_MB     = max(rwMB.Speed2.NeuronVals(:,:,4), [], 2);
+            if params.useZmean
+                spkR_MB = statsMB.Speed1.z_mean';
+            else
+                spkR_MB     = max(rwMB.Speed1.NeuronVals(:,:,4), [], 2);  % max across directions, col 4 = resp. rate
+            end
             spkDiff_MB  = max(rwMB.Speed2.NeuronVals(:,:,5), [], 2);
         end
 
@@ -515,7 +525,11 @@ if forloop
         % --- Rect Grid ---
         zScores_RG  = statsRG.ZScoreU;
         pValuesRG   = statsRG.pvalsResponse;
-        spkR_RG     = max(rwRG.NeuronVals(:,:,4), [], 2);
+        if params.useZmean
+            spkR_RG = statsRG.z_mean'; 
+        else
+            spkR_RG     = max(rwRG.NeuronVals(:,:,4), [], 2);  % max across directions, col 4 = resp. rate
+        end
         spkDiff_RG  = max(rwRG.NeuronVals(:,:,5), [], 2);
 
         % --- Moving Bar ---
@@ -676,12 +690,22 @@ if forloop
 
         % Append rows to longTablePairComp for this recording if any units found
         if ~isempty(unitIDs)
-            TableC1 = table( ...
-                categorical(cellstr(repmat(Animal, numel(unitIDs), 1))), ...
-                categorical(repmat(j, numel(unitIDs), 1)), ...
-                categorical(cellstr(repmat(params.ComparePairs{1}, numel(unitIDs), 1))), ...
-                categorical(unitIDs)', zscoresC1', spkRC1, ...
-                'VariableNames', {'animal','insertion','stimulus','NeurID','Z-score','SpkR'});
+            try
+                TableC1 = table( ...
+                    categorical(cellstr(repmat(Animal, numel(unitIDs), 1))), ...
+                    categorical(repmat(j, numel(unitIDs), 1)), ...
+                    categorical(cellstr(repmat(params.ComparePairs{1}, numel(unitIDs), 1))), ...
+                    categorical(unitIDs)', zscoresC1', spkRC1, ...
+                    'VariableNames', {'animal','insertion','stimulus','NeurID','Z-score','SpkR'});
+
+            catch
+                TableC1 = table( ...
+                    categorical(cellstr(repmat(Animal, numel(unitIDs), 1))), ...
+                    categorical(repmat(j, numel(unitIDs), 1)), ...
+                    categorical(cellstr(repmat(params.ComparePairs{1}, numel(unitIDs), 1))), ...
+                    categorical(unitIDs)', zscoresC1', spkRC1', ...
+                    'VariableNames', {'animal','insertion','stimulus','NeurID','Z-score','SpkR'});
+            end
 
             TableC2 = table( ...
                 categorical(cellstr(repmat(Animal, numel(unitIDs), 1))), ...
@@ -1236,7 +1260,7 @@ if ~isempty(params.ComparePairs)
     ax.YAxis.FontSize = 8;   ax.YAxis.FontName = 'helvetica';
     ax.XAxis.FontSize = 8;   ax.XAxis.FontName = 'helvetica';
 
-    set(fig, 'Units', 'centimeters', 'Position', [20 20 4 6]);
+    set(fig, 'Units', 'centimeters', 'Position', [20 20 10 6]);
     colormap(fig, sharedCmap);   % enforce shared colormap so swarm colours match scatter
 
     % Reload analysis object for figure saving (path extraction)
@@ -1336,7 +1360,7 @@ if ~isempty(params.ComparePairs)
     ax.YAxis.FontSize = 8; ax.YAxis.FontName = 'helvetica';
     ax.XAxis.FontSize = 8; ax.XAxis.FontName = 'helvetica';
     colormap(fig, sharedCmap);
-    set(fig, 'Units', 'centimeters', 'Position', [20 20 4 6]);
+    set(fig, 'Units', 'centimeters', 'Position', [20 20 10 6]);
 
     if params.PaperFig
         vs.printFig(fig, sprintf('spkRate-comparison-Swarm-%s-%s', ...
@@ -1673,10 +1697,35 @@ fig = plotSwarmBootstrapWithComparisons(tempTable, pairs, ps, ...
     {'respNeur','totalSomaticN'}, fraction=true, showBothAndDiff=false,yLegend='Responsive/total units', ...
     diff=false, filled=false, Xjitter='none', Alpha=0.6, drawLines=true);
 
+TotalRespUnits = sum(tempTable.respNeur);
+
+TotalRespUnitsPair1 = sum(tempTable.respNeur(tempTable.stimulus == string(pairs{1})));
+
+TotalRespUnitsPair2 = sum(tempTable.respNeur(tempTable.stimulus == string(pairs{2})));
+
+
 ax = gca;
 ax.YAxis.FontSize = 8; ax.YAxis.FontName = 'helvetica';
 ax.XAxis.FontSize = 8; ax.XAxis.FontName = 'helvetica';
 set(fig, 'Units', 'centimeters', 'Position', [20 20 5 6]);
+ylabel('Responsive/Total responsive')
+title('')
+
+% Push axes up slightly to make room for bottom title
+pos    = get(gca, 'Position');   % [left bottom width height]
+pos(2) = pos(2) + 0.05;          % shift bottom edge up
+set(gca, 'Position', pos);
+
+% Horizontal title at the bottom
+annotation('textbox', [0.1, 0.01, 0.8, 0.04], ...
+    'String',              sprintf('TR = %d - %s = %d - %s = %d',TotalRespUnits,pairs{1},TotalRespUnitsPair1,pairs{2},TotalRespUnitsPair2), ...
+    'Rotation',            0, ...
+    'EdgeColor',           'none', ...
+    'FontSize',            9, ...
+    'FontWeight',          'bold', ...
+    'HorizontalAlignment', 'center', ...
+    'VerticalAlignment',   'middle', ...
+    'FitBoxToText',        false);
 
 if params.PaperFig
     vs.printFig(fig, sprintf('ResponsiveUnits-comparison-%s-%s', ...

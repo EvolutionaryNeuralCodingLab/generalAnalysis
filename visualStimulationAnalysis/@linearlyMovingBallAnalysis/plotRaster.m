@@ -22,7 +22,7 @@ arguments (Input)
     params.OneDirection string = "all"
     params.OneLuminosity string = "all"
     params.PaperFig logical = false
-    params.statType string = "BootstrapPerNeuron"
+    params.statType string = "maxPermuteTest"
     
 end
 
@@ -31,7 +31,7 @@ NeuronResp = obj.ResponseWindow;
 if params.statType == "BootstrapPerNeuron"
     Stats = obj.BootstrapPerNeuron;
 else
-    Stats = obj.ShufflingAnalysis;
+    Stats = obj.StatisticsPerNeuron;
 end
 
 
@@ -480,7 +480,7 @@ for u = eNeuron
     ax.XRuler.TickDirection = 'out';   % ticks only outward (bottom)
     ax.XAxisLocation = 'bottom';
     ylabel('[\muV]','FontSize',10,'FontName','helvetica')
-    title({sprintf('U.%d-Chan-%d-U.phy-%d-p-%d',u,channels(ur),phy_IDg(u),pvals(2,ur)),...
+    title({sprintf('U.%d-Chan-%d-U.phy-%d-p=%.4f',u,channels(ur),phy_IDg(u),pvals(2,ur)),...
         sprintf('Ball-sizes-deg-%s',sizesString)});
 
     %%%%%%%%%%% Plot raster of selected trials

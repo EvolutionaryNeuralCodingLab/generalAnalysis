@@ -271,30 +271,34 @@ if ~isempty(pValues) && numel(pValues) >= 1
     if isempty(maxVisible), maxVisible = yMaxVis; end
     yText = maxVisible + bracketPad;
 
-    if pValues(1) < 1e-3
+    if pValues(1) < 0.001
         txt = '***';
-        if pValues(1) == 0, txt = '****'; end
+    elseif pValues(1) < 0.01
+        txt = '**';
+    elseif pValues(1) < 0.05
+        txt = '*';
+    else
+        txt = 'ns';
+    end
 
-        text(ax, 1, yText, txt, ...
-            'HorizontalAlignment', 'center', 'FontSize', 7, 'Clipping', 'off');
+    text(ax, 1, yText, txt, ...
+        'HorizontalAlignment', 'center', 'FontSize', 7, 'Clipping', 'off');
 
-        stimA     = pairs{1,1};
-        stimB     = pairs{1,2};
-        compText  = sprintf('%s > %s', stimA, stimB);
-        yCompText = yText + textPad * 10;
+    stimA     = pairs{1,1};
+    stimB     = pairs{1,2};
+    compText  = sprintf('%s > %s', stimA, stimB);
+    yCompText = yText + textPad * 10;
 
-        text(ax, 1, yCompText, compText, ...
-            'HorizontalAlignment', 'center', 'FontSize', 10, 'Clipping', 'off');
+    text(ax, 1, yCompText, compText, ...
+        'HorizontalAlignment', 'center', 'FontSize', 10, 'Clipping', 'off');
 
-        requiredHeight = yCompText + textPad * 10;
-        if requiredHeight > yMaxVis
-            ylim(ax, [ylims(1) requiredHeight]);
-        else
-            ylim(ax, [ylims(1) yMaxVis]);
-        end
+    requiredHeight = yCompText + textPad * 10;
+    if requiredHeight > yMaxVis
+        ylim(ax, [ylims(1) requiredHeight]);
     else
         ylim(ax, [ylims(1) yMaxVis]);
     end
+
 else
     ylim(ax, [ylims(1) yMaxVis]);
 end

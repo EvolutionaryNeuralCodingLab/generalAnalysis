@@ -19,7 +19,7 @@ arguments (Input)
     params.durationOff = 3000;          % Off-response window (ms)
     params.offsetR = 50;                % Response after onset of stim (ms)
     params.TakeAllStimDur = true        % Use whole stim window for RF calculation
-    params.statType string = "BootstrapPerNeuron"
+    params.statType string = "maxPermutationTest"
     params.nGrid = 9
 end
 
@@ -46,7 +46,7 @@ NeuronResp = obj.ResponseWindow;
 if params.statType == "BootstrapPerNeuron"
     Stats = obj.BootstrapPerNeuron;
 else
-    Stats = obj.ShufflingAnalysis;
+    Stats = obj.StatisticsPerNeuron;
 end
 
 % Extract spike-sorted unit data: phy IDs, labels, and spike train matrix
@@ -67,6 +67,8 @@ if params.AllResponsiveNeurons
         fprintf('No responsive neurons.\n')
         return
     end
+else
+    respU = 1:size(goodU,2);
 end
 
 % Override with manually specified neuron indices if provided

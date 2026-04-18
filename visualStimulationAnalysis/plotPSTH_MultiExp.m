@@ -5,7 +5,7 @@ arguments
     params.stimTypes  (1,:) string  = ["rectGrid", "linearlyMovingBall"]
     params.binWidth   double        = 10
     params.smooth     double        = 0      % smoothing window in ms (0 = no smoothing)
-    params.statType   string        = "BootstrapPerNeuron"
+    params.statType   string        = "maxPermuteTest"
     params.speed      string        = "max"
     params.alpha      double        = 0.05
     params.shadeSTD   logical       = true
@@ -139,8 +139,10 @@ if forloop
 
             if params.statType == "BootstrapPerNeuron"
                 Stats = obj.BootstrapPerNeuron;
+            elseif  params.statType == "maxPermuteTest"
+                Stats = obj.StatisticsPerNeuron;
             else
-                Stats = obj.ShufflingAnalysis;
+                 Stats = obj.ShufflingAnalysis;
             end
 
             if params.speed ~= "max" && isequal(obj.stimName,'linearlyMovingBall')
@@ -445,7 +447,7 @@ ylabel(ax, yLabel,                      'FontName', 'helvetica', 'FontSize', 8);
 xlim(ax, [tAxisPlot(1) tAxisPlot(end)]);
 ylim(ax, yLims);
 
-legend(legendHandles, legendLabels, 'Location', 'northeast', ...
+legend(legendHandles, legendLabels, 'Location', 'northwest', ...
     'FontName', 'helvetica', 'FontSize', 7);
 
 ax.FontName       = 'helvetica';
@@ -455,7 +457,7 @@ ax.XAxis.FontSize = 8;
 hold(ax, 'off');
 
 sgtitle(sprintf('N = %d', numel(exList)), 'FontName', 'helvetica', 'FontSize', 11);
-set(fig, 'Units', 'centimeters', 'Position', [20 20 8 6]);
+set(fig, 'Units', 'centimeters', 'Position', [20 20 7 4]);
 
 if params.PaperFig
     vs_first.printFig(fig, sprintf('PSTH-depth-%s-%s', ...

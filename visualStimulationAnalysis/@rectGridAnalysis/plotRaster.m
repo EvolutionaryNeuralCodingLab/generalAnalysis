@@ -6,15 +6,15 @@ arguments (Input)
     params.analysisTime = datetime('now')
     params.inputParams = false
     params.preBase = 200
-    params.bin = 15
+    params.bin =15
     params.exNeurons double = []
     params.exNeuronsPhyID double = []   % alternative to exNeurons: specify neurons by phy cluster ID
     params.AllSomaticNeurons = false
-    params.AllResponsiveNeurons = true
+    params.AllResponsiveNeurons = false
     params.fixedWindow = true
     params.MergeNtrials =1
     params.GaussianLength = 50
-    params.oneTrial = false
+    params.oneTrial = false %Highlight one trial
     params.selectedLum = []
     params.plotPatch logical = true
     params.PaperFig logical = false
@@ -29,7 +29,7 @@ NeuronResp = obj.ResponseWindow;
 if params.statType == "BootstrapPerNeuron"
     Stats = obj.BootstrapPerNeuron;
 else
-    Stats = obj.ShufflingAnalysis;
+    Stats = obj.StatisticsPerNeuron;
 end
 
 directimesSorted = NeuronResp.C(:,1)';
@@ -132,7 +132,7 @@ for u = eNeuron
         trialsPerCath = trialsPerCath/mergeTrials;
         nT = nT/mergeTrials;
     else
-        Mr2=Mr(:,ur,:);
+        Mr2=Mr(:,u,:);
         mergeTrials =1;
     end
 
@@ -326,10 +326,6 @@ for u = eNeuron
     % 
     trialsPerCath = length(directimesSorted)/(length(unique(seqMatrix)));
     trials = maxRespIn*trialsPerCath+1:maxRespIn*trialsPerCath + trialsPerCath;
-    bin3 = 1;
-    trialM = BuildBurstMatrix(goodU(:,u),round(p.t/bin3),round((directimesSorted+start)/bin3),round((window)/bin3));
-    TrialM = squeeze(trialM(trials,:,:))';
-
 
     chan = goodU(1,u);
 
@@ -339,7 +335,7 @@ for u = eNeuron
 
     typeData = "line"; %or heatmap
 
-    spikes = squeeze(BuildBurstMatrix(goodU(:,u),round(p.t),round(startTimes),round((window))));
+    spikes = squeeze(BuildBurstMatrix(goodU(:,u),round(p.t),round(startTimes),round(window)));
 
     if params.oneTrial
         [mx ind] = max(sum(spikes,2)); %select trial with most spikes
