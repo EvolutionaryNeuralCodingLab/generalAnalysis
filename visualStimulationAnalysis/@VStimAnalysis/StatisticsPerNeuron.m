@@ -72,8 +72,11 @@ arguments (Input)
     params.ApplyFDR             = false  % Benjamini-Hochberg FDR correction reduces the number of false positives. 
     params.PermutationZScoreBio   = true %It uses the observed stat in the perumutation and the baseline std to calculate biological z-score
                                          %SDs above THE UNIT'S BASELINE NOISE   
-    params.PermutationZScoreStat  = false%It uses the observed stat in the perumutation and the baseline std to calculate statistical z-score 
+    params.PermutationZScoreStat  = false  %It uses the observed stat in the perumutation and the baseline std to calculate statistical z-score 
                                           % SDs above the null PERMUTED distribution
+    params.SpatialGridMode = true        % if true: use StatisticsPerNeuronSpatialGrid
+                                          % only applies to linearlyMovingBall
+                                          % ignored for other stimuli
                                     
 end
 
@@ -89,6 +92,24 @@ if isfile(obj.getAnalysisFileName) && ~params.overwrite
     end
     return
 end
+
+
+% -------------------------------------------------------------------------
+% Route to spatial grid analysis for moving ball when enabled
+% SpatialGridMode only applies to linearlyMovingBall — other stimuli ignore it
+% -------------------------------------------------------------------------
+if params.SpatialGridMode && isequal(obj.stimName, 'linearlyMovingBall')
+    fprintf('Routing to StatisticsPerNeuronSpatialGrid for moving ball analysis.\n');
+    results = StatisticsPerNeuronSpatialGrid(obj, ...
+        nBoot              = params.nBoot, ...
+        randomSeed         = params.randomSeed, ...
+        GridSize           = 9, ...
+        GridAnalysisWindow = 200, ...
+        MinTrialsPerCell   = 3, ...
+        overwrite          = params.overwrite);
+    return
+end
+
 
 % -------------------------------------------------------------------------
 % Fix random seed for reproducibility
@@ -182,6 +203,8 @@ end
 % =========================================================================
 for s = 1:x
 
+
+
     % --- Assign condition-specific variables ---
     if isfield(responseParams, "Speed1")
         fieldName        = sprintf('Speed%d', s);
@@ -212,7 +235,7 @@ for s = 1:x
         fprintf(['Warning: stimulus duration (%.0f ms) exceeds MaxStimDuration ' ...
             '(%.0f ms) — capping response window for %s.\n'], ...
             stimDur, params.MaxStimDuration, obj.stimName);
-        effectiveStimDur = params.MaxStimDuration;  % capped duration used for Mr only
+        effectiveStimDur = params.MaxStimDuration;  % capped duration used for Mr on1. ly
     else
         effectiveStimDur = stimDur;  % full duration — no capping needed
     end
@@ -225,12 +248,28 @@ for s = 1:x
         round(directimesSorted), ...
         round(effectiveStimDur));  % capped or full duration
 
-    % Mb: baseline window — always uses 75% of inter-trial interval
-    % Duration is independent of stimulus duration so no capping needed
-    Mb = BuildBurstMatrix(goodU, ...
-        round(p.t), ...
-        round(directimesSorted - 0.75 * obj.VST.interTrialDelay * 1000), ...
-        round(0.75 * obj.VST.interTrialDelay * 1000));
+    if isequal(obj.stimName, 'StaticDriftingGrating')
+        if isequal(fieldName,'moving')
+
+                        Mb = BuildBurstMatrix(goodU, ...
+                round(p.t), ...
+                round(directimesSorted - obj.VST.static_time- 0.75 * obj.VST.interTrialDelay * 1000), ...
+                round(0.75 * obj.VST.interTrialDelay * 1000));
+
+        else
+            % Mb: baseline window — always uses 75% of inter-trial interval
+            % Duration is independent of stimulus duration so no capping needed
+            Mb = BuildBurstMatrix(goodU, ...
+                round(p.t), ...
+                round(directimesSorted - 0.75 * obj.VST.interTrialDelay * 1000), ...
+                round(0.75 * obj.VST.interTrialDelay * 1000));
+        end
+    else
+        Mb = BuildBurstMatrix(goodU, ...
+            round(p.t), ...
+            round(directimesSorted - 0.75 * obj.VST.interTrialDelay * 1000), ...
+            round(0.75 * obj.VST.interTrialDelay * 1000));
+    end
 
     % -------------------------------------------------------------------------
     % Always compute full-duration means for z-score and empty-trial filtering

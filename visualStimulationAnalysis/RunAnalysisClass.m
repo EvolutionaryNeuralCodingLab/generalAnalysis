@@ -66,7 +66,7 @@ end
 %[49:54,84:90,92:96] %All SDG experiments
 %solve MBR
 %bootsrapRespBase
-[tempTableMW] = AllExpAnalysis([49:54,64:66, 68:85 87:97] ,{'SDGm','SDGs'},StatMethod='maxPermuteTest', overwrite=true,ComparePairs={'SDGm','SDGs'},PaperFig=true,...
+[tempTableMW] = AllExpAnalysis([49:54,64:66, 68:85 87:97] ,{'MB','RG'},StatMethod='maxPermuteTest', overwrite=true,ComparePairs={'MB','RG'},PaperFig=true,...
     overwriteResponse=false,overwriteStats=true);%[49:54,57:91] %%Check why I have different array dimensions in MBR%%
 
 %% PSTH for all experiments
@@ -83,23 +83,26 @@ results= SpatialTuningIndex([49:54,64:66, 68:85 87:97], indexType =  "L_amplitud
 getNeuronDepths([49:54,64:97]) %[49:54,64:72,84:97] %% PV140 missing depth coordinates
 %% Gratings
 
-for ex = [49]
+for ex = [97]
     NP = loadNPclassFromTable(ex); %73 81
     vs = StaticDriftingGratingAnalysis(NP);
-    vs.getSessionTime("overwrite",true);
-    vs.getDiodeTriggers('extractionMethod','digitalTriggerDiode','overwrite',true);
-    dT = vs.getDiodeTriggers;
-    % vs.plotDiodeTriggers
-    vs.getSyncedDiodeTriggers("overwrite",true);
-    r = vs.ResponseWindow('overwrite',true);
-    results = vs.ShufflingAnalysis('overwrite',true);
-    result = vs.BootstrapPerNeuron('overwrite',true);
-    vs.plotRaster
+    % vs.getSessionTime("overwrite",true);
+    % vs.getDiodeTriggers('extractionMethod','digitalTriggerDiode','overwrite',true);
+    % dT = vs.getDiodeTriggers;
+    % % vs.plotDiodeTriggers
+    % vs.getSyncedDiodeTriggers("overwrite",true);
+    %r = vs.ResponseWindow('overwrite',true);
+    % results = vs.ShufflingAnalysis('overwrite',true);
+    % result = vs.BootstrapPerNeuron('overwrite',true);
+    % vs.StatisticsPerNeuron(overwrite=true)
+    vs.plotRaster(MaxVal_1=true,OneAngle=270,exNeurons=28,AllResponsiveNeurons=false,PaperFig=true) %0.5208 %2.0833
+    vs.plotRaster(MaxVal_1=false)
+    close all
 end
 
 %% movie
 
-for ex =  [90]
+for ex =  [92:97]
     NP = loadNPclassFromTable(ex); %73 81
     vs = movieAnalysis(NP);
     % vs.getSessionTime("overwrite",true);
@@ -110,12 +113,14 @@ for ex =  [90]
     r = vs.ResponseWindow('overwrite',true);
     %results = vs.ShufflingAnalysis('overwrite',true);
     result = vs.StatisticsPerNeuron('overwrite',true);
+    vs.plotRaster(AllResponsiveNeurons=true)
+    close all
 end
 
 
 %% image
 
-for ex = [89,90,92,93,95:97]
+for ex = [97]
     NP = loadNPclassFromTable(ex); %73 81
     vs = imageAnalysis(NP);
     %vs.getSessionTime("overwrite",true);
@@ -123,9 +128,11 @@ for ex = [89,90,92,93,95:97]
     %dT = vs.getDiodeTriggers;
     % vs.plotDiodeTriggers
     %vs.getSyncedDiodeTriggers("overwrite",true);
-    r = vs.ResponseWindow('overwrite',true);
+    %r = vs.ResponseWindow('overwrite',true);
     %results = vs.ShufflingAnalysis('overwrite',true);
-    vs.plotRaster('AllResponsiveNeurons',true,MergeNtrials=1,overwrite=true)
+    vs.plotRaster('exNeurons',13,MergeNtrials=1,overwrite=true, selectCats =[], PaperFig=true)
+    close all
+    %result = vs.StatisticsPerNeuron('overwrite',true);
 
 end
 

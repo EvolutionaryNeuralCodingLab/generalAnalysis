@@ -401,7 +401,7 @@ for i = 1:trialDivisionVid:nT
     h = h+1;
 end
 
-%implay(squeeze(videoTrials(9,:,:,:)));
+implay(squeeze(videoTrials(9,:,:,:)));
 
 for t = 1:numel(IndexDiv)
 
