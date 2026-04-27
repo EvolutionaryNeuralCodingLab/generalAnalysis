@@ -37,24 +37,8 @@ else
     nFramesPerOffsetDir = nFramesFull;
 end
 
-useOriginalCorrs = true;
-
-if useOriginalCorrs
-
-    Xpos = obj.VST.ballTrajectoriesX;
-    Ypos = obj.VST.ballTrajectoriesY;
-
-    if size(Xpos,1) > 1
-        Xpos = Xpos(speedIndx,:,:,1:unique(obj.VST.nFrames(speedIndx,:,:)));
-        Ypos = Ypos(speedIndx,:,:,1:unique(obj.VST.nFrames(speedIndx,:,:)));
-    end
-
-else
-
-    % Reconstruct from stimulus design parameters
-    [Xpos, Ypos] = reconstructBallTrajectoriesFromGeometry(obj, speedIndx, nFramesPerOffsetDir);
-
-end
+% Reconstruct from stimulus design parameters
+[Xpos, Ypos] = reconstructBallTrajectoriesFromGeometry(obj, speedIndx, nFramesPerOffsetDir);
 % Xpos, Ypos are [1 × nOffsets × nDirs × nFramesMax]
 
 % Flatten trajectories to [nTrials × nFrames] matching trial ordering
@@ -86,7 +70,8 @@ for d  = 1:sizeX(3)           % directions
         end
     end
 end
-
+changePosDir1x = Xpos(:,:,1,:);
+changePosDir1y = Ypos(:,:,1,:);
 % -------------------------------------------------------------------------
 % Define grid cells on original screen coordinates
 % Screen is [obj.VST.rect(3) × obj.VST.rect(4)] pixels
@@ -107,7 +92,7 @@ cropOffsetX = (screenW - screenH)/2;
 % For each trial and cell: find first frame of entry and dwell duration
 % -------------------------------------------------------------------------
 crossingFrame = nan(nTrials, nCells);       % initialise as NaN (never entered)
-dwellFrames   = nan(nTrials, nCells);     % initialise dwell time as 0
+dwellFrames   = zeros(nTrials, nCells);     % initialise dwell time as 0
 
 for t = 1:nTrials
     % For each frame, determine which grid cell the ball centre is in
@@ -164,11 +149,8 @@ end
 
 figure;imagesc(reshape(mean(dwellFrames,1),[9,9]))
 
-figure;imagesc(reshape(mean(dwellFrames, 1, 'omitnan'), [nGrid nGrid]));
-colorbar; title('Original trajectories');
-
-% test = Xpos(1,:,1,:);
-% figure;hist(test(:))
+test = Xpos(1,:,1,:);
+figure;hist(test(:))
 
 % -------------------------------------------------------------------------
 % Identify valid grid cells per direction
@@ -192,22 +174,22 @@ for d = 1:nDirs
     nTrialsPerCellDir(:,d)     = sum(~isnan(crossingFrame(trialsThisDir,:)), 1)';
 end
 
-% figure;
-% for d = 1:nDirs
-%     subplot(1, nDirs, d);
-%     hold on;
-%     for o = 1:nOffsets
-%         x = squeeze(Xpos(1, o, d, ~isnan(Xpos(1,o,d,:))));
-%         y = squeeze(Ypos(1, o, d, ~isnan(Ypos(1,o,d,:))));
-%         plot(x, y, 'b-');
-%     end
-%     plot(centerX, centerY, 'r+', 'MarkerSize', 12, 'LineWidth', 2);
-%     rectangle('Position', [0 0 screenW screenH], 'EdgeColor', 'k', 'LineWidth', 1.5);
-%     title(sprintf('Direction %d', d));
-%     axis equal;
-%     xlim([-screenW screenW*2]);
-%     ylim([-screenH screenH*2]);
-% end
+figure;
+for d = 1:nDirs
+    subplot(1, nDirs, d);
+    hold on;
+    for o = 1:nOffsets
+        x = squeeze(Xpos(1, o, d, ~isnan(Xpos(1,o,d,:))));
+        y = squeeze(Ypos(1, o, d, ~isnan(Ypos(1,o,d,:))));
+        plot(x, y, 'b-');
+    end
+    plot(centerX, centerY, 'r+', 'MarkerSize', 12, 'LineWidth', 2);
+    rectangle('Position', [0 0 screenW screenH], 'EdgeColor', 'k', 'LineWidth', 1.5);
+    title(sprintf('Direction %d', d));
+    axis equal;
+    xlim([-screenW screenW*2]);
+    ylim([-screenH screenH*2]);
+end
 end
 
 function [dx_dir, dy_dir] = inferDirectionVector(XposRaw, YposRaw, dirIdx)
