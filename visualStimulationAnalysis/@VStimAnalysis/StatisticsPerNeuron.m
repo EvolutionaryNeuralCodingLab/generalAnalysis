@@ -48,7 +48,7 @@ arguments (Input)
     params.FilterEmptyResponses = false  % whether to apply empty-trial category filtering
     params.overwrite            = false  % if true, recompute even if a saved file already exists
     params.randomSeed           = 42     % fixed seed for reproducible permutation results (required for publication)
-    params.MovingWindowPVal     = true   % if true: use per-trial sliding window max for
+    params.MovingWindowPVal     = false   % if true: use per-trial sliding window max for
                                          % permutation test. If false: use segmented approach
                                          % for moving ball (nSegments equal epochs) or full
                                          % duration mean for all other stimuli.
@@ -77,6 +77,8 @@ arguments (Input)
     params.SpatialGridMode = true        % if true: use StatisticsPerNeuronSpatialGrid
                                           % only applies to linearlyMovingBall
                                           % ignored for other stimuli
+    params.BaseRespWindow = 200         %Fixed window for baseline and response
+    params.useSegments = false           %Use segmented approach
                                     
 end
 
@@ -236,8 +238,11 @@ for s = 1:x
             '(%.0f ms) — capping response window for %s.\n'], ...
             stimDur, params.MaxStimDuration, obj.stimName);
         effectiveStimDur = params.MaxStimDuration;  % capped duration used for Mr on1. ly
-    else
+    elseif params.MovingWindowPVal
         effectiveStimDur = stimDur;  % full duration — no capping needed
+    else
+        effectiveStimDur = params.BaseRespWindow;
+       
     end
 
     % --- Build spike count matrices ---
@@ -251,24 +256,24 @@ for s = 1:x
     if isequal(obj.stimName, 'StaticDriftingGrating')
         if isequal(fieldName,'moving')
 
-                        Mb = BuildBurstMatrix(goodU, ...
+            Mb = BuildBurstMatrix(goodU, ...
                 round(p.t), ...
-                round(directimesSorted - obj.VST.static_time- 0.75 * obj.VST.interTrialDelay * 1000), ...
-                round(0.75 * obj.VST.interTrialDelay * 1000));
-
+                round(directimesSorted - obj.VST.static_time- params.BaseRespWindow), ...
+                round(params.BaseRespWindow));
+            %Baseline before : 0.75 * obj.VST.interTrialDelay * 1000
         else
             % Mb: baseline window — always uses 75% of inter-trial interval
             % Duration is independent of stimulus duration so no capping needed
             Mb = BuildBurstMatrix(goodU, ...
                 round(p.t), ...
-                round(directimesSorted - 0.75 * obj.VST.interTrialDelay * 1000), ...
-                round(0.75 * obj.VST.interTrialDelay * 1000));
+                round(directimesSorted -  params.BaseRespWindow), ...
+                round(params.BaseRespWindow));
         end
     else
         Mb = BuildBurstMatrix(goodU, ...
             round(p.t), ...
-            round(directimesSorted - 0.75 * obj.VST.interTrialDelay * 1000), ...
-            round(0.75 * obj.VST.interTrialDelay * 1000));
+            round(directimesSorted - params.BaseRespWindow), ...
+            round(params.BaseRespWindow));
     end
 
     % -------------------------------------------------------------------------
@@ -289,7 +294,7 @@ for s = 1:x
     % -------------------------------------------------------------------------
 
     % Flag: use segmented approach for moving ball when sliding window disabled
-    useSegments = ~params.MovingWindowPVal && isfield(responseParams, "Speed1");
+    %useSegments = ~params.MovingWindowPVal && isfield(responseParams, "Speed1");
 
     if params.MovingWindowPVal
         % --- Sliding window approach ---
@@ -308,7 +313,7 @@ for s = 1:x
         baselinesMW = max(mbMov, [], 3);   % [nTrials × nNeurons] per-trial max window baseline
         DiffPVal    = responsesMW - baselinesMW;  % [nTrials × nNeurons]
 
-    elseif useSegments
+    elseif params.useSegments
         % --- Segmented approach for moving ball ---
         % Divide full stimulus duration (before capping) into nSegments equal epochs.
         % Each segment is stimDur/nSegments ms — e.g. 2300/5 = 460ms.
@@ -384,7 +389,7 @@ for s = 1:x
     signs  = 2 * randi(2, size(Diff,1), params.nBoot) - 3;
     signsR = reshape(signs, trialsCat, nCats, params.nBoot);  % [trialsCat × nCats × nBoot]
 
-    if useSegments
+    if params.useSegments
         % --- Segmented permutation test ---
         % ObsStat: max mean DiffSeg across valid categories AND segments [1 × nNeurons]
         % DiffSeg: [nTrials × nNeurons × nSegs]
@@ -518,7 +523,7 @@ for s = 1:x
         % -------------------------------------------------------------------------
      
 
-        if useSegments
+        if params.useSegments
 
             if params.UseLOO
                 % -------------------------------------------------------------------------

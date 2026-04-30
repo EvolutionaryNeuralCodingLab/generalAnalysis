@@ -1254,7 +1254,7 @@ if ~isempty(params.ComparePairs)
 
     % Swarm plot with bootstrap-derived significance (returns subsampling index)
     [fig, randiColors] = plotSwarmBootstrapWithComparisons(S.TableStimComp, pairs, ps, ...
-        {'Z-score'}, yLegend='Z-score', yMaxVis=ZscoreYlimUp, diff=true, plotMeanSem=false, Alpha=0.7);
+        {'Z-score'}, yLegend='Z-score', yMaxVis=ZscoreYlimUp, diff=true, plotMeanSem=true, Alpha=0.7);
 
     ax = gca;
     ax.YAxis.FontSize = 8;   ax.YAxis.FontName = 'helvetica';
@@ -1354,7 +1354,7 @@ if ~isempty(params.ComparePairs)
     V1max = max(diffs);   % use max observed difference to set y-axis ceiling
 
     [fig, randiColors] = plotSwarmBootstrapWithComparisons(S.TableStimComp, pairs, ps, ...
-        {'SpkR'}, yLegend='SpkR', yMaxVis=V1max, diff=true, plotMeanSem=false, Alpha=0.7);
+        {'SpkR'}, yLegend='SpkR', yMaxVis=V1max, diff=true, plotMeanSem=true, Alpha=0.7);
 
     ax = gca;
     ax.YAxis.FontSize = 8; ax.YAxis.FontName = 'helvetica';

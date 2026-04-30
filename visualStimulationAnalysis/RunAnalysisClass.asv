@@ -5,7 +5,7 @@ data = readtable(excelFile);
 
 %%
 %% Rect Grid
-for ex = [69] %84:91
+for ex = [74] %84:91
     NP = loadNPclassFromTable(ex); %73 81
     vsRe = rectGridAnalysis(NP);
     % vsRe.getSessionTime("overwrite",true);
@@ -19,7 +19,7 @@ for ex = [69] %84:91
     %vsRe.plotRaster(MergeNtrials=1,overwrite=true,AllResponsiveNeurons = true, selectedLum=[],oneTrial = true,PaperFig = true) %43
     vsRe.plotRaster(MergeNtrials=1,overwrite=true,AllResponsiveNeurons=false,exNeurons=82, selectedLum=255,oneTrial = true,PaperFig = true) %43
     vsRe.CalculateReceptiveFields('overwrite',true,AllResponsiveNeurons=false)
-    [colorbarLimsRG] = vsRe.PlotReceptiveFields(exNeurons=21,allStimParamsCombined=false,PaperFig=true,overwrite=true);
+    [colorbarLims] = vsRe.PlotReceptiveFields(exNeurons=82,allStimParamsCombined=false,PaperFig=true,overwrite=true,colorbarLims=[]);
     %result = vsRe.BootstrapPerNeuron('overwrite',true);
     %result = vsRe.StatisticsPerNeuron('overwrite',true);
 
@@ -29,7 +29,7 @@ end
 
 %% Moving ball
 
-for ex =[69]%97  74:84  (Neurons, 96_74, )
+for ex =[74]%97  74:84  (Neurons, 96_74, )
     NP = loadNPclassFromTable(ex); %73 81
     vs = linearlyMovingBallAnalysis(NP,Session=1);
     % vs.getSessionTime("overwrite",true);
@@ -47,7 +47,7 @@ for ex =[69]%97  74:84  (Neurons, 96_74, )
     vs.plotRaster('exNeurons',82,'overwrite',true,'OneDirection','up','OneLuminosity','white','MergeNtrials',1,'PaperFig',false)
     %vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'MergeNtrials',3,MaxVal_1=false,PaperFig=false)
     vs.CalculateReceptiveFields('overwrite',true,testConvolution=false,AllResponsiveNeurons=false);   
-    colorbarLims=vs.PlotReceptiveFields('exNeurons',21,'overwrite',true,'OneDirection','up','OneLuminosity','white','PaperFig',true);
+    colorbarLims=vs.PlotReceptiveFields('exNeurons',82,'overwrite',true,'OneDirection','up','OneLuminosity','white','PaperFig',true);
     %result = vs.BootstrapPerNeuron('overwrite',true);%('overwrite',true);
     % pvals0_6Filter =result.Speed2.pvalsResponse';
     % compare = [pvals,pvalsNoFilt,pvals0_6Filter];

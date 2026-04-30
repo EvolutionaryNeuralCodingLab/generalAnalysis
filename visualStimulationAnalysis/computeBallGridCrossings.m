@@ -162,10 +162,10 @@ for t = 1:nTrials
     end
 end
 
-figure;imagesc(reshape(mean(dwellFrames,1),[9,9]))
-
-figure;imagesc(reshape(mean(dwellFrames, 1, 'omitnan'), [nGrid nGrid]));
-colorbar; title('Original trajectories');
+%figure;imagesc(reshape(mean(dwellFrames,1),[9,9]))
+% 
+% figure;imagesc(reshape(mean(dwellFrames, 1, 'omitnan'), [nGrid nGrid]));
+% colorbar; title('Original trajectories');
 
 % test = Xpos(1,:,1,:);
 % figure;hist(test(:))

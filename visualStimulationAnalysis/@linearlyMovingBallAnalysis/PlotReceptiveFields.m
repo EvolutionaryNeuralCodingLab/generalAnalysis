@@ -200,8 +200,8 @@ TwoDGaussian = fspecial('gaussian', floor(size(RFu, 2) / (offsetN / 2)), ... % K
 % ═══════════════════════════════════════════════════════════════════════════════
 for u = eNeuron
 
-    ru = find(eNeuron == u);   % Index of neuron u within the eNeuron vector
-
+    %ru = find(eNeuron == u);   % Index of neuron u within the eNeuron vector
+    ru =u;
     % ── Optional: plot the direction-summed (combined) RF ──────────────────
     if params.allCombined
 

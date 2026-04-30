@@ -1,42 +1,121 @@
 function [fig, randiColors] = plotSwarmBootstrapWithComparisons(tbl, pairs, pValues, valueField, params)
+% PLOTSWARMBOOTSTRAPWITHCOMPARISONS  Per-stimulus swarm plot with hierarchical
+%   bootstrap central tendency, uncertainty bar, and pairwise significance brackets.
+%
+%   [fig, randiColors] = plotSwarmBootstrapWithComparisons(tbl, pairs, ...
+%       pValues, valueField, params)
+%
+%   tbl        - One row per observation. Required columns: stimulus, animal,
+%                insertion (all categorical). Optional: NeurID (numeric, used
+%                in diff mode for neuron-level data), zScore (numeric).
+%                Two granularities are auto-detected:
+%                  * neuron-level   : multiple rows per (insertion,stimulus)
+%                  * insertion-level: one row per (insertion,stimulus)
+%   pairs      - Nx2 cell array of stimulus name pairs to compare/test.
+%   pValues    - N-element vector of pre-computed p-values for those pairs.
+%   valueField - 1-cell {field} for raw value, 2-cell {num,den} for ratio.
+%
+%   Selected params (see arguments block for full list):
+%     nBoot          - bootstrap replicates (default 10000)
+%     fraction       - true => valueField{1} ./ valueField{2}
+%     diff           - plot per-neuron stimA-stimB difference instead of raw
+%     showBothAndDiff- two-tile layout: raw on left, difference on right
+%     ciMethod       - 'sem' (default) or 'percentile' (95% bootstrap CI)
+%     bootGroupVars  - cell of column names defining the bootstrap hierarchy.
+%                      Default auto-fills from {'animal','insertion'} based on
+%                      what exists in the table. Pass {} explicitly to force a
+%                      flat bootstrap.
+%     rngSeed        - bootstrap RNG seed for reproducibility (default 0)
+%
+%   Returns the figure handle and the random dot-draw permutation.
+%
+%   Bootstrap details: uses hierBoot (Saravanan et al. 2020) when grouping
+%   levels are present, resampling each level with replacement in turn. For
+%   insertion-level data with grouping {'animal','insertion'}, the within-
+%   insertion step resamples a single observation, so the procedure naturally
+%   reduces to an animal->insertion bootstrap without special-casing.
+%   Categorical grouping columns are coerced to numeric category codes before
+%   hierBoot is called (hierBoot pre-allocates intermediate levels as
+%   nan(size(data)), so it requires numeric inputs).
 
+% -------------------------------------------------------------------------
+% Argument validation block. MATLAB enforces types/sizes before the body runs.
+% -------------------------------------------------------------------------
 arguments
-    tbl table
-    pairs cell = {}
-    pValues double = []
-    valueField cell = {}
-    params.nBoot        (1,1) double  = 10000
-    params.fraction     logical       = false
-    params.yLegend      char          = 'value'
-    params.diff         logical       = false   % compute difference between first pair
-    params.Xjitter                    = 'density'
-    params.dotSize                    = 7
-    params.yMaxVis                    = 1
-    params.filled       logical       = true
-    params.Alpha                      = 0.2
-    params.plotMeanSem  logical       = true
-    params.colorByZScore logical      = false   % color dots by zScore column in tbl instead of by animal
-    params.showBothAndDiff logical    = true   % show raw (both stim types) in left tile AND difference in right tile
-    params.drawLines logical          = false %draw lines between points
+    tbl table                                          % observation table
+    pairs cell = {}                                    % stim pairs to test
+    pValues double = []                                % p-value per pair (NaN allowed)
+    valueField cell = {}                               % field name(s) of value column
+    params.nBoot           (1,1) double  = 10000       % bootstrap replicates
+    params.fraction        logical       = false       % ratio mode (num/den)
+    params.yLegend         char          = 'value'     % y-axis label
+    params.diff            logical       = false       % plot per-pair difference only
+    params.Xjitter                       = 'density'   % swarm jitter scheme
+    params.dotSize                       = 7           % marker size (pts^2)
+    params.yMaxVis                       = 1           % visible y-axis cap
+    params.filled          logical       = true        % filled vs open markers
+    params.Alpha                         = 0.2         % marker face/edge alpha
+    params.plotMeanSem     logical       = true        % overlay mean ± uncertainty
+    params.colorByZScore   logical       = false       % color dots by zScore (else by animal)
+    params.showBothAndDiff logical       = true        % two-tile raw + diff layout
+    params.drawLines       logical       = false       % connect paired observations
+    params.rngSeed         (1,1) double  = 0           % bootstrap reproducibility
+    params.ciMethod        char          = 'percentile'       % 'sem' | 'percentile'
+    params.bootGroupVars   cell          = {'__auto__'}% hierarchical bootstrap levels
 end
 
 % -------------------------------------------------------------------------
-% Validate Z-score coloring request
+% Up-front input validation.
 % -------------------------------------------------------------------------
+
+% Either raw mode (1 field) or fraction mode (2 fields). Fail loudly otherwise.
+if params.fraction
+    assert(numel(valueField) == 2, 'Fraction mode requires two valueField entries.');
+else
+    assert(~isempty(valueField),    'valueField must contain at least one column name.');
+end
+
+% colorByZScore can only work if the column exists; downgrade with a warning.
 if params.colorByZScore && ~ismember('zScore', tbl.Properties.VariableNames)
-    warning('colorByZScore=true but tbl has no zScore column — falling back to animal coloring.');
+    warning('colorByZScore=true but tbl has no zScore column; falling back to animal coloring.');
     params.colorByZScore = false;
 end
 
-% showBothAndDiff implicitly requires diff=false at the top level, because
-% it manages the diff internally in the right tile
+% showBothAndDiff places diff in its own tile; honor the two-tile mode.
 if params.showBothAndDiff && params.diff
-    warning('showBothAndDiff=true overrides params.diff — diff will be shown in the right tile only.');
+    warning('showBothAndDiff=true overrides params.diff; diff appears in the right tile only.');
     params.diff = false;
 end
 
+% Seed RNG once for the entire call so bootstraps and dot-draw orders are
+% deterministic. Critical for figure reproducibility in a paper.
+rng(params.rngSeed);
+
 % -------------------------------------------------------------------------
-% Shared parameters derived from yMaxVis
+% Resolve bootstrap grouping variables.
+% Sentinel '__auto__' means "auto-fill from columns present in the table".
+% Explicit {} from the caller forces a flat (non-hierarchical) bootstrap.
+% -------------------------------------------------------------------------
+if isscalar(params.bootGroupVars) && strcmp(params.bootGroupVars{1}, '__auto__')
+    cands                = {'animal','insertion'};
+    params.bootGroupVars = cands(ismember(cands, tbl.Properties.VariableNames));
+else
+    missing = ~ismember(params.bootGroupVars, tbl.Properties.VariableNames);
+    assert(~any(missing), 'bootGroupVars contains missing columns: %s', ...
+        strjoin(params.bootGroupVars(missing), ', '));
+end
+
+% -------------------------------------------------------------------------
+% Detect data granularity.
+% If every (insertion, stimulus) pair appears at most once, the table is
+% insertion-level (e.g., one number-of-responsive-units value per insertion).
+% Otherwise it is neuron-level (many neurons per insertion per stimulus).
+% Drives buildDiffTable's pairing strategy AND plotRawSwarm's line-grouping.
+% -------------------------------------------------------------------------
+isInsertionLevel = height(tbl) == height(unique(tbl(:, {'insertion','stimulus'})));
+
+% -------------------------------------------------------------------------
+% Padding / spacing constants derived from the y-axis cap.
 % -------------------------------------------------------------------------
 yMaxVis    = params.yMaxVis;
 bracketPad = yMaxVis * 0.05;
@@ -45,59 +124,55 @@ textPad    = yMaxVis * 0.01;
 semAlpha   = 0.6;
 
 % -------------------------------------------------------------------------
-% Pre-process tbl: rename stim labels and compute value column
+% Pre-process tbl: rename legacy stimulus labels and compute the value column.
 % -------------------------------------------------------------------------
-tbl = renameStimulusLabels(tbl);           % RG->SB, SDGs->SG, SDGm->MG
-pairs = renamePairLabels(pairs);           % same substitution in pairs
+tbl   = renameStimulusLabels(tbl);
+pairs = renamePairLabels(pairs);
 
 if params.fraction
-    assert(numel(valueField) == 2, 'Fraction mode requires two valueField entries.');
+    % Element-wise ratio. NaN/Inf may arise if denominator has zeros — they
+    % are filtered downstream by the bootstrap/plotting code.
     tbl.value = tbl.(valueField{1}) ./ tbl.(valueField{2});
 else
     tbl.value = tbl.(valueField{1});
 end
 
+% Drop unused categorical levels so colormaps and category counts are accurate.
 tbl.stimulus  = removecats(tbl.stimulus);
 tbl.animal    = removecats(tbl.animal);
 tbl.insertion = removecats(tbl.insertion);
 
 % -------------------------------------------------------------------------
-% Build figure: single axes OR tiledlayout(1,2) for showBothAndDiff
+% Build figure: either single axes or a 1x2 tiledlayout depending on mode.
 % -------------------------------------------------------------------------
 fig = figure;
-set(fig, 'Color', 'w');
+set(fig, 'Color', 'w');                  % white background for publication
 
 if params.showBothAndDiff
-    % Two tiles: [raw both stim types | difference]
-    tl = tiledlayout(fig, 1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+    % Left tile: every stimulus shown raw. Right tile: difference for pairs{1,:}.
+    tl     = tiledlayout(fig, 1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+    axRaw  = nexttile(tl, 1);
+    axDiff = nexttile(tl, 2);
 
-    axRaw  = nexttile(tl, 1);  % left tile: raw swarm
-    axDiff = nexttile(tl, 2);  % right tile: difference swarm
-
-    % --- LEFT TILE: raw (both stim types) ---
     randiColors = plotRawSwarm(axRaw, tbl, pairs, pValues, params, ...
-        yMaxVis, bracketPad, stackPad, textPad, semAlpha);
+        yMaxVis, bracketPad, stackPad, textPad, semAlpha, isInsertionLevel);
 
-    % --- RIGHT TILE: difference ---
-    tblDiff = buildDiffTable(tbl, pairs, params);
+    tblDiff = buildDiffTable(tbl, pairs, params, isInsertionLevel);
     plotDiffSwarm(axDiff, tblDiff, pairs, pValues, params, ...
         yMaxVis, bracketPad, textPad);
-
 else
-    % Single axes mode
+    % Single-axes mode: either the raw swarm or the difference, not both.
     ax = axes(fig);  %#ok<LAXES>
     hold(ax, 'on');
-    set(ax, 'Clipping', 'off');
+    set(ax, 'Clipping', 'off');                  % allow brackets/text outside ylim
 
     if params.diff
-        % Difference mode only
-        tblDiff     = buildDiffTable(tbl, pairs, params);
+        tblDiff     = buildDiffTable(tbl, pairs, params, isInsertionLevel);
         randiColors = plotDiffSwarm(ax, tblDiff, pairs, pValues, params, ...
             yMaxVis, bracketPad, textPad);
     else
-        % Raw mode only
         randiColors = plotRawSwarm(ax, tbl, pairs, pValues, params, ...
-            yMaxVis, bracketPad, stackPad, textPad, semAlpha);
+            yMaxVis, bracketPad, stackPad, textPad, semAlpha, isInsertionLevel);
     end
 end
 
@@ -106,91 +181,109 @@ end % main function
 
 % =========================================================================
 % LOCAL FUNCTION: plotRawSwarm
-% Plots raw values for all stim types with lines between paired neurons.
-% Returns randiColors (permuted indices used for dot ordering).
+% Plots all observations grouped by stimulus, with optional connecting lines
+% between paired neurons across stim types. Returns the random draw permutation.
 % =========================================================================
 function randiColors = plotRawSwarm(ax, tbl, pairs, pValues, params, ...
-    yMaxVis, bracketPad, stackPad, textPad, semAlpha)
+    yMaxVis, bracketPad, stackPad, textPad, semAlpha, isInsertionLevel)
 
 hold(ax, 'on');
-set(ax, 'Clipping', 'off');
+set(ax, 'Clipping', 'off');                          % brackets may sit above yMaxVis
 
-stimuli    = categories(tbl.stimulus);
-tblPlot    = tbl;
+stimuli = categories(tbl.stimulus);                  % ordered category list
+tblPlot = tbl;                                       % alias to keep names short
 
-% Randomize dot draw order so overlapping colors are visible
+% Random permutation of dot indices => overlapping colors don't form layers.
+% rng() was seeded once in the main function, so this is reproducible.
 randiColors = randperm(height(tblPlot));
 
-% Determine dot color data: Z-score (diverging) or animal (categorical)
+% Choose dot color source: continuous zScore (diverging) or categorical animal.
 if params.colorByZScore
-    % Use Z-score values — colormap set to diverging RdBu below
     colorData = tblPlot.zScore(randiColors);
 else
-    % Use animal labels — colormap set to lines() below
     colorData = tblPlot.animal(randiColors);
 end
 
-% Draw swarm
+% Draw the swarm. swarmchart accepts a categorical x-axis directly.
 if params.filled
     s = swarmchart(ax, tblPlot.stimulus(randiColors), tblPlot.value(randiColors), ...
         params.dotSize, colorData, 'filled', ...
         'MarkerFaceAlpha', params.Alpha);
 else
+    % SizeData=30 below intentionally overrides params.dotSize for legibility
+    % of open markers; consider exposing as its own param if you want full control.
     s = swarmchart(ax, tblPlot.stimulus(randiColors), tblPlot.value(randiColors), ...
         params.dotSize, colorData, ...
         'MarkerEdgeAlpha', params.Alpha, 'LineWidth', 1, 'SizeData', 30);
 end
 s.XJitter = params.Xjitter;
 
-% Set colormap and colorbar
+% Configure the colormap to match the chosen color source.
 if params.colorByZScore
-    % Diverging red-blue colormap centred at 0
     colormap(ax, buildRdBuColormap(256));
     maxZ = max(abs(tblPlot.zScore), [], 'omitnan');
-    if maxZ == 0, maxZ = 1; end
-    clim(ax, [-maxZ maxZ]);
+    if isempty(maxZ) || maxZ == 0, maxZ = 1; end     % degenerate safety
+    clim(ax, [-maxZ maxZ]);                          % symmetric around zero
     cb = colorbar(ax);
     cb.Label.String = 'Z-score';
 else
     colormap(ax, lines(numel(categories(tblPlot.animal))));
 end
 
-% Draw lines between paired neurons across stim types
+% -------------------------------------------------------------------------
+% Optional: draw a thin line for each unit across stimulus columns.
+% Choice of unit identifier depends on data granularity:
+%   * insertion-level: insertion *is* the unit, so group by insertion.
+%   * neuron-level   : need NeurID; insertion would erroneously merge units
+%                      from the same penetration into a single line.
+% -------------------------------------------------------------------------
 if params.drawLines
-    cats = categories(tblPlot.stimulus);
-    xMap = containers.Map(cats, 1:numel(cats));
-    xNum = arrayfun(@(i) xMap(char(tblPlot.stimulus(i))), 1:height(tblPlot));
-
-
-    try
-        tblPlot.NeurID;
-        UI = 'NeurID';
-    catch
-        UI = 'insertion';
+    if isInsertionLevel
+        unitIDvar = 'insertion';
+    elseif ismember('NeurID', tblPlot.Properties.VariableNames)
+        unitIDvar = 'NeurID';
+    else
+        unitIDvar = '';
+        warning(['drawLines=true on neuron-level data without NeurID; ', ...
+                 'skipping connecting lines (insertion would merge ', ...
+                 'multiple units into one line).']);
     end
 
-    for i = 1:numel(unique(tblPlot.(UI)))
-        idx = double(tblPlot.(UI)) == i;
-        if sum(idx) < 2, continue; end
-        line(ax, xNum(idx), tblPlot.value(idx), ...
-            'Color', [0 0 0 0.1], 'LineWidth', 0.1);
+    if ~isempty(unitIDvar)
+        cats = categories(tblPlot.stimulus);
+        % Map stimulus categories to numeric x positions for line() calls.
+        xMap = containers.Map(cats, 1:numel(cats));
+        xNum = arrayfun(@(i) xMap(char(tblPlot.stimulus(i))), 1:height(tblPlot));
+
+        % Iterate over actual unit values (categorical or numeric); equality
+        % comparison works on both, so no type-specific branching is needed.
+        unitIDs = unique(tblPlot.(unitIDvar));
+        for u = 1:numel(unitIDs)
+            idx = tblPlot.(unitIDvar) == unitIDs(u);
+            if nnz(idx) < 2, continue; end           % need >=2 stim columns to draw
+            line(ax, xNum(idx), tblPlot.value(idx), ...
+                'Color', [0 0 0 0.1], 'LineWidth', 0.1);
+        end
     end
 end
 
 ylabel(ax, params.yLegend);
 ax.Box   = 'off';
-ax.Layer = 'top';
+ax.Layer = 'top';                                    % axis ticks above swarm dots
 
-% Bootstrap mean + SEM per stimulus
+% Hierarchical bootstrap mean ± SE (or 95% CI) per stimulus column.
 if params.plotMeanSem
     plotMeanSemBars(ax, tblPlot, stimuli, params, semAlpha);
 end
 
-% Pairwise significance brackets
+% Pairwise significance brackets (only if pairs and pValues are aligned).
 if ~isempty(pairs) && numel(pValues) == size(pairs,1)
-    plotBrackets(ax, tblPlot, stimuli, pairs, pValues, yMaxVis, bracketPad, stackPad, textPad);
+    plotBrackets(ax, tblPlot, stimuli, pairs, pValues, ...
+        yMaxVis, bracketPad, stackPad, textPad);
 end
 
+% Cap visible y-range. Brackets/text use Clipping=off, so they remain visible
+% even above this cap (intentional for tight figures).
 ylim(ax, [ax.YLim(1) yMaxVis]);
 
 end % plotRawSwarm
@@ -198,7 +291,8 @@ end % plotRawSwarm
 
 % =========================================================================
 % LOCAL FUNCTION: plotDiffSwarm
-% Plots the per-neuron difference (stimA - stimB) as a single swarm column.
+% One swarm column showing per-neuron (or per-insertion) (stimA - stimB),
+% with a 4-tier significance annotation matching plotBrackets.
 % =========================================================================
 function randiColors = plotDiffSwarm(ax, tblDiff, pairs, pValues, params, ...
     yMaxVis, bracketPad, textPad)
@@ -206,16 +300,16 @@ function randiColors = plotDiffSwarm(ax, tblDiff, pairs, pValues, params, ...
 hold(ax, 'on');
 set(ax, 'Clipping', 'off');
 
+% Reproducible draw order; rng() set once in main.
 randiColors = randperm(height(tblDiff));
 
-% Determine dot color data
+% Same color-source logic as raw plot, but only if zScore made it through buildDiffTable.
 if params.colorByZScore && ismember('zScore', tblDiff.Properties.VariableNames)
     colorData = tblDiff.zScore(randiColors);
 else
     colorData = tblDiff.animal(randiColors);
 end
 
-% Draw swarm
 if params.filled
     s = swarmchart(ax, tblDiff.stimulus(randiColors), tblDiff.value(randiColors), ...
         params.dotSize, colorData, 'filled', ...
@@ -227,11 +321,10 @@ else
 end
 s.XJitter = params.Xjitter;
 
-% Set colormap
 if params.colorByZScore && ismember('zScore', tblDiff.Properties.VariableNames)
     colormap(ax, buildRdBuColormap(256));
     maxZ = max(abs(tblDiff.zScore), [], 'omitnan');
-    if maxZ == 0, maxZ = 1; end
+    if isempty(maxZ) || maxZ == 0, maxZ = 1; end
     clim(ax, [-maxZ maxZ]);
     cb = colorbar(ax);
     cb.Label.String = 'Z-score';
@@ -239,20 +332,21 @@ else
     colormap(ax, lines(numel(categories(tblDiff.animal))));
 end
 
-% Zero reference line
+% Visual reference at zero so the sign of differences is obvious at a glance.
 yline(ax, 0, 'LineWidth', 1, 'Alpha', 0.7);
 
 ylabel(ax, params.yLegend);
 ax.Box   = 'off';
 ax.Layer = 'top';
 
-% Bootstrap mean + SEM
 if params.plotMeanSem
     stimuli = categories(tblDiff.stimulus);
     plotMeanSemBars(ax, tblDiff, stimuli, params, 0.6);
 end
 
-% Significance annotation for diff mode
+% -------------------------------------------------------------------------
+% Significance annotation (four-tier scheme matching plotBrackets).
+% -------------------------------------------------------------------------
 ylims = ylim(ax);
 if ~isempty(pValues) && numel(pValues) >= 1
 
@@ -266,39 +360,39 @@ if ~isempty(pValues) && numel(pValues) >= 1
         return
     end
 
-    % Guard against empty vals producing empty maxVisible
+    % Place the annotation just above the highest visible (capped) value.
     maxVisible = max(min(vals(:), yMaxVis(1)));
     if isempty(maxVisible), maxVisible = yMaxVis; end
     yText = maxVisible + bracketPad;
 
-    if pValues(1) < 0.001
-        txt = '***';
-    elseif pValues(1) < 0.01
-        txt = '**';
-    elseif pValues(1) < 0.05
-        txt = '*';
-    else
-        txt = 'ns';
+    if     pValues(1) < 0.001, txt = '***';
+    elseif pValues(1) < 0.01,  txt = '**';
+    elseif pValues(1) < 0.05,  txt = '*';
+    else,                      txt = 'ns';
     end
 
+    % Hard-coded x=1: the diff plot has exactly one column. If you ever extend
+    % this to multiple difference columns, parameterize x.
     text(ax, 1, yText, txt, ...
         'HorizontalAlignment', 'center', 'FontSize', 7, 'Clipping', 'off');
 
-    stimA     = pairs{1,1};
-    stimB     = pairs{1,2};
-    compText  = sprintf('%s > %s', stimA, stimB);
-    yCompText = yText + textPad * 10;
+    % Comparison label (e.g. "SB > SG"), placed above the stars.
+    compTextPad = 10 * textPad;
+    stimA       = pairs{1,1};
+    stimB       = pairs{1,2};
+    compText    = sprintf('%s > %s', stimA, stimB);
+    yCompText   = yText + compTextPad;
 
     text(ax, 1, yCompText, compText, ...
         'HorizontalAlignment', 'center', 'FontSize', 10, 'Clipping', 'off');
 
-    requiredHeight = yCompText + textPad * 10;
+    % Expand y-limits if the comparison label needs more room than yMaxVis allows.
+    requiredHeight = yCompText + compTextPad;
     if requiredHeight > yMaxVis
         ylim(ax, [ylims(1) requiredHeight]);
     else
         ylim(ax, [ylims(1) yMaxVis]);
     end
-
 else
     ylim(ax, [ylims(1) yMaxVis]);
 end
@@ -310,10 +404,13 @@ end % plotDiffSwarm
 
 % =========================================================================
 % LOCAL FUNCTION: buildDiffTable
-% Computes per-neuron difference (stimA - stimB) within each insertion.
-% If colorByZScore, also computes mean zScore across the pair for each neuron.
+% Per-unit (stimA - stimB) within insertion. Pairing strategy is chosen by
+% data granularity:
+%   * insertion-level (one row per insertion-stimulus): direct subtraction.
+%   * neuron-level + NeurID present: match by NeurID (intersect).
+%   * neuron-level without NeurID:   row-order fallback with warning.
 % =========================================================================
-function tblDiff = buildDiffTable(tbl, pairs, params)
+function tblDiff = buildDiffTable(tbl, pairs, params, isInsertionLevel)
 
 assert(~isempty(pairs) && size(pairs,1) >= 1, ...
     'diff mode requires at least one stimulus pair.');
@@ -321,48 +418,85 @@ assert(~isempty(pairs) && size(pairs,1) >= 1, ...
 stimA = pairs{1,1};
 stimB = pairs{1,2};
 
+hasNeurID = ismember('NeurID', tbl.Properties.VariableNames);
+
+% Only warn when NeurID is genuinely needed (neuron-level data) and missing.
+if ~hasNeurID && ~isInsertionLevel
+    warning(['buildDiffTable: NeurID column not present and table appears to ', ...
+             'be neuron-level (multiple rows per insertion-stimulus pair). ', ...
+             'Pairing by row order — fragile if rows are reordered. Add NeurID.']);
+end
+
 ins      = categories(tbl.insertion);
-diffVals = [];
+diffVals = [];                      % accumulators for the output table
 animals  = [];
 insers   = [];
-zScores  = [];  % mean zScore across pair, used only if colorByZScore
+zScores  = [];                      % only filled if colorByZScore
+
+useZ = params.colorByZScore && ismember('zScore', tbl.Properties.VariableNames);
 
 for i = 1:numel(ins)
     idxA = tbl.insertion == ins{i} & tbl.stimulus == stimA;
     idxB = tbl.insertion == ins{i} & tbl.stimulus == stimB;
-
     if ~any(idxA) || ~any(idxB), continue; end
 
-    if params.fraction
-        vA = tbl.(valueField{1})(idxA) ./ tbl.(valueField{2})(idxA);
-        vB = tbl.(valueField{1})(idxB) ./ tbl.(valueField{2})(idxB);
-    else
+    if isInsertionLevel
+        % One row per side guaranteed by the granularity check.
         vA = tbl.value(idxA);
         vB = tbl.value(idxB);
+        an = tbl.animal(idxA);
+        if useZ
+            zPair = (tbl.zScore(idxA) + tbl.zScore(idxB)) / 2;
+        end
+
+    elseif hasNeurID
+        % Neuron-level with explicit IDs: safest matching.
+        tA = tbl(idxA, :);
+        tB = tbl(idxB, :);
+        [~, iA, iB] = intersect(tA.NeurID, tB.NeurID, 'stable');
+        if isempty(iA), continue; end
+
+        vA = tA.value(iA);
+        vB = tB.value(iB);
+        an = tA.animal(iA);
+        if useZ
+            zPair = (tA.zScore(iA) + tB.zScore(iB)) / 2;
+        end
+
+    else
+        % Row-order fallback for neuron-level data without NeurID.
+        vA = tbl.value(idxA);
+        vB = tbl.value(idxB);
+        if numel(vA) ~= numel(vB)
+            warning('Insertion %s: %d stimA rows but %d stimB rows; skipping.', ...
+                ins{i}, numel(vA), numel(vB));
+            continue
+        end
+        an = repmat(tbl.animal(find(idxA, 1)), numel(vA), 1);
+        if useZ
+            zPair = (tbl.zScore(idxA) + tbl.zScore(idxB)) / 2;
+        end
     end
 
     diffVals = [diffVals; vA - vB];                                       %#ok<AGROW>
-    animals  = [animals;  repmat(tbl.animal(find(idxA,1)), length(vA), 1)]; %#ok<AGROW>
-    insers   = [insers;   repmat(i, length(vA), 1)];                      %#ok<AGROW>
-
-    % For Z-score coloring: average zScore across both stim types per neuron
-    if params.colorByZScore && ismember('zScore', tbl.Properties.VariableNames)
-        zA = tbl.zScore(idxA);
-        zB = tbl.zScore(idxB);
-        zScores = [zScores; (zA + zB) / 2];                               %#ok<AGROW>
+    animals  = [animals;  an];                                            %#ok<AGROW>
+    insers   = [insers;   repmat(i, numel(vA), 1)];                       %#ok<AGROW>
+    if useZ
+        zScores = [zScores; zPair];                                       %#ok<AGROW>
     end
 end
 
-valid = ~isnan(diffVals);
+% Drop NaN differences (e.g., from zero-denominator fractions).
+valid    = ~isnan(diffVals);
 stimName = sprintf('%s-%s', stimA, stimB);
 
-tblDiff          = table();
+tblDiff           = table();
 tblDiff.insertion = categorical(insers(valid));
 tblDiff.stimulus  = categorical(repmat({stimName}, sum(valid), 1));
 tblDiff.animal    = animals(valid);
 tblDiff.value     = diffVals(valid);
 
-if params.colorByZScore && ~isempty(zScores)
+if useZ
     tblDiff.zScore = zScores(valid);
 end
 
@@ -371,40 +505,93 @@ end % buildDiffTable
 
 % =========================================================================
 % LOCAL FUNCTION: plotMeanSemBars
-% Draws bootstrapped mean ± SEM bars for each stimulus group.
+% Hierarchical-bootstrap central tendency and uncertainty per stimulus column.
+%
+% Reports the SAMPLE mean as the point estimate (consistent with conventional
+% reporting; mean(bootMean) converges to it as nBoot->Inf but is unconventional).
+% Uncertainty bar uses params.ciMethod:
+%   'sem'        -> ±1 SE from std(bootMean)
+%   'percentile' -> [2.5, 97.5] percentile CI  (recommended for skewed data)
+%
+% Resampling is hierarchical via hierBoot (Saravanan et al. 2020), with one
+% level per entry of params.bootGroupVars (typically {'animal','insertion'}).
+% Falls back to a flat bootstrap (bootstrp) when no levels are configured.
 % =========================================================================
 function plotMeanSemBars(ax, tblPlot, stimuli, params, semAlpha)
 
 for i = 1:numel(stimuli)
-    idx  = tblPlot.stimulus == stimuli{i};
+    idx = tblPlot.stimulus == stimuli{i};
     if ~any(idx), continue; end
 
+    % Pull values + matching cluster IDs, dropping NaNs from all together.
+    % Without this step bootstrp(@mean, vals) returns NaN whenever any sample
+    % contains a NaN, while the analytical SE silently omits NaNs — the
+    % original code switched between these two policies at n=500.
     vals = tblPlot.value(idx);
-    if numel(vals) < 3
-        fprintf('Number of values to bootstrap is less than 3\n');
+    keep = ~isnan(vals);
+    vals = vals(keep);
+
+    n = numel(vals);
+    if n < 3
+        fprintf('Stimulus %s: n=%d < 3; skipping mean/SE bar.\n', char(stimuli{i}), n);
         continue
     end
 
-    if height(tblPlot) < 500
-        bootMean = bootstrp(params.nBoot, @mean, vals);
-        mu  = mean(bootMean);
-        sem = std(bootMean);
-    else
-        mu  = mean(vals, 'omitnan');
-        sem = std(vals,  'omitnan') / sqrt(sum(~isnan(vals)));
+    % Sample mean as point estimate.
+    mu = mean(vals);
+
+    % Pull each grouping column for this stimulus, aligned with the NaN drop.
+    % NOTE: hierBoot pre-allocates intermediate level arrays via nan(size(data))
+    % (i.e., as double), so any categorical grouping column must be coerced to
+    % its underlying integer category code before being passed in. The codes
+    % preserve group identity for the equality comparisons hierBoot performs.
+    groupVars = params.bootGroupVars;
+    groupVals = cell(1, numel(groupVars));
+    for g = 1:numel(groupVars)
+        col = tblPlot.(groupVars{g})(idx);
+        col = col(keep);
+        if iscategorical(col)
+            col = double(col);                       % numeric-only contract
+        end
+        groupVals{g} = col;
     end
 
-    % SEM error bar
-    line(ax, [i i], mu + [-1 1]*sem, ...
+    % Hierarchical bootstrap of the mean. Empty group list => flat bootstrap.
+    % For insertion-level data with groups {'animal','insertion'}, the
+    % within-insertion resampling step picks the same single observation each
+    % time, so the procedure naturally collapses to an animal->insertion
+    % bootstrap without any special-casing here.
+    if isempty(groupVars)
+        bootMean = bootstrp(params.nBoot, @mean, vals);
+    else
+        bootMean = hierBoot(vals, params.nBoot, groupVals{:});
+    end
+
+    % Uncertainty bar from the bootstrap distribution.
+    switch lower(params.ciMethod)
+        case 'sem'
+            se  = std(bootMean);
+            yLo = mu - se;
+            yHi = mu + se;
+        case 'percentile'
+            yLo = prctile(bootMean,  2.5);
+            yHi = prctile(bootMean, 97.5);
+        otherwise
+            error('Unknown ciMethod: %s. Use ''sem'' or ''percentile''.', params.ciMethod);
+    end
+
+    % Vertical uncertainty line.
+    line(ax, [i i], [yLo yHi], ...
         'Color', [0 0 0 semAlpha], 'LineWidth', 2);
 
+    % End caps.
     capW = 0.1;
-    line(ax, [i-capW i+capW], [mu+sem mu+sem], ...
+    line(ax, [i-capW i+capW], [yHi yHi], ...
         'Color', [0 0 0 semAlpha], 'LineWidth', 2);
-    line(ax, [i-capW i+capW], [mu-sem mu-sem], ...
+    line(ax, [i-capW i+capW], [yLo yLo], ...
         'Color', [0 0 0 semAlpha], 'LineWidth', 2);
 
-    % Mean line
+    % Mean line — slightly wider than caps so the point estimate stands out.
     dx = 0.15;
     plot(ax, [i-dx i+dx], [mu mu], 'k-', 'LineWidth', 1.2);
 end
@@ -414,16 +601,19 @@ end % plotMeanSemBars
 
 % =========================================================================
 % LOCAL FUNCTION: plotBrackets
-% Draws pairwise significance brackets above the swarm.
+% Pairwise significance brackets above the swarm. Four-tier annotation
+% (***, **, *, ns), consistent with plotDiffSwarm.
 % =========================================================================
 function plotBrackets(ax, tblPlot, stimuli, pairs, pValues, ...
     yMaxVis, bracketPad, stackPad, textPad)
 
 fprintf('=== DEBUGGING BRACKETS ===\n');
-fprintf('Number of pairs: %d\n', size(pairs,1));
+fprintf('Number of pairs: %d\n',   size(pairs,1));
 fprintf('Number of pValues: %d\n', numel(pValues));
-fprintf('Stimuli in plot: %s\n', strjoin(cellstr(stimuli), ', '));
+fprintf('Stimuli in plot: %s\n',   strjoin(cellstr(stimuli), ', '));
 
+% Track y-positions of already-placed brackets so subsequent ones stack
+% rather than overlap.
 usedHeights = zeros(size(pairs,1), 1);
 
 for k = 1:size(pairs,1)
@@ -432,22 +622,22 @@ for k = 1:size(pairs,1)
 
     x1 = find(strcmp(stimuli, pairs{k,1}));
     x2 = find(strcmp(stimuli, pairs{k,2}));
-
     fprintf('x1 index: %d, x2 index: %d\n', x1, x2);
 
     if isempty(x1) || isempty(x2)
-        fprintf('SKIPPING: One or both stimuli not found!\n');
+        fprintf('SKIPPING: One or both stimuli not found in plot.\n');
         continue
     end
 
     vals1 = tblPlot.value(tblPlot.stimulus == pairs{k,1});
     vals2 = tblPlot.value(tblPlot.stimulus == pairs{k,2});
-
     fprintf('vals1 count: %d, vals2 count: %d\n', numel(vals1), numel(vals2));
 
+    % Cap each value at yMaxVis so the bracket is anchored to what's visible.
     maxVisible = max(min([vals1; vals2], yMaxVis));
-    yBase = maxVisible + bracketPad;
+    yBase      = maxVisible + bracketPad;
 
+    % Vertical stacking against previously placed brackets.
     y = yBase;
     while any(abs(usedHeights(1:k-1) - y) < stackPad)
         y = y + stackPad;
@@ -457,21 +647,19 @@ for k = 1:size(pairs,1)
     fprintf('Bracket y position: %.3f\n', y);
     fprintf('p-value: %.4e\n', pValues(k));
 
-    % Bracket lines
-    line(ax, [x1 x2], [y y], 'Color', 'k', 'LineWidth', 1.2, 'Clipping', 'off');
-    line(ax, [x1 x1], [y - yMaxVis*0.01, y], 'Color', 'k', 'LineWidth', 1.2, 'Clipping', 'off');
-    line(ax, [x2 x2], [y - yMaxVis*0.01, y], 'Color', 'k', 'LineWidth', 1.2, 'Clipping', 'off');
+    % Bracket horizontal + two short verticals.
+    line(ax, [x1 x2], [y y],                   'Color','k', 'LineWidth',1.2, 'Clipping','off');
+    line(ax, [x1 x1], [y - yMaxVis*0.01, y],   'Color','k', 'LineWidth',1.2, 'Clipping','off');
+    line(ax, [x2 x2], [y - yMaxVis*0.01, y],   'Color','k', 'LineWidth',1.2, 'Clipping','off');
 
-    % Significance stars
-    if pValues(k) < 1e-3
-        txt = '***';
-        if pValues(k) == 0, txt = '****'; end
-        fprintf('Drawing text: %s\n', txt);
-        text(ax, mean([x1 x2]), y + textPad, txt, ...
-            'HorizontalAlignment', 'center', 'FontSize', 7, 'Clipping', 'off');
-    else
-        fprintf('p-value not significant enough (>= 1e-3)\n');
+    if     pValues(k) < 0.001, txt = '***';
+    elseif pValues(k) < 0.01,  txt = '**';
+    elseif pValues(k) < 0.05,  txt = '*';
+    else,                      txt = 'ns';
     end
+    fprintf('Drawing text: %s\n', txt);
+    text(ax, mean([x1 x2]), y + textPad, txt, ...
+        'HorizontalAlignment', 'center', 'FontSize', 7, 'Clipping', 'off');
 end
 
 end % plotBrackets
@@ -492,7 +680,7 @@ end
 
 % =========================================================================
 % LOCAL FUNCTION: renamePairLabels
-% Applies same label substitutions to the pairs cell array.
+% Same legacy substitutions, applied element-wise to the pairs cell array.
 % =========================================================================
 function pairs = renamePairLabels(pairs)
 if isempty(pairs), return; end
@@ -506,18 +694,16 @@ end
 
 % =========================================================================
 % LOCAL FUNCTION: buildRdBuColormap
-% Returns an n-row diverging Red-Blue colormap centred at 0.
-% Blue = negative (low Z), White = zero, Red = positive (high Z).
+% n-row diverging Red-Blue colormap centred on white.
+% Blue = negative, White = zero, Red = positive.
 % =========================================================================
 function cmap = buildRdBuColormap(n)
 half = floor(n/2);
 
-% Blue -> White (low to mid)
 blueToWhite = [linspace(0.02, 1, half)', ...
                linspace(0.44, 1, half)', ...
                linspace(0.69, 1, half)'];
 
-% White -> Red (mid to high)
 whiteToRed  = [linspace(1, 0.70, half)', ...
                linspace(1, 0.09, half)', ...
                linspace(1, 0.09, half)'];
