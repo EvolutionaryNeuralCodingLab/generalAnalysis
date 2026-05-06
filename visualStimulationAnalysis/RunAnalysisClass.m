@@ -17,7 +17,7 @@ for ex = [69] %84:91
      %vsRe.ResponseWindow('overwrite',true)
     % results = vsRe.ShufflingAnalysis('overwrite',true);
     %vsRe.plotRaster(MergeNtrials=1,overwrite=true,AllResponsiveNeurons = true, selectedLum=[],oneTrial = true,PaperFig = true) %43
-    vsRe.plotRaster(MergeNtrials=1,overwrite=true,AllResponsiveNeurons=false,exNeurons=82, selectedLum=255,oneTrial = true,PaperFig = true) %43
+    vsRe.plotRaster(MergeNtrials=1,overwrite=true,AllResponsiveNeurons=false,exNeurons=21, selectedLum=255,oneTrial = true,PaperFig = true) %43
     vsRe.CalculateReceptiveFields('overwrite',true,AllResponsiveNeurons=false)
     [colorbarLimsRG] = vsRe.PlotReceptiveFields(exNeurons=21,allStimParamsCombined=false,PaperFig=true,overwrite=true);
     %result = vsRe.BootstrapPerNeuron('overwrite',true);
@@ -29,7 +29,7 @@ end
 
 %% Moving ball
 
-for ex =[69]%97  74:84  (Neurons, 96_74, )
+for ex =[74]%97  74:84  (Neurons, 96_74, )
     NP = loadNPclassFromTable(ex); %73 81
     vs = linearlyMovingBallAnalysis(NP,Session=1);
     % vs.getSessionTime("overwrite",true);
@@ -66,18 +66,22 @@ end
 %[49:54,84:90,92:96] %All SDG experiments
 %solve MBR
 %bootsrapRespBase
-[tempTableMW] = AllExpAnalysis([49:54,64:66, 68:85 87:97],{'MB','RG'},StatMethod='maxPermuteTest', overwrite=false,ComparePairs={'MB','RG'},PaperFig=true,...
+[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97],StatMethod='maxPermuteTest', overwrite=true,ComparePairs={'RG','SDGs'},PaperFig=true,...
+    overwriteResponse=false,overwriteStats=true);%[49:54,57:91] %%Check why I have different array dimensions in MBR%%
+
+%%
+[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97],{'MB','RG'},StatMethod='maxPermuteTest', overwrite=true,ComparePairs={'MB','RG'},PaperFig=true,...
     overwriteResponse=false,overwriteStats=true);%[49:54,57:91] %%Check why I have different array dimensions in MBR%%
 
 %% PSTH for all experiments
-plotPSTH_MultiExp([49:54,64:66,68:85 87:97], overwrite=false, zScore=true,TakeTopPercentTrials=[], PaperFig=true, byDepth=false, smooth=50); %stimTypes=["linearlyMovingBall"]
+plotPSTH_MultiExp([49:54,64:66,68:85 87:97], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=true, byDepth=false, smooth=50); %stimTypes=["linearlyMovingBall"]
 
 %% Raster for all experiment
-plotRaster_MultiExp([49:54,64:66,68:85 87:97], sortBy = "spatialTuning",overwrite=false,TakeTopPercentTrials=[],PaperFig=true)
+plotRaster_MultiExp([49:54,64:66,68:85 87:97], sortBy = "spatialTuning",overwrite=true,TakeTopPercentTrials=[],PaperFig=true)
 
 %% Calculate spatial tuning
 results= SpatialTuningIndex([49:54,64:66, 68:85 87:97], indexType =  "L_amplitude_diff" ,overwrite=false...
-    , topPercent = 30,useRF=true,onOff=1,unionResponsive = false,allResponsive=true, PaperFig=true);
+    , topPercent = 30,useRF=true,onOff=1,unionResponsive = false,allResponsive=true, PaperFig=true, plotRFs=false, plotRFunion=false);
 
 %% Get neuron depths
 getNeuronDepths([49:54,64:97]) %[49:54,64:72,84:97] %% PV140 missing depth coordinates
@@ -95,7 +99,7 @@ for ex = [97]
     % results = vs.ShufflingAnalysis('overwrite',true);
     % result = vs.BootstrapPerNeuron('overwrite',true);
     % vs.StatisticsPerNeuron(overwrite=true)
-    vs.plotRaster(MaxVal_1=true,OneAngle=270,exNeurons=28,AllResponsiveNeurons=false,PaperFig=true) %0.5208 %2.0833
+    vs.plotRaster(MaxVal_1=true,OneAngle=270,exNeurons=28,AllResponsiveNeurons=false,PaperFig=false) %0.5208 %2.0833
     vs.plotRaster(MaxVal_1=false)
     close all
 end

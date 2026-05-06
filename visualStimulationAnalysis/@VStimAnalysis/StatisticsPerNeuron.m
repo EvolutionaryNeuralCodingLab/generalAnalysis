@@ -108,6 +108,7 @@ if params.SpatialGridMode && isequal(obj.stimName, 'linearlyMovingBall')
         GridSize           = 9, ...
         GridAnalysisWindow = 200, ...
         MinTrialsPerCell   = 3, ...
+        ApplyFDR           = params.ApplyFDR, ...
         overwrite          = params.overwrite);
     return
 end
@@ -192,6 +193,23 @@ elseif isequal(obj.stimName, 'StaticDriftingGrating')
     FieldNames = {'Static', 'Moving'};
     x = 2;
 
+elseif isequal(obj.stimName, 'movie')
+    stimDur          = responseParams.stimDur; 
+    MW               = responseParams.NeuronVals(:,:,4)';  % [nCats × nNeurons]
+    x = 1;
+    directimesSorted = responseParams.C(:,1)'; %% Get center of movement
+    trialsCat        = round(numel(directimesSorted) / size(responseParams.NeuronVals, 2));
+
+
+elseif isequal(obj.stimName, 'image')
+    directimesSorted = responseParams.C(:,1)';
+    stimDur          = responseParams.stimDur;
+    trialsCat        = round(numel(directimesSorted) / size(responseParams.NeuronVals, 2));
+    MW               = responseParams.NeuronVals(:,:,4)';  % [nCats × nNeurons]
+    %Select only lizards
+    directimesSorted = directimesSorted([1:15 61:75]);
+    x = 1;
+
 else
     directimesSorted = responseParams.C(:,1)';
     stimDur          = responseParams.stimDur;
@@ -272,7 +290,7 @@ for s = 1:x
     else
         Mb = BuildBurstMatrix(goodU, ...
             round(p.t), ...
-            round(directimesSorted - params.BaseRespWindow), ...
+            round(directimesSorted - min([params.BaseRespWindow responseParams.stimInter-100])), ...
             round(params.BaseRespWindow));
     end
 

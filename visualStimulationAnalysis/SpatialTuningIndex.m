@@ -33,9 +33,25 @@ arguments
                                              % Difference plot is not available in this mode.
                                              % P-value is computed via two-sample hierarchical bootstrap.
     params.unionResponsive logical = false  % If true: compute index for all neurons responsive
-                                         % to EITHER stim type (union). Same neuron set used
-                                         % for both stim types, so paired diff is still valid.
-                                         % P-value uses paired hierBoot on differences.
+                                            % to EITHER stim type (union). Same neuron set used
+                                            % for both stim types, so paired diff is still valid.
+                                            % P-value uses paired hierBoot on differences.
+    params.plotRFs         logical = false  % If true: generate multi-page PDF
+                                              % showing each neuron's full-resolution
+                                              % receptive field, sorted by tuning index
+                                              % (descending). Requires prefDir=true for
+                                              % linearlyMovingBall.
+    params.subtractShuffle logical = true   % If true: subtract the shuffle-mean baseline
+                                           % from each RF before plotting, so the colour
+                                           % scale reflects signal above noise.
+                                           % If false: plot the raw (unsubtracted) RF.
+    params.plotRFunion logical = false     % If true: RF pages show all neurons responsive
+                                           % to EITHER stim type (union). Two PDFs are
+                                           % generated with the same neuron set, one per
+                                           % stim type. Each PDF is sorted by that stim
+                                           % type's tuning index; neurons not responsive
+                                           % to the plotted stim type are annotated "n/r"
+                                           % and sink to the bottom.
 end
 
 % -------------------------------------------------------------------------
@@ -581,6 +597,19 @@ if ~goto_plot
             nCells  = nGrid * nGrid;
             maxDist = sqrt(2) * (nGrid - 1);  % maximum possible distance between two grid cells
 
+            %Capture preferred-direction info for the current stim×neuron set.
+            % These vectors will be written into the table inside the si/li loop.
+            if stimType == "linearlyMovingBall" && params.prefDir && params.useRF
+                % prefDirIdxShared: index (1:nDir) of each neuron's preferred direction
+                storePrefDirIdx = prefDirIdxShared(:);          % [nShared, 1]
+                % Convert preferred-direction index to degrees via the sorted unique directions
+                storePrefDirDeg = rad2deg(uDirs(prefDirIdxShared(:)))';  % [nShared, 1]
+            else
+                % Non-MB or non-prefDir: fill with NaN so the table column exists
+                storePrefDirIdx = nan(size(gridSpikeRateSelected, 3), 1);
+                storePrefDirDeg = nan(size(gridSpikeRateSelected, 3), 1);
+            end
+
             % ----------------------------------------------------------
             % Compute spatial tuning indices per neuron, size, and lum
             % ----------------------------------------------------------
@@ -689,6 +718,12 @@ if ~goto_plot
                     rows.onOff             = repmat(params.onOff, nN, 1);
                     rows.sizeIdx           = repmat(si, nN, 1);
                     rows.lumIdx            = repmat(li, nN, 1);
+                    
+                    % Preferred-direction index into the direction dimension of
+                    % RFuSTDirSizeLum.  NaN for rectGrid or when prefDir=false.
+                    rows.prefDirIdx = storePrefDirIdx;
+                    % Preferred direction in degrees (0–360). NaN when not applicable.
+                    rows.prefDirDeg = storePrefDirDeg;
 
                     tbl = [tbl; rows];  %#ok<AGROW>
 
@@ -871,9 +906,8 @@ if params.plot
 
     if isequal(pairs{2},'rectGrid'), pairs{2} = 'SB'; end
 
-    tblPlot.stimulus(tblPlot.stimulus == " linearlyMovingBall ") = "MB";
-
-    tblPlot.stimulus(tblPlot.stimulus == " rectGrid ") = "SB";
+    tblPlot.stimulus(tblPlot.stimulus == "linearlyMovingBall") = "MB";
+    tblPlot.stimulus(tblPlot.stimulus == "rectGrid")           = "SB";
 
     [fig, ~] = plotSwarmBootstrapWithComparisons(tblPlot, pairs, ps, {'value'}, ...
         yLegend      = params.yLegend, ...
@@ -906,5 +940,368 @@ if params.plot
     results.ps  = ps;
 
 end
+
+% =========================================================================
+% RECEPTIVE FIELD PAGES (multi-page PDF)
+% Generates one PDF per stim type.  Each page shows a tile-layout of
+% full-resolution RFs, sorted by descending tuning index.  Each tile is
+% annotated with the neuron's phy ID, tuning-index value, and (for
+% linearlyMovingBall) the preferred direction in degrees.
+% =========================================================================
+if params.plotRFs
+
+    % ---- Guard: prefDir must be true for MB RF pages --------------------
+    if ~params.prefDir
+        % Without preferred-direction selection the RF slice to plot is
+        % ambiguous for linearlyMovingBall, so we skip entirely.
+        fprintf(['plotRFs requires prefDir=true for linearlyMovingBall.\n' ...
+                 'Skipping RF page generation.\n']);
+    else
+
+        % ---- Page geometry ----------------------------------------------
+        nCols        = 5;          % number of tile columns per page
+        nRows        = 8;          % number of tile rows per page
+        tilesPerPage = nCols * nRows;  % total tiles that fit on one page
+
+        % ---- Filter the results table to the requested condition --------
+        idxCond_rf       = tbl.onOff   == params.onOff   & ...
+                           tbl.sizeIdx == params.sizeIdx & ...
+                           tbl.lumIdx  == params.lumIdx;
+        tblCondRF        = tbl(idxCond_rf, :);           % rows matching condition
+        tblCondRF.value  = tblCondRF.(params.indexType);  % copy chosen index into 'value'
+
+        % ---------------------------------------------------------
+        % If plotRFunion: build a single neuron set from the union
+        % of neurons responsive to either stim type, BEFORE entering
+        % the stim-type loop.  Both PDFs will show the same neurons.
+        % ---------------------------------------------------------
+        if params.plotRFunion
+
+            % Inline ternary helper for compact annotation formatting:
+            % returns trueStr when cond is true, falseStr otherwise.
+            ternaryStr = @(cond, trueStr, falseStr) ...
+                subsref({falseStr; trueStr}, substruct('{}', {cond + 1}));
+
+            % Separate table rows by stim type for per-stim-type lookup
+            mbRows = tblCondRF(tblCondRF.stimulus == "linearlyMovingBall", :);
+            sbRows = tblCondRF(tblCondRF.stimulus == "rectGrid", :);
+
+            % Collect every unique (experimentNum, phyID) pair across both
+            % stim types — this is the union neuron set
+            keysMB  = mbRows(:, {'experimentNum', 'phyID'});
+            keysSB  = sbRows(:, {'experimentNum', 'phyID'});
+            allKeys = unique([keysMB; keysSB], 'rows');
+
+            % Pre-allocate columns for each stim type's tuning index and
+            % preferred-direction metadata (MB only)
+            nUnion = height(allKeys);
+            allKeys.valueMB    = nan(nUnion, 1);  % MB tuning index  (NaN = not responsive)
+            allKeys.valueSB    = nan(nUnion, 1);  % SB tuning index  (NaN = not responsive)
+            allKeys.prefDirIdx = nan(nUnion, 1);  % preferred direction index (MB only)
+            allKeys.prefDirDeg = nan(nUnion, 1);  % preferred direction degrees (MB only)
+
+            % Fill per-neuron values by matching on experiment + phyID
+            for ri = 1:nUnion
+                % Look up this neuron in the MB rows
+                mMatch = mbRows.experimentNum == allKeys.experimentNum(ri) & ...
+                    mbRows.phyID         == allKeys.phyID(ri);
+                if any(mMatch)
+                    mIdx = find(mMatch, 1);              % first (only) matching row
+                    allKeys.valueMB(ri)    = mbRows.value(mIdx);
+                    allKeys.prefDirIdx(ri) = mbRows.prefDirIdx(mIdx);
+                    allKeys.prefDirDeg(ri) = mbRows.prefDirDeg(mIdx);
+                end
+
+                % Look up this neuron in the SB rows
+                sMatch = sbRows.experimentNum == allKeys.experimentNum(ri) & ...
+                    sbRows.phyID         == allKeys.phyID(ri);
+                if any(sMatch)
+                    allKeys.valueSB(ri) = sbRows.value(find(sMatch, 1));
+                end
+            end
+
+            fprintf('  [plotRFunion] %d unique neurons in union set.\n', nUnion);
+        end
+
+        % ---- Iterate over each stimulus type ----------------------------
+        for ss = 1:numel(params.stimTypes)
+
+            stimType = params.stimTypes(ss);  % current stimulus type string
+
+            % ---------------------------------------------------------
+            % Select neurons: union set or per-stim-type set
+            % ---------------------------------------------------------
+            if params.plotRFunion
+
+                % Use the pre-built union table — same neurons for both PDFs
+                tblStim = allKeys;
+
+                % Sort both PDFs by MB tuning index so neuron positions
+                % match across the two PDFs for direct visual comparison.
+                % Neurons not responsive to MB (NaN) sink to the bottom.
+                tblStim.value = tblStim.valueMB;
+                tblStim = sortrows(tblStim, 'value', 'descend', ...
+                    'MissingPlacement', 'last');
+            else
+                % Default: only neurons responsive to this stim type
+                stimMask = tblCondRF.stimulus == char(stimType);
+                tblStim  = tblCondRF(stimMask, :);
+            end
+
+            % Skip if no data for this stim type
+            if isempty(tblStim)
+                fprintf('  [plotRFs] No neurons for %s — skipping.\n', char(stimType));
+                continue
+            end
+
+            % Sort by tuning index descending (only for the non-union path;
+            % the union path was already sorted above)
+            if ~params.plotRFunion
+                tblStim = sortrows(tblStim, 'value', 'descend');
+            end
+
+            nNeurons = height(tblStim);                % total neurons to plot
+            nPages   = ceil(nNeurons / tilesPerPage);  % number of PDF pages
+
+            % Build the output PDF path inside the combined-analysis directory
+            if params.subtractShuffle
+                shuffTag = '_shuffSub';   % tag indicating shuffle was subtracted
+            else
+                shuffTag = '_raw';        % tag indicating raw RF plotted
+            end
+            unionTag = '';  if params.plotRFunion, unionTag = '_union'; end
+            pdfName = sprintf('RFpages_%s_%s%s%s.pdf', ...
+                char(stimType), params.indexType, shuffTag, unionTag);
+            pdfPath = fullfile(saveDir, pdfName);  % full path for the PDF
+
+            % Cache loaded experiments so each experiment's heavy data is
+            % read from disk only once (key = experiment number)
+            cachedExp = containers.Map('KeyType', 'double', 'ValueType', 'any');
+
+            % ---- Loop over pages ----------------------------------------
+            for pg = 1:nPages
+
+                % Create an invisible figure sized to A4 portrait (21 × 29.7 cm)
+                fig_rf = figure('Visible', 'off', ...
+                    'Units', 'centimeters', ...
+                    'Position', [0 0 21 29.7]);
+
+                % Tiled layout with compact spacing to maximise tile area
+                tl = tiledlayout(nRows, nCols, ...
+                    'TileSpacing', 'compact', ...
+                    'Padding',     'compact');
+
+                % Page-level title indicating stim type, mode, and page number
+                if stimType == "linearlyMovingBall"
+                    stimLabel_pg = 'Moving Ball RFs';
+                else
+                    stimLabel_pg = 'Rect Grid RFs';
+                end
+                if params.plotRFunion
+                    stimLabel_pg = [stimLabel_pg ' (union)'];  %#ok<AGROW>
+                end
+                pageTitleStr = sprintf('%s — %s  (page %d/%d)', ...
+                    stimLabel_pg, params.indexType, pg, nPages);
+                title(tl, pageTitleStr, 'FontSize', 9, 'FontName', 'Helvetica');
+
+                % Index range for the neurons that belong to this page
+                startNeuron = (pg - 1) * tilesPerPage + 1;
+                endNeuron   = min(pg * tilesPerPage, nNeurons);
+
+                % ---- Loop over neurons on this page ---------------------
+                for ni = startNeuron:endNeuron
+
+                    nexttile;  % advance to the next tile in the layout
+
+                    % Read metadata for this neuron from the sorted table
+                    phyID = tblStim.phyID(ni);
+                    tVal  = tblStim.value(ni);
+                    ex    = str2double(string(tblStim.experimentNum(ni)));
+
+                    % ----- Load experiment data (with caching) -----------
+                    if ~cachedExp.isKey(ex)
+
+                        NP_tmp = loadNPclassFromTable(ex);
+
+                        % Always derive phy_IDg from linearlyMovingBallAnalysis
+                        % to match the phyIDs stored in the results table
+                        obj_lmb     = linearlyMovingBallAnalysis(NP_tmp);
+                        p_s_tmp     = NP_tmp.convertPhySorting2tIc(obj_lmb.spikeSortingFolder);
+                        phy_IDg_tmp = p_s_tmp.phy_ID(string(p_s_tmp.label') == 'good');
+
+                        % Load RF data from the stim-specific analysis object
+                        switch stimType
+                            case "linearlyMovingBall"
+                                obj_stim = obj_lmb;
+                            case "rectGrid"
+                                obj_stim = rectGridAnalysis(NP_tmp);
+                        end
+                        S_rf_tmp = obj_stim.CalculateReceptiveFields;
+
+                        % -------------------------------------------------
+                        % Compute preferred direction for ALL good units
+                        % (needed for union mode, where some neurons may not
+                        %  be MB-responsive and thus lack prefDirIdx in the
+                        %  table).  Uses the same logic as the main computation.
+                        % -------------------------------------------------
+                        S_rf_lmb   = obj_lmb.CalculateReceptiveFields;
+                        rfSpeed    = S_rf_lmb.params.speed;
+                        rfField    = sprintf('Speed%d', rfSpeed);
+                        NeuronResp = obj_lmb.ResponseWindow;
+                        NeuronVals = NeuronResp.(rfField).NeuronVals;
+                        % NeuronVals: [nGoodUnits, nConditions, nFeatures]
+
+                        dirLabels  = NeuronVals(:,:,6);         % direction (radians)
+                        spikeRates = NeuronVals(:,:,1);         % spike rate
+                        uDirsLocal = unique(dirLabels(1,:));    % sorted unique directions
+
+                        % Max spike rate per direction per good unit
+                        nGU = size(NeuronVals, 1);
+                        maxRPD = zeros(nGU, numel(uDirsLocal));
+                        for dd = 1:numel(uDirsLocal)
+                            dMask = dirLabels(1,:) == uDirsLocal(dd);
+                            maxRPD(:,dd) = max(spikeRates(:, dMask), [], 2);
+                        end
+                        [~, prefDirIdxAll] = max(maxRPD, [], 2);        % [nGU,1]
+                        prefDirDegAll = rad2deg(uDirsLocal(prefDirIdxAll))';  % [nGU,1]
+
+                        % Store everything in the cache
+                        cachedExp(ex) = struct( ...
+                            'S_rf',           S_rf_tmp, ...
+                            'S_rf_lmb',       S_rf_lmb, ...
+                            'phy_IDg',        phy_IDg_tmp, ...
+                            'prefDirIdxAll',  prefDirIdxAll, ...
+                            'prefDirDegAll',  prefDirDegAll);
+                    end
+
+                    % Retrieve cached data for this experiment
+                    cached = cachedExp(ex);
+
+                    % Find this neuron's index within the good-unit array
+                    [~, nIdx] = ismember(phyID, cached.phy_IDg);
+
+                    % Guard: if phyID is not found, skip this tile
+                    if nIdx == 0
+                        text(0.5, 0.5, sprintf('phy%d\nnot found', phyID), ...
+                            'HorizontalAlignment', 'center', ...
+                            'FontSize', 5);
+                        axis off;
+                        continue
+                    end
+
+                    % ----- Extract the full-resolution RF slice -----------
+                    switch stimType
+
+                        case "linearlyMovingBall"
+                            % Preferred direction: use table value if available
+                            % (MB-responsive neuron), otherwise use the cached
+                            % value computed for all good units
+                            prefIdx = tblStim.prefDirIdx(ni);
+                            prefDeg = tblStim.prefDirDeg(ni);
+
+                            if isnan(prefIdx)
+                                % Neuron was not MB-responsive — use cached
+                                % preferred direction computed from NeuronVals
+                                prefIdx = cached.prefDirIdxAll(nIdx);
+                                prefDeg = cached.prefDirDegAll(nIdx);
+                            end
+
+                            % Slice RFuSTDirSizeLum: [nDir,nSize,nLum,rfY,rfX,nN]
+                            % Use the MB-specific RF cache (S_rf_lmb) since
+                            % S_rf may be rectGrid when this is the SB iteration
+                            rfSlice = squeeze( ...
+                                cached.S_rf_lmb.RFuSTDirSizeLum( ...
+                                prefIdx, params.sizeIdx, params.lumIdx, :, :, nIdx));
+
+                            if params.subtractShuffle
+                                rfShuff = cached.S_rf_lmb.RFuShuffST(:, :, nIdx);
+                                rfSlice = rfSlice - rfShuff;
+                            end
+
+                        case "rectGrid"
+                            % Slice RFu: [2(onOff), nLums, nSize, sR, sR, nN]
+                            rfSlice = squeeze( ...
+                                cached.S_rf.RFu( ...
+                                params.onOff, params.lumIdx, params.sizeIdx, :, :, nIdx));
+
+                            if params.subtractShuffle
+                                rfShuff = squeeze( ...
+                                    cached.S_rf.RFuShuffMean( ...
+                                    params.onOff, params.lumIdx, params.sizeIdx, :, :, nIdx));
+                                rfSlice = rfSlice - rfShuff;
+                            end
+                    end
+
+                    % ----- Plot the RF as a colour image -----------------
+                    imagesc(rfSlice);
+                    axis equal tight;
+                    axis off;
+
+                    if params.subtractShuffle
+                        maxAbs = max(abs(rfSlice(:)));
+                        if maxAbs > 0
+                            clim([-maxAbs, maxAbs]);
+                        end
+                    end
+
+                    cb = colorbar;
+                    cb.FontSize  = 3.5;
+                    cb.TickDirection = 'out';
+                    cb.Ticks = linspace(cb.Limits(1), cb.Limits(2), 3);
+
+                    % ----- Tile title annotation -------------------------
+                    if params.plotRFunion
+                        % Union mode: show both stim type indices on every tile
+                        mbVal = tblStim.valueMB(ni);
+                        sbVal = tblStim.valueSB(ni);
+                        mbStr = ternaryStr(isnan(mbVal), 'n/r', sprintf('%.2f', mbVal));
+                        sbStr = ternaryStr(isnan(sbVal), 'n/r', sprintf('%.2f', sbVal));
+
+                        switch stimType
+                            case "linearlyMovingBall"
+                                % Also show preferred direction
+                                tileTitle = sprintf('phy%d|MB %s|SB %s|%d°', ...
+                                    phyID, mbStr, sbStr, round(prefDeg));
+                            case "rectGrid"
+                                tileTitle = sprintf('phy%d|MB %s|SB %s', ...
+                                    phyID, mbStr, sbStr);
+                        end
+                    else
+                        % Standard mode: show only this stim type's index
+                        switch stimType
+                            case "linearlyMovingBall"
+                                tileTitle = sprintf('phy%d | %.2f | %d°', ...
+                                    phyID, tVal, round(tblStim.prefDirDeg(ni)));
+                            case "rectGrid"
+                                tileTitle = sprintf('phy%d | %.2f', phyID, tVal);
+                        end
+                    end
+                    title(tileTitle, 'FontSize', 5, 'FontName', 'Helvetica');
+
+                end  % neuron loop (tiles on this page)
+
+                % ----- Export this page to the PDF -----------------------
+                if pg == 1
+                    % First page: create the PDF file
+                    exportgraphics(fig_rf, pdfPath, 'ContentType', 'vector');
+                else
+                    % Subsequent pages: append to the existing PDF
+                    exportgraphics(fig_rf, pdfPath, 'ContentType', 'vector', 'Append', true);
+                end
+
+                close(fig_rf);  % close figure to free memory before next page
+
+                fprintf('  [plotRFs] %s — page %d/%d exported.\n', ...
+                    char(stimType), pg, nPages);
+
+            end  % page loop
+
+            fprintf('  [plotRFs] Saved %d pages to:\n    %s\n', nPages, pdfPath);
+
+        end  % stim-type loop
+
+    end  % prefDir guard
+
+end  % plotRFs block
 
 end

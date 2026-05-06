@@ -25,6 +25,7 @@ arguments (Input)
     params.GridSize           = 9       % 9×9 = 81 grid cells
     params.GridAnalysisWindow = 200     % ms analysis window starting at ball crossing
     params.MinTrialsPerCell   = 3       % minimum trials per cell×direction×factor level
+    params.ApplyFDR           = false   % Benjamini-Hochberg FDR correction reduces the number of false positives. 
     params.overwrite          = false   % recompute even if cached results exist
 end
 
@@ -261,6 +262,12 @@ for s = 1:nSpeeds
     [obsStat, prefDirection] = max(obsStatPerDir, [], 1);   % [1 × nNeurons]
     pVal                     = mean(nullStatsAll >= obsStat, 1);  % [1 × nNeurons]
 
+
+    if  params.ApplyFDR 
+        [pVal, ~, ~,~] = fdr_BH(pVal, 0.05);
+
+    end
+
     % -------------------------------------------------------------------------
     % Bias-corrected z-score
     % z = (observed - expected null max) / pooled baseline SD
@@ -268,6 +275,7 @@ for s = 1:nSpeeds
     % -------------------------------------------------------------------------
     nullMean        = mean(nullStatsAll, 1);          % [1 × nNeurons]
     z               = (obsStat - nullMean) ./ sdBase;  % [1 × nNeurons]
+    z_mean          = obsStat;    
     z(sdBase == 0)  = 0;   % silent baseline — set to 0
 
     % -------------------------------------------------------------------------
@@ -352,6 +360,7 @@ for s = 1:nSpeeds
     S.(fieldName).nTrialsPerCellDir     = nTrialsPerCellDir;     % [nCells × nDirs]
     S.(fieldName).ZScorePerGrid         = ZScorePerGrid;         % struct of 4D arrays
     S.(fieldName).gridSize              = params.GridSize;       % scalar, grid dimensions
+    S.(fieldName).z_mean               = z_mean*1000;     
 
     S.params = params;   % store parameters for reproducibility
 
@@ -359,7 +368,7 @@ end % end speed loop
 
 % --- Save and return ---
 fprintf('Saving results to file.\n');
-save(obj.getAnalysisFileName, '-struct', 'S');
+save([fileparts(obj.getAnalysisFileName) filesep 'StatisticsPerNeuron.mat'], '-struct', 'S');
 results = S;
 
 end % end main function
