@@ -229,7 +229,7 @@ classdef imageAnalysis < VStimAnalysis
                 NeuronVals(u,:,:) = NeuronRespProfile;
             end            
 
-            colNames = {'Resp','MaxWinTrial','MaxWinBin','RespSubsBaseline','Position','Size','Luminosities'};
+            colNames = {'Resp','MaxWinTrial','MaxWinBin','RespSubsBaseline','imgeOrder','shuffled'};
 
             S.params = params;
             S.colNames = {colNames};

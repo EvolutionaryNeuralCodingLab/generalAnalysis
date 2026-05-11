@@ -239,7 +239,7 @@ classdef StaticDriftingGratingAnalysis < VStimAnalysis
             end
 
 
-            colNames = {'Resp','MaxWinTrial','MaxWinBin','RespSubsBaseline','Directions','Offsets','Sizes','Speeds','Luminosities'};
+            colNames = {'Resp','MaxWinTrial','MaxWinBin','RespSubsBaseline','angles','tempFrequency','spatFrequency'};
 
             S.C = C;
             S.Coff = Coff;

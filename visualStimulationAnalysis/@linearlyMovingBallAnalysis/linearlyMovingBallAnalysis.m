@@ -14,7 +14,8 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
             arguments (Input) %ResponseWindow.mat
                 dataObj
                 params.Session double = 1
-                params.MultipleOffsets logical = true
+                params.MultipleOffsets logical = false
+                params.Multiplesizes logical = false
             end
             if nargin==0
                 dataObj=[];
@@ -24,18 +25,38 @@ classdef linearlyMovingBallAnalysis < VStimAnalysis
             obj@VStimAnalysis(dataObj,'Session',params.Session);
             obj.Session = params.Session;
 
-            if length(unique(obj.VST.offsets)) < 2 &&  params.MultipleOffsets
-                originalSession = params.Session;
-                params.Session = 1 + floor(1/params.Session); %converts 1 into 2 and 2 into 1. Only a maximum of two sessions per insertion.
-                
-                warning('linearlyMovingBallAnalysis:insufficientOffsets', ...
-                    'Session %d has fewer than 2 unique offsets. Switching to session %d.', ...
-                    originalSession, params.Session);
+            if ~isempty(obj.VST)
 
-                % Reconstruct the object with the fallback session - overwrites the first construction
-                obj = linearlyMovingBallAnalysis(dataObj, 'Session', params.Session, 'MultipleOffsets', false);
-                obj.Session = params.Session;
+                if length(unique(obj.VST.offsets)) < 2 &&  params.MultipleOffsets
+                    originalSession = params.Session;
+                    params.Session = 1 + floor(1/params.Session); %converts 1 into 2 and 2 into 1. Only a maximum of two sessions per insertion.
+
+                    warning('linearlyMovingBallAnalysis:insufficientOffsets', ...
+                        'Session %d has fewer than 2 unique offsets. Switching to session %d.', ...
+                        originalSession, params.Session);
+
+                    % Reconstruct the object with the fallback session - overwrites the first construction
+                    obj = linearlyMovingBallAnalysis(dataObj, 'Session', params.Session, 'MultipleOffsets', false);
+                    obj.Session = params.Session;
+                end
+
+
+                if length(unique(obj.VST.ballSizes)) < 2 &&  params.Multiplesizes
+                    originalSession = params.Session;
+                    params.Session = 1 + floor(1/params.Session); %converts 1 into 2 and 2 into 1. Only a maximum of two sessions per insertion.
+
+                    warning('linearlyMovingBallAnalysis:insufficientSizes', ...
+                        'Session %d has fewer than 2 unique sizes. Switching to session %d.', ...
+                        originalSession, params.Session);
+
+                    % Reconstruct the object with the fallback session - overwrites the first construction
+                    obj = linearlyMovingBallAnalysis(dataObj, 'Session', params.Session, 'Multiplesizes', false);
+                    obj.Session = params.Session;
+                end
+
             end
+
+            
         end
     end
 

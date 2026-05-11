@@ -150,7 +150,7 @@ fig = figure;
 set(fig, 'Color', 'w');                  % white background for publication
 
 if params.showBothAndDiff
-    % Left tile: every stimulus shown raw. Right tile: most-significant pair's diff.
+    % Left tile: every stimulus shown raw. Right tile: difference for pairs{1,:}.
     tl     = tiledlayout(fig, 1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
     axRaw  = nexttile(tl, 1);
     axDiff = nexttile(tl, 2);
@@ -158,21 +158,12 @@ if params.showBothAndDiff
     randiColors = plotRawSwarm(axRaw, tbl, pairs, pValues, params, ...
         yMaxVis, bracketPad, stackPad, textPad, semAlpha, isInsertionLevel);
 
-    % Pick the most significant pair for the diff tile
-    if ~isempty(pValues)
-        [~, sigIdx]  = min(pValues);
-    else
-        sigIdx = 1;
-    end
-    pairForDiff = pairs(sigIdx, :);
-    pValForDiff = pValues(sigIdx);
-
-    tblDiff = buildDiffTable(tbl, pairForDiff, params, isInsertionLevel);
-    plotDiffSwarm(axDiff, tblDiff, pairForDiff, pValForDiff, params, ...
+    tblDiff = buildDiffTable(tbl, pairs, params, isInsertionLevel);
+    plotDiffSwarm(axDiff, tblDiff, pairs, pValues, params, ...
         yMaxVis, bracketPad, textPad);
 else
     % Single-axes mode: either the raw swarm or the difference, not both.
-    ax = axes(fig);  
+    ax = axes(fig);  %#ok<LAXES>
     hold(ax, 'on');
     set(ax, 'Clipping', 'off');                  % allow brackets/text outside ylim
 
@@ -186,19 +177,7 @@ else
     end
 end
 
-% -------------------------------------------------------------------------
-% Additional figure: one tile per pairwise difference (only if multi-pair).
-% -------------------------------------------------------------------------
-if size(pairs, 1) > 1
-    figAllDiffs = plotAllPairDiffs(tbl, pairs, pValues, params, ...
-        isInsertionLevel, yMaxVis, bracketPad, textPad);
-else
-    figAllDiffs = [];
-end
-
 end % main function
-
-
 
 
 % =========================================================================
@@ -400,23 +379,23 @@ if ~isempty(pValues) && numel(pValues) >= 1
             'HorizontalAlignment', 'center', 'FontSize', 7, 'Clipping', 'off');
     end
 
-    % % Comparison label (e.g. "SB > SG"), placed above the stars.
-    % compTextPad = 10 * textPad;
-    % stimA       = pairs{1,1};
-    % stimB       = pairs{1,2};
-    % compText    = sprintf('%s > %s', stimA, stimB);
-    % yCompText   = yText + compTextPad;
-    % 
-    % text(ax, 1, yCompText, compText, ...
-    %     'HorizontalAlignment', 'center', 'FontSize', 10, 'Clipping', 'off');
-    % 
-    % % Expand y-limits if the comparison label needs more room than yMaxVis allows.
-    % requiredHeight = yCompText + compTextPad;
-    % if requiredHeight > yMaxVis
-    %     ylim(ax, [ylims(1) requiredHeight]);
-    % else
-    ylim(ax, [ylims(1) yMaxVis]);
-    % end
+    % Comparison label (e.g. "SB > SG"), placed above the stars.
+    compTextPad = 10 * textPad;
+    stimA       = pairs{1,1};
+    stimB       = pairs{1,2};
+    compText    = sprintf('%s > %s', stimA, stimB);
+    yCompText   = yText + compTextPad;
+
+    text(ax, 1, yCompText, compText, ...
+        'HorizontalAlignment', 'center', 'FontSize', 10, 'Clipping', 'off');
+
+    % Expand y-limits if the comparison label needs more room than yMaxVis allows.
+    requiredHeight = yCompText + compTextPad;
+    if requiredHeight > yMaxVis
+        ylim(ax, [ylims(1) requiredHeight]);
+    else
+        ylim(ax, [ylims(1) yMaxVis]);
+    end
 else
     ylim(ax, [ylims(1) yMaxVis]);
 end
@@ -714,11 +693,9 @@ end
 function pairs = renamePairLabels(pairs)
 if isempty(pairs), return; end
 for i = 1:numel(pairs)
-    p = string(pairs{i});
-    p = replace(p, "RG",   "SB");
-    p = replace(p, "SDGs", "SG");        % must come before SDGm — strict prefix
-    p = replace(p, "SDGm", "MG");
-    pairs{i} = char(p);
+    if strcmp(pairs{i}, 'RG'),   pairs{i} = 'SB'; end
+    if strcmp(pairs{i}, 'SDGm'), pairs{i} = 'MG'; end
+    if strcmp(pairs{i}, 'SDGs'), pairs{i} = 'SG'; end
 end
 end
 
@@ -778,45 +755,5 @@ numsAlpha             = nums(idxAlpha);
 catsFinal             = catsAlpha(idxNum);
 
 tbl.stimulus = reordercats(tbl.stimulus, catsFinal);
-
-end
-
-% =========================================================================
-% LOCAL FUNCTION: plotAllPairDiffs
-% Stand-alone figure with one tile per pairwise difference. Each tile is a
-% diff swarm + significance annotation, matching the format of plotDiffSwarm.
-% =========================================================================
-function figAll = plotAllPairDiffs(tbl, pairs, pValues, params, ...
-    isInsertionLevel, yMaxVis, bracketPad, textPad)
-
-nPairs = size(pairs, 1);
-
-figAll = figure;
-set(figAll, 'Color', 'w');
-
-% 'flow' layout adapts to any pair count without manual rows/cols tuning.
-tl = tiledlayout(figAll, 'flow', 'TileSpacing', 'compact', 'Padding', 'compact');
-title(tl, 'All pairwise differences');
-
-for k = 1:nPairs
-    ax = nexttile(tl);
-
-    pairK   = pairs(k, :);
-    pValK   = pValues(k);
-
-    tblDiff = buildDiffTable(tbl, pairK, params, isInsertionLevel);
-
-    % Empty diff table (e.g. no overlapping insertions) – leave tile blank
-    if height(tblDiff) == 0
-        title(ax, sprintf('%s − %s (no data)', pairK{1}, pairK{2}), ...
-            'FontSize', 8);
-        continue
-    end
-
-    plotDiffSwarm(ax, tblDiff, pairK, pValK, params, ...
-        yMaxVis, bracketPad, textPad);
-
-    title(ax, sprintf('%s − %s', pairK{1}, pairK{2}), 'FontSize', 8);
-end
 
 end

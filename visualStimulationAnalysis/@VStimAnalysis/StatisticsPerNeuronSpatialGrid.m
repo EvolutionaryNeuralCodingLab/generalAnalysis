@@ -83,17 +83,19 @@ for s = 1:nSpeeds
     % -------------------------------------------------------------------------
     nFramesFull = obj.VST.nFrames;
 
-    if ndims(nFramesFull) == 3
-        nFramesThisSpeed = squeeze(nFramesFull(s, :, :));   % [nOffsets × nDirections]
-    else
-        nFramesThisSpeed = nFramesFull;                      % single-speed fallback
-    end
 
     % Build per-trial frame count using C(:,2)=direction and C(:,3)=offset
     uDirsAll        = unique(C(:,2));
     uOffsetsAll     = unique(C(:,3));
     nTrials         = size(C,1);
     nFramesPerTrial = zeros(nTrials, 1);
+
+    if ndims(nFramesFull) == 3
+        nFramesThisSpeed = reshape(nFramesFull(s, :, :),size(nFramesFull,2),size(nFramesFull,3));   % [nOffsets × nDirections]
+    else
+        nFramesThisSpeed = nFramesFull;                      % single-speed fallback
+    end
+
 
     for t = 1:nTrials
         dIdx = find(uDirsAll    == C(t, 2));   % direction index
