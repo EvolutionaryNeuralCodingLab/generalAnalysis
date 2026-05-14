@@ -33,14 +33,14 @@ arguments (Input)
     obj
     params.compareCategory  = ''      % category name to compare (case-insensitive)
     params.nBoot            = 10000   % permutation iterations
-    params.BaseRespWindow   = 800     % ms response window from stimulus onset
+    params.BaseRespWindow   = 1000     % ms response window from stimulus onset
     params.BaselineBuffer   = 200     % ms buffer before stimulus onset for baseline
                                       % avoids contamination from off-responses of
                                       % preceding stimulus or anticipatory activity
     params.overwrite        = false   % recompute even if saved file exists
     params.randomSeed       = 42      % fixed seed for reproducibility
     params.ApplyFDR         = false    % Benjamini-Hochberg FDR correction for pairwise
-    params.MovingWindowDuration = 200   % ms sliding window for moving ball per-trial peak response
+    params.  = 200   % ms sliding window for moving ball per-trial peak response
                                      % Applied to full stimulus duration, response only (not baseline)
                                      % Only used when stimulus is linearlyMovingBall
     params.GratingType       = "moving"  %If the stimulus is grating, select it's mode.                                  
@@ -140,11 +140,7 @@ if isMovingBall
 elseif isGratingMov
     % Use Moving phase for grating
     C        = responseParams.C;
-    C(:,1) = C(:,1) 
-    colNames = responseParams.colNames{1}(5:end);
-
-elseif isGratingStat
-    C        = responseParams.static.C;
+    C(:,1) = C(:,1) +obj.VST.static_time*1000;
     colNames = responseParams.colNames{1}(5:end);
 
 else

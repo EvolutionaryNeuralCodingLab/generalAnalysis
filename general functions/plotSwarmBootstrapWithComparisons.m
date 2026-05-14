@@ -240,6 +240,15 @@ else
 end
 s.XJitter = params.Xjitter;
 
+Str = string(unique(tbl.stimulus));
+
+% Extract first number (integer or decimal, positive/negative)
+numStr = regexp(Str, '-?\d+\.?\d*', 'match', 'once');
+hold(ax, 'on');
+if any(~cellfun(@isempty, numStr))
+    xticklabels(ax,numStr);
+end
+
 % Configure the colormap to match the chosen color source.
 if params.colorByZScore
     colormap(ax, buildRdBuColormap(256));
@@ -342,6 +351,16 @@ else
         'MarkerEdgeAlpha', params.Alpha, 'LineWidth', 1, 'SizeData', 30);
 end
 s.XJitter = params.Xjitter;
+
+Str = string(unique(tblDiff.stimulus));
+
+nums = regexp(Str, '-?\d+\.?\d*', 'match');
+
+numStr = strjoin(nums, '-');
+
+if any(~cellfun(@isempty, nums))
+    xticklabels(ax, numStr);
+end
 
 if params.colorByZScore && ismember('zScore', tblDiff.Properties.VariableNames)
     colormap(ax, buildRdBuColormap(256));
@@ -562,7 +581,7 @@ for i = 1:numel(stimuli)
     end
 
     % Sample mean as point estimate.
-    mu = mean(vals);
+    %mu = mean(vals);
 
     % Pull each grouping column for this stimulus, aligned with the NaN drop.
     % NOTE: hierBoot pre-allocates intermediate level arrays via nan(size(data))
@@ -590,6 +609,11 @@ for i = 1:numel(stimuli)
     else
         bootMean = hierBoot(vals, params.nBoot, groupVals{:});
     end
+
+    % Hierarchical-bootstrap point estimate (consistent with the CI).
+    % mean(bootMean) converges to the hierarchical mean, which weights
+    % animals/insertions equally — matching the mixed-model logic.
+    mu = mean(bootMean);
 
     % Uncertainty bar from the bootstrap distribution.
     switch lower(params.ciMethod)
@@ -768,6 +792,8 @@ end
 
 % Need at least 2 numeric tokens to reorder; otherwise leave alphabetical.
 if sum(~isnan(nums)) < 2
+    stimOrder = unique(string(tbl.stimulus), 'stable');
+    tbl.stimulus = reordercats(tbl.stimulus, cellstr(stimOrder));
     return
 end
 

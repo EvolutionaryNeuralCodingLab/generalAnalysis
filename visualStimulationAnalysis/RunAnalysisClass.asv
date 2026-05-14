@@ -67,35 +67,42 @@ end
 %[49:54,84:90,92:96] %All SDG experiments
 %solve MBR
 %bootsrapRespBase
-[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97],StatMethod='maxPermuteTest', overwrite=false,ComparePairs={'MB','SDGm'},PaperFig=true,...
-    overwriteResponse=false,overwriteStats=true,useFDR=false);%[49:54,57:91] %%Check why I have different array dimensions in MBR%%
+
+%% Compare MB vs RG, use gridmode true, selects maximum spatial category across directions
+[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97], overwrite=true,ComparePairs={'MB','RG'},PaperFig=true,...
+    overwriteResponse=false,overwriteStats=true,useFDR=false);
+ 
+%% Compares MB across different categoryis, z-scores are computed with a moving window and responsive units are selected on the per category p value.
+[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97], overwrite=false,ComparePairs={'MB'},CompareCategory="directions",PaperFig=true,...
+    overwriteResponse=false,overwriteStats=true);
+
+%% Compares MB and MG, across all categories
+[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97], overwrite=false,ComparePairs={'MB','SDGm'},PaperFig=true,...
+    overwriteResponse=false,overwriteStats=true, BaseRespWindow = 500, maxCategory = false, SpatialGridMode = false);
+
+%% %% Compares MB and MG, across all categories
+[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97], overwrite=false,ComparePairs={'MB','MBR'},PaperFig=true,...
+    overwriteResponse=false,overwriteStats=true, BaseRespWindow = 500, maxCategory = false, SpatialGridMode = false);
+
+%% %% PSTH for all moving experiments
+plotPSTH_MultiExp([49:54,64:66,68:85 87:97], overwrite=false, zScore=true,TakeTopPercentTrials=[], PaperFig=true, byDepth=false, smooth=50, stimTypes={"MB","MBR","SDGm"}); %stimTypes=["linearlyMovingBall"]
+
+
+%% %% Compares SB, SG and FFF, across all categories
+[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97], overwrite=true,ComparePairs={'RG','SDGs','FFF'},PaperFig=true,...
+    overwriteResponse=false,overwriteStats=true, BaseRespWindow = 300, maxCategory = false, SpatialGridMode = false);
+
+%% PSTH for all static experiments
+plotPSTH_MultiExp([49:54,64:66,68:85 87:97], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=true, byDepth=false, smooth=50, stimTypes={"RG","SDGs","FFF"}); %stimTypes=["linearlyMovingBall"]
 
 %% 
-t = AllExpAnalysis([49:54,64:66,68:85 87:97], ...
-    ComparePairs    = {'MB','SDGm'}, ...
-    CompareCategory = {'directions','angles'}, ...
-    CompareLevels   = {[0],[0]}, ...
-    StatMethod      = 'maxPermuteTest', ...
-    useGeneralFilter = false, ...
-    PaperFig        = true);
-
-%%
-[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97],StatMethod='maxPermuteTest', overwrite=true,ComparePairs={'SDGm'},CompareCategory="spatFrequency",PaperFig=true,...
-    overwriteResponse=true,overwriteStats=true);%[49:54,57:91] %%Check why I have different array dimensions in MBR%%
-
-
-%%
-[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97],{'MB','RG'},StatMethod='maxPermuteTest', overwrite=true,ComparePairs={'MB','RG'},PaperFig=true,...
-    overwriteResponse=false,overwriteStats=true);%[49:54,57:91] %%Check why I have different array dimensions in MBR%%
-
-%% PSTH for all experiments
-plotPSTH_MultiExp([49:54,64:66,68:85 87:97], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=true, byDepth=false, smooth=50); %stimTypes=["linearlyMovingBall"]
+plotPSTH_MultiExp([49:54,64:66,68:85 87:97], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=true, byDepth=false, smooth=50, postStim= 1500, stimTypes={"MB"},splitBy="directions",useCategoryPvals = true); %stimTypes=["linearlyMovingBall"]
 
 %% Raster for all experiment
 plotRaster_MultiExp([49:54,64:66,68:85 87:97], sortBy = "spatialTuning",overwrite=true,TakeTopPercentTrials=[],PaperFig=true)
 
 %% Calculate spatial tuning
-results= SpatialTuningIndex([49:54,64:66, 68:85 87:97], indexType =  "L_amplitude_diff" ,overwrite=false...
+results= SpatialTuningIndex([49:54,64:66, 68:85 87:97], indexType =  "L_amplitude_diff" ,overwrite=true...
     , topPercent = 30,useRF=true,onOff=1,unionResponsive = false,allResponsive=true, PaperFig=true, plotRFs=false, plotRFunion=false);
 
 %% Get neuron depths

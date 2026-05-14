@@ -654,7 +654,7 @@ end
 
 % ---- Create figure ------------------------------------------------------
 fig = figure;
-set(fig, 'Units', 'centimeters', 'Position', [5 5 10 7]);
+set(fig, 'Units', 'centimeters', 'Position', [5 5 7 10]);
 ax  = axes(fig);
 hold(ax, 'on');
 

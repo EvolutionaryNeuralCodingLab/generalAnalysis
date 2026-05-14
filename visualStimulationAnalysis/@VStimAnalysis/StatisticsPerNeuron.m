@@ -77,9 +77,9 @@ arguments (Input)
     params.SpatialGridMode = false        % if true: use StatisticsPerNeuronSpatialGrid
                                           % only applies to linearlyMovingBall
                                           % ignored for other stimuli
-    params.BaseRespWindow = 1000         %Fixed window for baseline and response
+    params.BaseRespWindow = 300         %Fixed window for baseline and response
     params.useSegments = false           %Use segmented approach
-    params.maxCategory = false            %Use the max category to calculate the observed statistic and the null distribution across bootstrap iterations
+    params.maxCategory = true            %Use the max category to calculate the observed statistic and the null distribution across bootstrap iterations
                                     
 end
 
