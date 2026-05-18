@@ -420,6 +420,10 @@ classdef sleepAnalysis < recAnalysis
             %}
 
             save(obj.files.lizMov,'t_mov_ms','movAll','t_static_ms','staticAll','dotProductsXYZ','angles','parLizMov');
+            if nargout==1
+                data=load(obj.files.lizMov);
+            end
+        
         end
 
 
@@ -2841,6 +2845,9 @@ classdef sleepAnalysis < recAnalysis
             t_ms=cell2mat(t_ms);
 
             save(obj.files.dbRatio,'t_ms','bufferedDelta2BetaRatio','parDBRatio','bufferedBetaRatio','bufferedDeltaRatio','allFreqProfiles');
+            if nargout==1
+                data=load(obj.files.dbRatio);
+            end
         end
 
         %% getPhaseAnalysis
@@ -4954,7 +4961,6 @@ classdef sleepAnalysis < recAnalysis
 
         %% plotFreqBandDetection
         function [h,Z]=plotFreqBandDetection(obj,varargin)
-
             parseObj = inputParser;
             addParameter(parseObj,'ch',obj.recTable.defaulLFPCh(obj.currentPRec),@isnumeric);
             addParameter(parseObj,'plotDendrogram',true);
@@ -5005,7 +5011,7 @@ classdef sleepAnalysis < recAnalysis
                 if savePlots
                     set(gcf,'PaperPositionMode','auto');
                     fileName=[obj.currentPlotFolder filesep 'dendrogram_ch' num2str(parFreqBandDetection.ch) '_t' num2str(parFreqBandDetection.tStart) '_w' num2str(parFreqBandDetection.win)];
-                    print(fileName,'-djpeg',['-r' num2str(obj.figResJPG)]);
+                    print(fileName,'-dpdf',['-r' num2str(obj.figResJPG)]);
                     if printLocalCopy
                         fileName=[cd filesep obj.recTable.Animal{obj.currentPRec} '_Rec' num2str(obj.currentPRec) '_dendrogram_ch' num2str(parFreqBandDetection.ch) '_t' num2str(parFreqBandDetection.tStart) '_w' num2str(parFreqBandDetection.win)];
                         print(fileName,'-djpeg',['-r' num2str(obj.figResJPG)]);
@@ -5038,7 +5044,7 @@ classdef sleepAnalysis < recAnalysis
                 if savePlots
                     set(fTmp,'PaperPositionMode','auto');
                     fileName=[obj.currentPlotFolder filesep 'spectralBands_ch' num2str(parFreqBandDetection.ch) '_t' num2str(parFreqBandDetection.tStart) '_w' num2str(parFreqBandDetection.win)];
-                    print(fileName,'-djpeg',['-r' num2str(obj.figResJPG)]);
+                    print(fileName,'-dpdf',['-r' num2str(obj.figResJPG)]);
                     if printLocalCopy
                         fileName=[cd filesep obj.recTable.Animal{obj.currentPRec} '_Rec' num2str(obj.currentPRec) '_spectralBands_ch' num2str(parFreqBandDetection.ch) '_t' num2str(parFreqBandDetection.tStart) '_w' num2str(parFreqBandDetection.win)];
                         print(fileName,'-djpeg',['-r' num2str(obj.figResJPG)]);
@@ -5482,7 +5488,10 @@ classdef sleepAnalysis < recAnalysis
                 crossFreq=[];
             end
 
-            save(obj.files.spectralClustering,'times','corrMat','sPxx','normsPxx','freqHz','parFreqBandDetection','order','clusters','crossFreq','cop');
+            save(obj.files.spectralClustering,'times','corrMat','sPxx','normsPxx','freqHz','parFreqBandDetection','order','clusters','crossFreq');
+             if nargout==1
+                    data=load(obj.files.spectralClustering);
+             end
         end
 
         %% getFilters
