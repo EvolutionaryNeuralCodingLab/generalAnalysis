@@ -3310,7 +3310,7 @@ classdef sleepAnalysis < recAnalysis
         % the preyTouch Arena.
         %
 
-        function arenaCSVs = getArenaCSVs(obj,overwrite)
+        function arenaCSVs = getArenaCSVs(obj,varargin)
             % this function gets the argunenmts from the SA excel, and returns a
             % structure that has 3 arrays of the frames closes frames numbers for
             % each event.
@@ -3322,13 +3322,37 @@ classdef sleepAnalysis < recAnalysis
             % in the oe and the time that was given by the Arena system.
             % the first element in this array is the shift in the frames.
 
+            obj.checkFileRecording;
 
-            % SA is an instance of sleep analysis class,with a record currently
-            % selected
+            parseObj = inputParser();
+            addParameter(parseObj,'trigStop',5000,@isnumeric); % camera trig stop length in ms
+            addParameter(parseObj,'interTriali',8,@isnumeric); % inter trial interval to detect bugs starts and stop. s
+            addParameter(parseObj,'overwrite',0,@isnumeric);
+            addParameter(parseObj,'inputParams',false,@isnumeric);
 
-            if nargin ==1
-                overwrite = 0;
+            
+            parseObj.parse(varargin{:});
+
+            if parseObj.Results.inputParams
+                disp(parseObj.Results);
+                return;
             end
+
+            %evaluate all input parameters in workspace
+            for i=1:numel(parseObj.Parameters)
+                eval([parseObj.Parameters{i} '=' 'parseObj.Results.(parseObj.Parameters{i});']);
+            end
+
+            %check if analysis was already done done
+            obj.files.arenaCSV=[obj.currentAnalysisFolder filesep 'ArenaCSV.mat'];
+            if exist(obj.files.arenaCSV,'file') & ~overwrite
+                if nargout==1
+                    load(obj.files.arenaCSV);
+                    disp('arena CSV analysis already exists for this recording')
+                end
+                return;
+            end
+
             %check if analysis was already done done
             obj.files.arenaCSV=[obj.currentAnalysisFolder filesep 'ArenaCSV.mat'];
             if exist(obj.files.arenaCSV,'file') & ~overwrite
@@ -3348,7 +3372,7 @@ classdef sleepAnalysis < recAnalysis
 
             % getting the data of the oe recording: triggers times in oe
             camTrigCh = obj.recTable.camTriggerCh(obj.currentPRec);% ch can be change according to the setup.
-            oeCamTrig = obj.currentDataObj.getCamerasTrigger(camTrigCh)';
+            oeCamTrig = obj.currentDataObj.getCamerasTrigger(camTrigCh, trigStop)';
             arenaCSVs.oeCamTrig = oeCamTrig;
 
             % check trigger synchrony:
@@ -3402,7 +3426,7 @@ classdef sleepAnalysis < recAnalysis
                 arenaCSVs.bugs=bugs;
 
                 % getting the trials start and end times in OE times:
-                bugStops = find(diff(bugs.Timestamps)>15)+1;
+                bugStops = find(diff(bugs.Timestamps)>interTriali)+1;
                 firstInd = 1;
                 startTrials = bugs.Timestamps([firstInd,bugStops.']);
                 endTrials = bugs.Timestamps([(bugStops.')-1,end]);
@@ -3415,8 +3439,34 @@ classdef sleepAnalysis < recAnalysis
                 % change to frame time stamp in OE:
                 arenaCSVs.startTrigSh = oeCamTrig(arenaCSVs.startFrameSh) ;
                 arenaCSVs.endTrigSh = oeCamTrig(arenaCSVs.endFramSh) ;
-            end
+            
+                % check num of trials make sense:
+                % Count occurrences of "Trial #** started"
+                trialStarted = contains(blockLog.Var5, 'Trial #') & contains(blockLog.Var5, 'started');
+                trialCount = sum(trialStarted);
 
+                % Get the last occurrence and extract the trial number
+                trialRows = blockLog.Var5(trialStarted);
+                lastEntry = trialRows{end};
+
+                % Extract the number from "Trial #** started"
+                tokens = regexp(lastEntry, 'Trial #(\d+) started', 'tokens');
+                lastTrialNumber = str2double(tokens{1}{1});
+
+                if trialCount==lastTrialNumber
+                    if trialCount ==length(arenaCSVs.startTrigSh)
+                        fprintf('Total Trials num and Starting Times are %d\n',trialCount)
+                    else
+                        fprintf(['Total Trials and Starting Times do not match.\n' ...
+                            'Trial Count is %d, yet starting times are %d\n'],trialCount,length(arenaCSVs.startTrigSh));
+                    end
+                else 
+                    fprintf(['Problem in block log. Total Trials starts and counts do not match.\n' ...
+                        'Trial Count is %d, yet starting logs are %d\n'],trialCount,lastTrialNumber)
+                end
+            end
+            
+            
             % strikes:
             % get the strikes loginto a table and add timestamps:
             screenTouchFile = strcat(blockPath,'/screen_touches.csv');
