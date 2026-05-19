@@ -3368,8 +3368,12 @@ classdef sleepAnalysis < recAnalysis
             videoPath = obj.recTable.VideoFiles(obj.currentPRec);
             [videosFolderPath,vidName,~] = fileparts(videoPath{1});
             videoCSVpath = strcat(videosFolderPath,filesep,'frames_timestamps/',vidName,'.csv');
-            arenaCSVs.videoFrames = readmatrix(videoCSVpath,"NumHeaderLines",1); % timestamps - seconds from 1.1.1970
-
+            if isfile(videoCSVpath)
+                arenaCSVs.videoFrames = readmatrix(videoCSVpath,"NumHeaderLines",1); % timestamps - seconds from 1.1.1970
+            else
+                arenaCSVs.videoFrames=[];
+                disp('No Video CSV!!')
+            end
             % getting the data of the oe recording: triggers times in oe
             camTrigCh = obj.recTable.camTriggerCh(obj.currentPRec);% ch can be change according to the setup.
             oeCamTrig = obj.currentDataObj.getCamerasTrigger(camTrigCh, trigStop)';
@@ -3383,7 +3387,7 @@ classdef sleepAnalysis < recAnalysis
                 fprintf('Triggers num dont match video frames. Diff is %d. \n',framediff)
             end
 
-            arenaCSVs.videoFPS = 1/mean(diff(arenaCSVs.videoFrames(:,2)));
+            arenaCSVs.videoFPS = 1/mean(diff(arenaCSVs.oeCamTrig));
 
             % get block data:
             if all(cellfun(@isempty,obj.recTable.blockPath(obj.currentPRec)))
