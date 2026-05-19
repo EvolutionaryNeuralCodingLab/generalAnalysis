@@ -132,7 +132,6 @@ uSize = unique(C(:,4));
 uSpeed = unique(C(:,5));
 uLums= unique(C(:,6));
 
-
 %Number of unique parameters per category
 offsetN = length(uOffset);
 direcN = length(uDir);
@@ -143,6 +142,132 @@ lumsN = length(uLums);
 trialDivision = nT/(offsetN*direcN*speedN*sizeN*lumsN); %Number of trials per unique conditions
 
 preBase = round(stimInter-stimInter/4);
+
+%Calculate size of ball in degrees:
+%Standard measurements for last set of experiments:
+eye_to_monitor_distance = 21.5000;
+pixel_size = 33;
+resolution = 1080;
+pixel_size =  pixel_size/resolution;
+monitor_resolution = [1920 1080];
+[theta_x,theta_y] = pixels2eyeDegrees(eye_to_monitor_distance,pixel_size,monitor_resolution);
+
+for i = 1:sizeN
+    sizeBall(i) = round(abs(abs(theta_x(1,uSize(i)))-abs(theta_x(1,1))),2);
+end
+
+sizesString = strjoin(string(sizeBall), "_");
+
+% ==========================================================
+% OUTER GROUP INFO
+% ==========================================================
+
+outerGroup = params.sortingOrder(1);
+outerCol   = sortMap.(outerGroup);
+
+outerVals = C(:,outerCol);
+
+uOuter = unique(outerVals,'stable');
+
+groupStarts = zeros(numel(uOuter),1);
+groupEnds   = zeros(numel(uOuter),1);
+
+for i = 1:numel(uOuter)
+
+    idx = find(outerVals == uOuter(i));
+
+    groupStarts(i) = idx(1);
+    groupEnds(i)   = idx(end);
+
+end
+
+groupCenters = (groupStarts + groupEnds)/2;
+
+% ==========================================================
+% BUILD GROUP LABELS
+% ==========================================================
+
+groupLabels = strings(size(uOuter));
+
+switch outerGroup
+
+    % ======================================================
+    case "direction"
+
+        for i = 1:numel(uOuter)
+
+            val = round(uOuter(i),2);
+
+            switch val
+
+                case 0
+                    groupLabels(i) = "U";
+
+                case 1.57
+                    groupLabels(i) = "L";
+
+                case 3.14
+                    groupLabels(i) = "D";
+
+                case 4.71
+                    groupLabels(i) = "R";
+
+                otherwise
+                    groupLabels(i) = string(val);
+
+            end
+        end
+
+    % ======================================================
+    case "size"
+
+        groupLabels = strings(size(uOuter));
+
+        for i = 1:numel(uOuter)
+
+            idxSize = find(uSize == uOuter(i));
+
+            if ~isempty(idxSize)
+                groupLabels(i) = sprintf('%.1f°', sizeBall(idxSize));
+            else
+                groupLabels(i) = string(uOuter(i));
+            end
+
+        end
+
+    % ======================================================
+    case "luminosity"
+
+        for i = 1:numel(uOuter)
+
+            if uOuter(i) == 1
+                groupLabels(i) = "B";
+            elseif uOuter(i) == 255
+                groupLabels(i) = "W";
+            else
+                groupLabels(i) = string(uOuter(i));
+            end
+
+        end
+
+    % ======================================================
+    case "offset"
+
+        for i = 1:numel(uOuter)
+            groupLabels(i) = sprintf('O%d',uOuter(i));
+        end
+
+    % ======================================================
+    case "speed"
+
+        for i = 1:numel(uOuter)
+            groupLabels(i) = sprintf('S%d',uOuter(i));
+        end
+
+end
+
+
+
 
 if params.AllSomaticNeurons    
     eNeuron = 1:size(goodU,2);
@@ -174,20 +299,6 @@ Mr2 = [];
 
 ur = 1;
 
-%Calculate size of ball in degrees:
-%Standard measurements for last set of experiments:
-eye_to_monitor_distance = 21.5000;
-pixel_size = 33;
-resolution = 1080;
-pixel_size =  pixel_size/resolution;
-monitor_resolution = [1920 1080];
-[theta_x,theta_y] = pixels2eyeDegrees(eye_to_monitor_distance,pixel_size,monitor_resolution);
-
-for i = 1:sizeN
-    sizeBall(i) = round(abs(abs(theta_x(1,uSize(i)))-abs(theta_x(1,1))),2);
-end
-
-sizesString = strjoin(string(sizeBall), "_");
 
 for u = eNeuron
 
@@ -230,6 +341,7 @@ for u = eNeuron
 
     subplot(18,1,[6 16]);
     imagesc(squeeze(Mr2).*(1000/params.bin));colormap(flipud(gray(64)));
+    set(gca,'Clipping','off')
     %Plot stim start:
     xline(preBase/params.bin,'k', LineWidth=1.5)
     %Plot stim end:
@@ -239,30 +351,75 @@ for u = eNeuron
     if params.MaxVal_1
         caxis([0 1])
     end
-    dirStart = C(1,2);
-    offStart = C(1,3);
-    lumStart = C(1,6);
-    sizeStart = C(1,4);
-    for t = 1:nT
-        if dirStart ~= C(t,2)
-            yline(t-0.5,'k',LineWidth=2);
-            dirStart = C(t,2);
-        end
-        if offStart ~= C(t,3)
-            yline(t-0.5,'k',LineWidth=0.5);
-            offStart = C(t,3);
-        end
-        if lumStart ~= C(t,6)
-            yline(t-0.5,'--b',LineWidth=1);
-            lumStart = C(t,6);
-        end
-        if sizeStart ~= C(t,4)
-            yline(t-0.5,'--r',LineWidth=0.05);
-            sizeStart = C(t,4);
-        end
+    % ==========================================================
+    % DYNAMIC GROUP LINES
+    % ==========================================================
+
+    hold on
+
+    % --- outer group (thick lines) ---
+    for i = 2:numel(groupStarts)
+
+        yline(groupStarts(i)-0.5, ...
+            'k', ...
+            'LineWidth',2);
 
     end
 
+    % ==========================================================
+    % INNER GROUPS
+    % ==========================================================
+
+    innerOrders = params.sortingOrder(2:end);
+
+    lineStyles = {'-','--',':'};
+    lineWidths = [0.8 0.8 0.8];
+
+    for s = 1:numel(innerOrders)
+
+        thisGroup = innerOrders(s);
+
+        thisCol = sortMap.(thisGroup);
+
+        vals = C(:,thisCol);
+
+        prevVal = vals(1);
+
+        for t = 2:nT
+
+            if vals(t) ~= prevVal
+
+                yline(t-0.5, ...
+                    'Color',[0.4 0.4 0.4], ...
+                    'LineStyle',lineStyles{min(s,numel(lineStyles))}, ...
+                    'LineWidth',lineWidths(min(s,numel(lineWidths))));
+
+                prevVal = vals(t);
+
+            end
+
+        end
+    end
+
+    % ==========================================================
+    % GROUP LABELS
+    % ==========================================================
+
+    xText = -8;
+
+    for i = 1:numel(groupCenters)
+
+        text(xText, ...
+            groupCenters(i), ...
+            groupLabels(i), ...
+            'HorizontalAlignment','right', ...
+            'VerticalAlignment','middle', ...
+            'FontWeight','bold', ...
+            'FontSize',8, ...
+            'FontName','helvetica', ...
+            'Clipping','off');
+
+    end
     hold on
 
     xticklabels([])

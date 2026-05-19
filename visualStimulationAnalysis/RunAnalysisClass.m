@@ -29,7 +29,7 @@ end
 
 %% Moving ball
 
-for ex =[84,88]%97  74:84  (Neurons, 96_74, )
+for ex =[88]%97  74:84  (Neurons, 96_74, )
     NP = loadNPclassFromTable(ex); %73 81
     vs = linearlyMovingBallAnalysis(NP,Multiplesizes=true);
     % vs.getSessionTime("overwrite",true);
@@ -40,7 +40,7 @@ for ex =[84,88]%97  74:84  (Neurons, 96_74, )
     % r = vs.ResponseWindow('overwrite',true);
     % % % results = vs.ShufflingAnalysis('overwrite',true);
     % % % % vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'MergeNtrials',3)
-    vs.plotRaster('AllResponsiveNeurons',true,'overwrite',true,'MergeNtrials',5,'bin',50,'GaussianLength',30,'MaxVal_1', false, ...
+    vs.plotRaster('AllResponsiveNeurons',true,'overwrite',true,'MergeNtrials',1,'bin',50,'GaussianLength',30,'MaxVal_1', false, oneLuminosity = "white", OneDirection="left", ...
         sortingOrder=["size","direction","luminosity","offset","speed"])
     %vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'MergeNtrials',3,PaperFig=true)
     % % %vs.plotRaster('exNeuronsPhyID',288,'overwrite',true,'MergeNtrials',3,'PaperFig',true)
@@ -85,6 +85,20 @@ end
 %% Calculate spatial tuning
 results= SpatialTuningIndex([49:54,64:66, 68:85 87:97], indexType =  "L_amplitude_diff" ,overwrite=true...
     , topPercent = 30,useRF=true,onOff=1,unionResponsive = false,allResponsive=true, PaperFig=true, plotRFs=false, plotRFunion=false);
+%% FIGURE 2 MOVING VS STATIC COMPARISON
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+
+%% %% Compare SDGm vs SDGs, use gridmode true, selects maximum spatial category across directions
+[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97], overwrite=true,ComparePairs={'SDGm','SDGs'},PaperFig=true,...
+    overwriteResponse=false,overwriteStats=true,useFDR=false,maxCategory=false,BaseRespWindow=1000);
+
+
 
 %% FIGURE 3 SIZES AND LOCALITY COMPARISON
 %%%%%%%%
