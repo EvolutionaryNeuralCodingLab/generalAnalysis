@@ -29,9 +29,9 @@ end
 
 %% Moving ball
 
-for ex =[84]%97  74:84  (Neurons, 96_74, )
+for ex =[84,88]%97  74:84  (Neurons, 96_74, )
     NP = loadNPclassFromTable(ex); %73 81
-    vs = linearlyMovingBallAnalysis(NP,Session=1);
+    vs = linearlyMovingBallAnalysis(NP,Multiplesizes=true);
     % vs.getSessionTime("overwrite",true);
     % vs.getDiodeTriggers('extractionMethod','digitalTriggerDiode','overwrite',true);
     % % %vs.plotDiodeTriggers
@@ -40,19 +40,20 @@ for ex =[84]%97  74:84  (Neurons, 96_74, )
     % r = vs.ResponseWindow('overwrite',true);
     % % % results = vs.ShufflingAnalysis('overwrite',true);
     % % % % vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'MergeNtrials',3)
-    % % % %vs.plotRaster('AllResponsiveNeurons',true,'overwrite',true,'MergeNtrials',2,'bin',5,'GaussianLength',30,'MaxVal_1', false)
+    vs.plotRaster('AllResponsiveNeurons',true,'overwrite',true,'MergeNtrials',5,'bin',50,'GaussianLength',30,'MaxVal_1', false, ...
+        sortingOrder=["size","direction","luminosity","offset","speed"],ov)
     %vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'MergeNtrials',3,PaperFig=true)
     % % %vs.plotRaster('exNeuronsPhyID',288,'overwrite',true,'MergeNtrials',3,'PaperFig',true)
     % % % % %vs.plotCorrSpikePattern
-    vs.plotRaster('exNeurons',82,'overwrite',true,'OneDirection','up','OneLuminosity','white','MergeNtrials',1,'PaperFig',false)
-    %vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'MergeNtrials',3,MaxVal_1=false,PaperFig=false)
-    vs.CalculateReceptiveFields('overwrite',true,testConvolution=false,AllResponsiveNeurons=false);   
-    colorbarLims=vs.PlotReceptiveFields('exNeurons',21,'overwrite',true,'OneDirection','up','OneLuminosity','white','PaperFig',true);
-    %result = vs.BootstrapPerNeuron('overwrite',true);%('overwrite',true);
-    % pvals0_6Filter =result.Speed2.pvalsResponse';
-    % compare = [pvals,pvalsNoFilt,pvals0_6Filter];
-    result = vs.StatisticsPerNeuron('overwrite',true);
-    result = vs.StatisticsPerNeuronPerCategory('compareCategory','sizes','overwrite',true);
+    % vs.plotRaster('exNeurons',82,'overwrite',true,'OneDirection','up','OneLuminosity','white','MergeNtrials',1,'PaperFig',false)
+    % %vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'MergeNtrials',3,MaxVal_1=false,PaperFig=false)
+    % vs.CalculateReceptiveFields('overwrite',true,testConvolution=false,AllResponsiveNeurons=false);   
+    % colorbarLims=vs.PlotReceptiveFields('exNeurons',21,'overwrite',true,'OneDirection','up','OneLuminosity','white','PaperFig',true);
+    % %result = vs.BootstrapPerNeuron('overwrite',true);%('overwrite',true);
+    % % pvals0_6Filter =result.Speed2.pvalsResponse';
+    % % compare = [pvals,pvalsNoFilt,pvals0_6Filter];
+    % result = vs.StatisticsPerNeuron('overwrite',true);
+    % result = vs.StatisticsPerNeuronPerCategory('compareCategory','sizes','overwrite',true);
 end
 
 
@@ -68,14 +69,40 @@ end
 %solve MBR
 %bootsrapRespBase
 
+%% FIGURE 1 MOVING BALL VS STATIC BALL
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+
 %% Compare MB vs RG, use gridmode true, selects maximum spatial category across directions
 [tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97], overwrite=true,ComparePairs={'MB','RG'},PaperFig=true,...
-    overwriteResponse=false,overwriteStats=true,useFDR=false);
- 
-%% Compares MB across different categoryis, z-scores are computed with a moving window and responsive units are selected on the per category p value.
-[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97], overwrite=false,ComparePairs={'MB'},CompareCategory="directions",PaperFig=true,...
-    overwriteResponse=false,overwriteStats=true);
+    overwriteResponse=false,overwriteStats=true,useFDR=false,SpatialGridMode=true,maxCategory=true);
 
+%% Calculate spatial tuning
+results= SpatialTuningIndex([49:54,64:66, 68:85 87:97], indexType =  "L_amplitude_diff" ,overwrite=true...
+    , topPercent = 30,useRF=true,onOff=1,unionResponsive = false,allResponsive=true, PaperFig=true, plotRFs=false, plotRFunion=false);
+
+%% FIGURE 3 SIZES AND LOCALITY COMPARISON
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+ 
+%% Compares MB across different sizes
+[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97], overwrite=false,ComparePairs={'MB'},CompareCategory="sizes",PaperFig=true,...
+    overwriteResponse=false,overwriteStats=true, BaseRespWindow = 500);
+
+
+%% Compares MB and SDGm across different categories, z-scores are computed with a moving window and responsive units are selected on the per category p value.
+[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97], overwrite=false,ComparePairs={'MB','SDGm'},CompareCategory={"directions","angles"},CompareLevels={[0,1.57,3.14, 4.71],[0,90,180,270]},PaperFig=true,...
+    overwriteResponse=false,overwriteStats=true, BaseRespWindow = 1000,useGeneralFilter=true,SpatialGridMode = false,maxCategory = false);
 %% Compares MB and MG, across all categories
 [tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97], overwrite=false,ComparePairs={'MB','SDGm'},PaperFig=true,...
     overwriteResponse=false,overwriteStats=true, BaseRespWindow = 500, maxCategory = false, SpatialGridMode = false);
@@ -95,8 +122,46 @@ plotPSTH_MultiExp([49:54,64:66,68:85 87:97], overwrite=false, zScore=true,TakeTo
 %% PSTH for all static experiments
 plotPSTH_MultiExp([49:54,64:66,68:85 87:97], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=true, byDepth=false, smooth=50, stimTypes={"RG","SDGs","FFF"}); %stimTypes=["linearlyMovingBall"]
 
-%% 
-plotPSTH_MultiExp([49:54,64:66,68:85 87:97], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=true, byDepth=false, smooth=50, postStim= 1500, stimTypes={"MB"},splitBy="directions",useCategoryPvals = true); %stimTypes=["linearlyMovingBall"]
+%% Plot changes in size for MB
+plotPSTH_MultiExp([49:54,64:66,68:85 87:97], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=true, byDepth=false, smooth=50, postStim= 2000, stimTypes={"MB"},splitBy="sizes",useCategoryPvals = true); %stimTypes=["linearlyMovingBall"]
+
+%% SDGm spatial frequency
+[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97], overwrite=false,ComparePairs={'SDGs'},CompareCategory="spatFrequency",PaperFig=true,...
+    overwriteResponse=false,overwriteStats=true, BaseRespWindow = 1000);
+
+%% Plot different spatial freuqncies
+plotPSTH_MultiExp([49:54,64:66,68:85 87:97], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=true, byDepth=false, smooth=50, postStim= 2000, stimTypes={"SDGm"},splitBy="spatFrequency",useCategoryPvals = true); %stimTypes=["linearlyMovingBall"]
+
+
+%% Plot MB raster sorted per size
+plotRaster_MultiExp([49:54,64:66,68:85 87:97], overwrite=false, sortBy="preferredCategory", ...
+    splitCategory="Sizes", stimTypes="MB",zScore=true,PaperFig=true)
+
+%% Plot SDGm raster sorted per size
+plotRaster_MultiExp([49:54,64:66,68:85 87:97], overwrite=true, sortBy="preferredCategory", ...
+    splitCategory="spatFrequency", stimTypes="SDGm",zScore=true,PaperFig=true)
+
+%% %% FIGURE 4 DIRECTION TUNING COMPARISON
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+
+%%  Compares MB across differen directions
+[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97], overwrite=false,ComparePairs={'MB'},CompareCategory="sizes",PaperFig=true,...
+    overwriteResponse=false,overwriteStats=true, BaseRespWindow = 500);
+
+%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
+%%%%%%%%
 
 %% Raster for all experiment
 plotRaster_MultiExp([49:54,64:66,68:85 87:97], sortBy = "spatialTuning",overwrite=true,TakeTopPercentTrials=[],PaperFig=true)

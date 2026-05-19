@@ -689,6 +689,25 @@ nAnimals     = numel(animalOrder);                       % number of animals
 sharedCmap   = lines(nAnimals);                          % Nx3 colour matrix
 animalIdxAll = double(S.TableStimComp.animal);           % per-row animal index (for scatter colouring)
 
+if (mode == 3 || mode == 2) && ...
+        (any(contains(string(S.TableStimComp.stimulus), "SDG")) && any(contains(string(S.TableStimComp.stimulus), "ang")))
+
+    stimStr = string(S.TableStimComp.stimulus);
+
+    % Rows containing "SDG"
+    idxSDG = contains(stimStr, "SDG");
+
+    % Replace angle values only in SDG rows
+    stimStr(idxSDG) = replace(stimStr(idxSDG), ...
+        ["0",  "90", "180", "270"], ...
+        ["1.57","0", "4.71","3.14"]);
+
+    % Convert back to categorical
+    S.TableStimComp.stimulus = categorical(stimStr);
+
+end
+
+
 % All pairwise combinations of comparison items
 compLabels = cellstr(categories(S.TableStimComp.stimulus));  % unique sorted item labels
 pairsAll   = nchoosek(compLabels, 2);                        % Kx2 cell of pairs
@@ -796,6 +815,8 @@ end
 % SECTION 10 — FRACTION-RESPONSIVE ANALYSIS
 % =========================================================================
 
+compLabels = cellstr(categories(S.TableRespNeurs.stimulus));  % unique sorted item labels
+
 % Find groups by insertion, then check which insertions contain ALL items
 [G, ~] = findgroups(S.TableRespNeurs.insertion);
 hasAll  = splitapply( ...
@@ -809,6 +830,9 @@ tempTable = S.TableRespNeurs( ...
 % --- BUG FIX (was Bug #3): Hierarchical bootstrap for fraction-responsive ---
 % The previous flat bootstrp(@mean, diffs) ignored the nesting of insertions
 % within animals.  Using hierBoot is consistent with the mixed model.
+
+pairsAll   = nchoosek(compLabels, 2);    
+
 pValsFrac = zeros(1, size(pairsAll, 1));
 for pi = 1:size(pairsAll, 1)
 
@@ -833,9 +857,9 @@ for pi = 1:size(pairsAll, 1)
 
             animal = S.TableRespNeurs.animal(idx1);             % animal for this insertion
 
-            diffs      = [diffs;      d];                       %#ok<AGROW>
-            insLabels  = [insLabels;  double(ins)];             %#ok<AGROW>
-            animLabels = [animLabels; double(animal)];          %#ok<AGROW>
+            diffs      = [diffs;      d];                       
+            insLabels  = [insLabels;  double(ins)];             
+            animLabels = [animLabels; double(animal)];          
         end
     end
 

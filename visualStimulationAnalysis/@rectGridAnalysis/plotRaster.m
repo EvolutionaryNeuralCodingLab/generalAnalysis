@@ -101,6 +101,8 @@ win= preBase+params.stim2show; %stimDur+preBase*2;
 
 %Mr = ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
 
+%%%%Sort 
+
 
 
 ur =1;

@@ -8,7 +8,8 @@ function plotRaster_MultiExp(exList, params)
 %     2. Identifies statistically responsive neurons.
 %     3. Builds a per-neuron PSTH (optionally z-scored and smoothed).
 %     4. Sorts neurons by peak-response time, recording depth,
-%        spatial-tuning index, or leaves them unsorted.
+%        spatial-tuning index, preferred category level, or leaves
+%        them unsorted.
 %     5. Displays an imagesc raster for each stimulus type side-by-side,
 %        with a shared x-label and a single colorbar.
 %
@@ -29,10 +30,14 @@ function plotRaster_MultiExp(exList, params)
 %   NEW  — sortBy = "spatialTuning": sort neurons by a column from an
 %          external spatial-tuning table, matched via Phy cluster ID.
 %   NEW  — phyAll accumulator tracks Phy cluster IDs for each neuron row.
+%   NEW  — sortBy = "preferredCategory": group neurons by their preferred
+%          category level (e.g. direction, size), show only
+%          preferred-level trials in each PSTH row, secondary sort by
+%          mean post-onset firing rate within each group.
 
 arguments
     exList double                                                        % vector of experiment IDs to include
-    params.stimTypes       (1,:) string  = ["rectGrid","linearlyMovingBall"] % stimulus types — one tile each
+    params.stimTypes       (1,:) string  = ["RG","MB"]                    % stimulus abbreviations — one tile each (RG|MB|MBR|SDGs|SDGm|NI|NV|FFF)
     params.binWidth        double        = 10                            % PSTH bin width in ms
     params.smooth          double        = 0                             % Gaussian smoothing SD in ms (0 = off)
     params.statType        string        = "MaxPermuteTest"              % which statistics field to use
@@ -41,9 +46,9 @@ arguments
     params.postStim        double        = 0                             % post-stimulus window in ms
     params.preBase         double        = 200                           % pre-stimulus baseline in ms
     params.overwrite       logical       = false                         % if true, recompute even if cache exists
-    params.TakeTopPercentTrials double   = 0.3                           % fraction (0,1] of trials to keep; [] or 0 = keep all
+    params.TakeTopPercentTrials double   = 1                           % fraction (0,1] of trials to keep; [] or 0 = keep all
     params.zScore          logical       = true                          % z-score each neuron using its baseline
-    params.sortBy          string        = "spatialTuning"                        % "peak" | "depth" | "spatialTuning" | "none"
+    params.sortBy          string        = "spatialTuning"               % "peak" | "depth" | "spatialTuning" | "preferredCategory" | "none"
     params.PaperFig        logical       = false                         % if true, export figure via printFig
     params.climPrctile     double        = 90                            % upper percentile for colour scale
     params.climNeg         double        = 0                             % fixed negative z-score colour limit
@@ -54,14 +59,56 @@ arguments
     params.tuningIndexCol  string        = "L_amplitude_diff"            % column in tuning table to sort by
     params.tuningSortOrder string        = "descend"                     % "descend" = most-tuned at top
     params.tuningFile      string        = ""                            % full path to tuning .mat; "" = auto-construct
+    % --- Preferred-category sort parameters ---
+    params.splitCategory   (1,:) string  = ""                            % per-stim category: e.g. ["size","direction"]; scalar is broadcast
+    params.splitLevels     cell          = {}                            % per-stim levels: e.g. {[1 2],[0 90]}; {} = all levels for every stim
+    % --- Per-category statistics parameters (used when splitCategory is active) ---
+    params.nBootCategory   double        = 10000                         % bootstrap iterations for StatisticsPerNeuronPerCategory
+    params.overwriteCatStats logical     = false                         % force recomputation of per-category statistics
+    params.catBaseRespWindow double      = 100                           % base response window (ms) for per-category statistics
+    params.catApplyFDR     logical       = false                         % apply FDR inside StatisticsPerNeuronPerCategory
+    params.useGeneralFilter logical      = false                         % true = use general StatisticsPerNeuron p-values even in category mode
 end
 
 % -------------------------------------------------------------------------
 % Sanity check: baseline must be an integer multiple of bin width
 % -------------------------------------------------------------------------
-assert(mod(params.preBase, params.binWidth) == 0, ...
+assert(mod(params.preBase, params.binWidth) == 0, ...                    % prevents misaligned baseline bin edges
     'preBase (%g ms) must be a multiple of binWidth (%g ms).', ...
     params.preBase, params.binWidth);
+
+% -------------------------------------------------------------------------
+% Validate and broadcast preferredCategory parameters
+% -------------------------------------------------------------------------
+if params.sortBy == "preferredCategory"
+
+    nStimTypes = numel(params.stimTypes);                                % number of stimulus types
+
+    % --- Broadcast splitCategory ---
+    % A single string is applied to all stim types; a vector must match nStim.
+    % An empty string "" for a given slot means that stim uses all-trial mode.
+    if isscalar(params.splitCategory)
+        params.splitCategory = repmat(params.splitCategory, 1, nStimTypes); % broadcast scalar to all stim types
+    end
+    assert(numel(params.splitCategory) == nStimTypes, ...
+        'splitCategory must be scalar or have one entry per stimType (%d).', nStimTypes);
+
+    % --- Broadcast splitLevels ---
+    % An empty cell {} means "all levels" for every stim.
+    % A cell with one element is broadcast to all stim types.
+    % A cell with nStim elements maps one-to-one.
+    if isempty(params.splitLevels)
+        params.splitLevels = repmat({[]}, 1, nStimTypes);                % all levels for every stim
+    elseif numel(params.splitLevels) == 1
+        params.splitLevels = repmat(params.splitLevels, 1, nStimTypes);  % broadcast single cell to all stim
+    end
+    assert(numel(params.splitLevels) == nStimTypes, ...
+        'splitLevels must be empty, scalar cell, or have one entry per stimType (%d).', nStimTypes);
+
+    % --- Ensure at least one stim has a non-empty category ---
+    assert(any(strlength(params.splitCategory) > 0), ...
+        'sortBy="preferredCategory" requires at least one non-empty splitCategory entry.');
+end
 
 % -------------------------------------------------------------------------
 % Load depth table when sorting by cortical depth
@@ -85,14 +132,23 @@ p = extractBefore(vs_first.getAnalysisFileName, 'lizards');              % root 
 p = [p 'lizards'];                                                       % include 'lizards' folder
 
 if ~exist([p '\Combined_lizard_analysis'], 'dir')                        % create output dir if absent
-    cd(p)
-    mkdir Combined_lizard_analysis
+    cd(p)                                                                % change to parent dir
+    mkdir Combined_lizard_analysis                                       % create sub-directory
 end
 saveDir = [p '\Combined_lizard_analysis'];                               % output directory
 
-stimLabel  = strjoin(params.stimTypes, '-');                              % e.g. "rectGrid-linearlyMovingBall"
-nameOfFile = sprintf('\\Ex_%d-%d_Raster_%s.mat', ...
-    exList(1), exList(end), stimLabel);                                   % cache filename
+stimLabel  = strjoin(params.stimTypes, '-');                              % e.g. "RG-MB"
+
+% --- Include splitCategory in cache filename to avoid collisions ---
+% Join all per-stim categories into a compact suffix, e.g. "_cat-size-direction"
+if params.sortBy == "preferredCategory"
+    nonEmpty = params.splitCategory(strlength(params.splitCategory) > 0); % only non-empty categories
+    catSuffix = sprintf('_cat-%s', strjoin(nonEmpty, '-'));               % e.g. "_cat-size-direction"
+else
+    catSuffix = '';                                                       % no suffix for other sort modes
+end
+nameOfFile = sprintf('\\Ex_%d-%d_Raster_%s%s.mat', ...
+    exList(1), exList(end), stimLabel, catSuffix);                       % cache filename
 
 % -------------------------------------------------------------------------
 % Decide whether to recompute or reload from cache
@@ -119,20 +175,25 @@ if forloop
     nExp  = numel(exList);                                               % number of experiments
 
     % --- Accumulators: one cell per stimulus type, one row per neuron ---
-    rasterAll = cell(1, nStim);                                          % nNeurons x nBins PSTH per stim
-    depthAll  = cell(1, nStim);                                          % recording depth (um) per neuron
-    expAll    = cell(1, nStim);                                          % experiment ID per neuron row
-    phyAll    = cell(1, nStim);                                          % Phy cluster ID per neuron row
+    rasterAll    = cell(1, nStim);                                       % nNeurons x nBins PSTH per stim
+    depthAll     = cell(1, nStim);                                       % recording depth (um) per neuron
+    expAll       = cell(1, nStim);                                       % experiment ID per neuron row
+    phyAll       = cell(1, nStim);                                       % Phy cluster ID per neuron row
+    prefLevelAll = cell(1, nStim);                                       % preferred category level per neuron (NEW)
 
     for s = 1:nStim
-        rasterAll{s} = [];                                               % initialise empty
-        depthAll{s}  = [];
-        expAll{s}    = [];
-        phyAll{s}    = [];
+        rasterAll{s}    = [];                                            % initialise empty PSTH matrix
+        depthAll{s}     = [];                                            % initialise empty depth vector
+        expAll{s}       = [];                                            % initialise empty exp-ID vector
+        phyAll{s}       = [];                                            % initialise empty Phy-ID vector
+        prefLevelAll{s} = [];                                            % initialise empty preferred-level vector
     end
 
     % Counter for neurons dropped due to zero-SD baseline
     nDroppedZeroSD = zeros(1, nStim);                                    % per-stim counter
+
+    % Counter for experiments skipped due to insufficient category levels
+    nSkippedCat = zeros(1, nStim);                                       % per-stim counter (NEW)
 
     % --- Shared time-axis variables ---
     lockedPreBase = [];                                                  % baseline duration (ms) — locked on first exp
@@ -150,31 +211,32 @@ if forloop
         for s = 1:nStim
             try
                 NPtmp = loadNPclassFromTable(exList(ei));                % load NP object
-                switch params.stimTypes(s)
-                    case "rectGrid";            objTmp = rectGridAnalysis(NPtmp);
-                    case "linearlyMovingBall";  objTmp = linearlyMovingBallAnalysis(NPtmp);
-                    case "StaticGrating";       objTmp = StaticDriftingGratingAnalysis(NPtmp);
-                    case "MovingGrating";       objTmp = StaticDriftingGratingAnalysis(NPtmp);
+                stimKey = params.stimTypes(s);                           % current stim abbreviation
+
+                % --- Build analysis object from abbreviation ---
+                gt = detectGratingType(stimKey);                         % '' for non-grating, 'moving'/'static' for SDG
+                switch stimKey
+                    case "RG";   objTmp = rectGridAnalysis(NPtmp);
+                    case "MB";   objTmp = linearlyMovingBallAnalysis(NPtmp);
+                    case "MBR";  objTmp = linearlyMovingBarAnalysis(NPtmp);
+                    case {"SDGs"}
+                        objTmp = StaticDriftingGratingAnalysis(NPtmp);
+                    case {"SDGm"}
+                        objTmp = StaticDriftingGratingAnalysis(NPtmp);
+                    case "NI";   objTmp = imageAnalysis(NPtmp);
+                    case "NV";   objTmp = movieAnalysis(NPtmp);
+                    case "FFF";  objTmp = fullFieldFlashAnalysis(NPtmp);
+                    otherwise;   error('Unknown stimType abbreviation: %s', stimKey);
                 end
                 NRtmp = objTmp.ResponseWindow;                           % response-window struct
 
                 % Resolve fieldName (same logic as main loop)
-                if params.speed ~= "max" && isequal(objTmp.stimName, 'linearlyMovingBall')
-                    fn = 'Speed2';
-                elseif isequal(objTmp.stimName, 'linearlyMovingBall')
-                    fn = 'Speed1';
-                elseif isequal(params.stimTypes(s), 'StaticGrating')
-                    fn = 'Static';
-                elseif isequal(params.stimTypes(s), 'MovingGrating')
-                    fn = 'Moving';
-                else
-                    fn = '';                                             % rectGrid: flat struct
-                end
+                fn = resolveFieldName(stimKey, params.speed);            % sub-field key for this stim type
 
                 try
                     dur = NRtmp.(fn).stimDur;                            % sub-field duration
                 catch
-                    dur = NRtmp.stimDur;                                 % flat struct fallback
+                    dur = NRtmp.stimDur;                                  % flat struct fallback
                 end
 
                 minStimDur(s) = min(minStimDur(s), dur);                 % keep shortest for this stim
@@ -202,33 +264,41 @@ if forloop
             NP = loadNPclassFromTable(ex);                               % load Neuropixels data object
         catch ME
             warning('Could not load experiment %d: %s', ex, ME.message);
-            continue                                                      % skip on load failure
+            continue                                                     % skip on load failure
         end
 
         for s = 1:nStim
 
-            stimType = params.stimTypes(s);                              % current stimulus string
+            stimType = params.stimTypes(s);                              % current stim abbreviation
 
             % --- Build stimulus-specific analysis object ---
             try
+                gt = detectGratingType(stimType);                        % '' for non-grating, 'moving'/'static' for SDG
                 switch stimType
-                    case "rectGrid"
-                        obj = rectGridAnalysis(NP);
-                    case "linearlyMovingBall"
-                        obj = linearlyMovingBallAnalysis(NP);
-                    case "StaticGrating"
-                        obj = StaticDriftingGratingAnalysis(NP);
-                    case "MovingGrating"
-                        obj = StaticDriftingGratingAnalysis(NP);
+                    case "RG"
+                        obj = rectGridAnalysis(NP);                      % receptive-field grid stimulus
+                    case "MB"
+                        obj = linearlyMovingBallAnalysis(NP);            % moving ball stimulus
+                    case "MBR"
+                        obj = linearlyMovingBarAnalysis(NP);             % moving bar stimulus
+                    case {"SDGs","SDGm"}
+                        obj = StaticDriftingGratingAnalysis(NP); % grating stimulus
+                    case "NI"
+                        obj = imageAnalysis(NP);                         % natural image stimulus
+                    case "NV"
+                        obj = movieAnalysis(NP);                         % natural movie stimulus
+                    case "FFF"
+                        obj = fullFieldFlashAnalysis(NP);                % full-field flash stimulus
                     otherwise
-                        error('Unknown stimType: %s', stimType);
+                        error('Unknown stimType abbreviation: %s', stimType);
                 end
+                NeuronResp = obj.ResponseWindow;                             % response-window struct
             catch ME
                 warning('Could not build %s for exp %d: %s', stimType, ex, ME.message);
-                continue                                                  % skip this stim/exp
+                continue                                                 % skip this stim/exp
             end
 
-            NeuronResp = obj.ResponseWindow;                             % response-window struct
+          
 
             % --- Select statistics struct ---
             if params.statType == "BootstrapPerNeuron"
@@ -238,41 +308,153 @@ if forloop
             end
 
             % --- Resolve sub-field name and stim-onset offset ---
-            fieldName = '';                                              % sub-field key
+            fieldName = resolveFieldName(stimType, params.speed);        % sub-field key for this stim type
             startStim = 0;                                               % ms offset for stim onset
-            if params.speed ~= "max" && isequal(obj.stimName, 'linearlyMovingBall')
-                fieldName = 'Speed2';                                    % slower speed condition
-            elseif isequal(obj.stimName, 'linearlyMovingBall')
-                fieldName = 'Speed1';                                    % fastest speed condition
-            elseif isequal(stimType, 'StaticGrating')
-                fieldName = 'Static';                                    % static grating sub-field
-            elseif isequal(stimType, 'MovingGrating')
-                fieldName = 'Moving';                                    % moving grating sub-field
-                startStim = obj.VST.static_time * 1000;                 % moving phase onset (s -> ms)
+            if stimType == "SDGm"
+                startStim = obj.VST.static_time * 1000;                  % moving phase onset (s -> ms)
             end
 
             % --- Convert Phy sorting to tIc format ---
             p_sort = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
             label  = string(p_sort.label');                              % quality label per unit
             goodU  = p_sort.ic(:, label == 'good');                      % keep only curated 'good' units
-        
-            % --- Extract Phy cluster IDs for good units ---
-            goodPhyIDs = p_sort.phy_ID(label == 'good');                 % Phy cluster IDs matching goodU columns                                 % Phy cluster ID per good unit
 
-            % --- Response p-values ---
+            % --- Extract Phy cluster IDs for good units ---
+            goodPhyIDs = p_sort.phy_ID(label == 'good');                 % Phy cluster IDs matching goodU columns
+
+            % --- General response p-values (StatisticsPerNeuron) ---
+            % These are always extracted: used directly in standard mode,
+            % or as a fallback when useGeneralFilter = true in category mode.
             try
-                pvals = Stats.(fieldName).pvalsResponse;                 % stim-specific
+                pvals = Stats.(fieldName).pvalsResponse;                 % stim-specific p-values
             catch
                 pvals = Stats.pvalsResponse;                             % flat struct fallback
             end
 
-            % --- Stimulus onset times ---
+            % --- Stimulus onset times and condition matrix ---
             try
-                C = NeuronResp.(fieldName).C;                            % condition matrix
+                C = NeuronResp.(fieldName).C;                            % condition matrix (sub-field)
             catch
-                C = NeuronResp.C;                                        % fallback
+                C = NeuronResp.C;                                        % condition matrix (flat)
             end
-            directimesSorted = C(:, 1)' + startStim;                    % onset times in ms
+            directimesSorted = C(:, 1)' + startStim;                     % onset times in ms
+
+            % =============================================================
+            % CATEGORY DETECTION (for preferredCategory mode)
+            % =============================================================
+            % isCatMode is per-stimulus: true only if sortBy is
+            % preferredCategory AND this stim slot has a non-empty category.
+            isCatMode = params.sortBy == "preferredCategory" && ...
+                        strlength(params.splitCategory(s)) > 0;          % per-stim flag
+
+            if isCatMode
+
+                thisCatName   = params.splitCategory(s);                 % category for THIS stim (e.g. "direction")
+                thisCatLevels = params.splitLevels{s};                   % requested levels for THIS stim ([] = all)
+
+                % --- Extract column names from ResponseWindow ---
+                try
+                    allColNames = NeuronResp.(fieldName).colNames{1};    % sub-field column names
+                catch
+                    try
+                        allColNames = NeuronResp.colNames{1};            % flat struct column names
+                    catch
+                        warning('[%s] exp %d: colNames not found — skipping.', stimType, ex);
+                        nSkippedCat(s) = nSkippedCat(s) + 1;            % count skipped experiment
+                        continue                                         % skip this stim/exp
+                    end
+                end
+
+                % Column names: first 4 are metadata (onset, etc.),
+                % entries 5+ are stimulus-parameter names.
+                catColNames = string(allColNames(5:end));                 % stimulus-parameter names only
+
+                % --- Find column index for the requested category ---
+                catIdx = find(strcmpi(catColNames, thisCatName), 1);     % case-insensitive match
+
+                if isempty(catIdx)
+                    warning('[%s] exp %d: category "%s" not found in colNames [%s] — skipping.', ...
+                        stimType, ex, thisCatName, strjoin(catColNames, ', '));
+                    nSkippedCat(s) = nSkippedCat(s) + 1;                 % count skipped experiment
+                    continue                                             % skip: category absent
+                end
+
+                % BUG 10 FIX: C column 1 = onset times; columns 2+ = stimulus
+                % parameters matching catColNames.  Since catColNames is
+                % already colNames{1}(5:end), catIdx is a 1-based index
+                % into the parameter names.  Offset by 1 for the time column.
+                catColInC = catIdx + 1;                                  % +1 for onset-time column 1
+
+                % --- Extract category values per trial ---
+                trialCatValues = C(:, catColInC);                        % category value for each trial
+
+                % --- Determine available levels ---
+                availableLevels = unique(trialCatValues);                % unique levels in this experiment
+
+                % --- Filter to requested levels if specified ---
+                if ~isempty(thisCatLevels)
+                    availableLevels = intersect(availableLevels, thisCatLevels(:)); % keep only requested
+                end
+
+                % --- Skip if fewer than 2 levels remain ---
+                if numel(availableLevels) < 2
+                    warning('[%s] exp %d: only %d level(s) of "%s" after filtering — skipping.', ...
+                        stimType, ex, numel(availableLevels), thisCatName);
+                    nSkippedCat(s) = nSkippedCat(s) + 1;                 % count skipped experiment
+                    continue                                             % skip: can't determine preference
+                end
+
+                fprintf('  [%s] exp %d: %d levels of "%s": [%s]\n', ...
+                    stimType, ex, numel(availableLevels), thisCatName, ...
+                    strjoin(string(availableLevels'), ', '));
+
+                % ==========================================================
+                % PER-CATEGORY STATISTICS (StatisticsPerNeuronPerCategory)
+                % ==========================================================
+                % When useGeneralFilter is false (default), we use per-level
+                % p-values from StatisticsPerNeuronPerCategory to filter
+                % neurons.  A neuron passes if it is significant for at
+                % least one level (OR across levels).  This mirrors the
+                % AllExpAnalysis Mode 2 convention and is methodologically
+                % correct: neurons should be responsive to the specific
+                % category being split, not just to the stimulus in general.
+                if ~params.useGeneralFilter
+                    gt = detectGratingType(stimType);                    % '' for non-grating, 'moving'/'static' for SDG
+
+                    % Build name-value args for StatisticsPerNeuronPerCategory
+                    catStatsArgs = { ...
+                        'compareCategory', char(thisCatName), ...        % category to decompose
+                        'nBoot',           params.nBootCategory, ...     % bootstrap iterations
+                        'overwrite',       params.overwriteCatStats, ... % force recomputation flag
+                        'BaseRespWindow',  params.catBaseRespWindow, ... % response window (ms)
+                        'applyFDR',        params.catApplyFDR};          % FDR inside the stats function
+                    if ~isempty(gt)
+                        catStatsArgs = [catStatsArgs, {'GratingType', gt}]; % pass GratingType only for SDG stim
+                    end
+
+                    % Run per-category statistics (results are cached by the object)
+                    catStats = obj.StatisticsPerNeuronPerCategory(catStatsArgs{:});
+
+                    % Build OR mask: neuron passes if significant for ANY available level
+                    nUnits = numel(pvals);                               % total good units (same as general stats)
+                    orMask = false(nUnits, 1);                           % initialise all-false
+
+                    for li = 1:numel(availableLevels)
+                        fName = levelToFieldName(char(thisCatName), availableLevels(li)); % e.g. 'direction_0'
+                        if isfield(catStats, fName)
+                            levelP = catStats.(fName).pvalsResponse(:);  % per-level p-values
+                            orMask = orMask | (levelP < params.alpha);   % OR into mask
+                        else
+                            warning('[%s] exp %d: catStats missing field "%s" — skipping level.', ...
+                                stimType, ex, fName);
+                        end
+                    end
+
+                    fprintf('  [%s] exp %d: %d / %d neurons pass per-category OR filter.\n', ...
+                        stimType, ex, sum(orMask), nUnits);
+                end % ~useGeneralFilter
+
+            end % isCatMode detection block
 
             % --- Determine total trial window ---
             preBase = params.preBase;                                    % baseline in ms
@@ -287,21 +469,28 @@ if forloop
 
             % Lock baseline on first experiment
             if isempty(lockedPreBase)
-                lockedPreBase = preBase;                                 % shared across all stimuli
+                lockedPreBase = preBase;                                  % shared across all stimuli
             end
 
             % Lock bin edges per stim on first encounter
             if isempty(lockedEdges{s})
                 lockedEdges{s} = 0 : params.binWidth : windowTotal;      % bin edges from 0 to windowTotal
                 lockedNBins(s) = numel(lockedEdges{s}) - 1;              % number of bins
-                tAxis{s}       = lockedEdges{s}(1:end-1);                % left edge per bin (ms)
+                tAxis{s}       = lockedEdges{s}(1:end-1);               % left edge per bin (ms)
                 stimDurAll(s)  = rawStimDur_ms;                          % for xline in plot
                 fprintf('  [%s] Locked window: preBase=%d ms, stimDur=%.0f ms, nBins=%d\n', ...
                     stimType, lockedPreBase, rawStimDur_ms, lockedNBins(s));
             end
 
             % --- Find responsive neurons ---
-            eNeurons = find(pvals < params.alpha);                       % indices of significant neurons
+            % In category mode with per-level filtering (default), use
+            % the OR mask from StatisticsPerNeuronPerCategory.
+            % In all other cases, use general StatisticsPerNeuron p-values.
+            if isCatMode && ~params.useGeneralFilter
+                eNeurons = find(orMask);                                 % per-category OR filter
+            else
+                eNeurons = find(pvals < params.alpha);                   % general filter
+            end
 
             if isempty(eNeurons)
                 fprintf('  [%s] No responsive neurons in exp %d.\n', stimType, ex);
@@ -314,17 +503,130 @@ if forloop
             % ----------------------------------------------------------
             % Per-neuron PSTH
             % ----------------------------------------------------------
+            nAppended = 0;                                               % count neurons actually added to raster
             for ni = 1:numel(eNeurons)
 
                 u = eNeurons(ni);                                        % index into the good-unit list
 
-                % Binary spike matrix: trials x time at 1 ms resolution
-                MRhist = BuildBurstMatrix( ...
-                    goodU(:, u), ...                                     % spike identity for this unit
-                    round(p_sort.t), ...                                 % rounded sample timestamps
-                    round(directimesSorted - lockedPreBase), ...         % trial start = onset - baseline
-                    round(windowTotal));                                 % window length (ms, integer)
-                MRhist = squeeze(MRhist);                                % remove singleton dims
+                % ==============================================================
+                % ALL-TRIALS BASELINE (category mode only)
+                % ==============================================================
+                % In category mode, compute baseline stats from ALL trials
+                % before selecting the preferred level.  The pre-stimulus
+                % period is stimulus-independent (the animal cannot predict
+                % the upcoming category), so pooling all trials gives the
+                % most stable baseline estimate.  In standard mode bMean/bStd
+                % are left empty and computed later from the (single) PSTH.
+                bMean = [];                                              % sentinel: compute later in standard mode
+                bStd  = [];
+
+                if isCatMode && params.zScore
+
+                    % Build all-trials spike matrix (just for baseline)
+                    MRall = BuildBurstMatrix( ...
+                        goodU(:, u), ...                                 % spike identity for this unit
+                        round(p_sort.t), ...                             % rounded sample timestamps
+                        round(directimesSorted - lockedPreBase), ...     % ALL trial starts
+                        round(windowTotal));                             % window length (ms)
+                    MRall = squeeze(MRall);                              % remove singleton dims
+
+                    % Build all-trials PSTH (only baseline portion matters)
+                    nTrialsAll    = size(MRall, 1);                      % total number of trials
+                    spikeTimesAll = repmat((1:size(MRall,2)), nTrialsAll, 1); % column indices
+                    spikeTimesAll = spikeTimesAll(logical(MRall));       % keep spike positions only
+                    countsAll     = histcounts(spikeTimesAll, lockedEdges{s}); % spike count per bin
+                    allTrialPSTH  = (countsAll / (params.binWidth * nTrialsAll)) * 1000; % spk/s
+
+                    % Extract baseline stats from the all-trials PSTH
+                    baselineBins = tAxis{s} < lockedPreBase;             % pre-stimulus bin mask
+                    bMean = mean(allTrialPSTH(baselineBins));            % all-trial baseline mean
+                    bStd  = std(allTrialPSTH(baselineBins));             % all-trial baseline SD
+
+                    % Early exit if baseline SD is zero — z-score is
+                    % undefined regardless of which level we pick.
+                    if bStd == 0
+                        nDroppedZeroSD(s) = nDroppedZeroSD(s) + 1;
+                        continue                                         % skip neuron
+                    end
+                end
+
+                % ==========================================================
+                % PREFERRED-CATEGORY MODE: determine preferred level and
+                % build PSTH from only that level's trials
+                % ==========================================================
+                if isCatMode
+
+                    % --- Compute mean post-onset rate per level ---
+                    % Use ALL trials (before TakeTopPercentTrials) for a
+                    % stable preference estimate.
+                    nLevels      = numel(availableLevels);               % number of category levels
+                    meanRatePerLevel = nan(1, nLevels);                  % pre-allocate rate per level
+
+                    for li = 1:nLevels
+                        levelMask = trialCatValues == availableLevels(li); % logical mask: trials of this level
+                        levelOnsets = directimesSorted(levelMask);       % onset times for this level's trials
+
+                        if isempty(levelOnsets)
+                            continue                                     % no trials for this level
+                        end
+
+                        % Build binary spike matrix for this level's trials
+                        MRtemp = BuildBurstMatrix( ...
+                            goodU(:, u), ...                             % spike identity for this unit
+                            round(p_sort.t), ...                         % rounded sample timestamps
+                            round(levelOnsets - lockedPreBase), ...      % trial start = onset - baseline
+                            round(windowTotal));                         % window length (ms)
+                        MRtemp = squeeze(MRtemp);                        % remove singleton dims
+
+                        % Handle single-trial case: ensure matrix is (1 x T)
+                        if isvector(MRtemp) && numel(levelOnsets) == 1
+                            MRtemp = MRtemp(:)';                         % force row vector
+                        end
+
+                        % Mean firing rate in the post-onset window (spk/ms -> spk/s)
+                        postCols = (lockedPreBase + 1) : size(MRtemp, 2); % columns after stim onset
+                        meanRatePerLevel(li) = mean(MRtemp(:, postCols), 'all') * 1000; % convert to spk/s
+                    end
+
+                    % --- Determine preferred level by argmax ---
+                    [bestRate, bestIdx] = max(meanRatePerLevel);         % highest mean rate across levels
+
+                    if isnan(bestRate)
+                        continue                                         % all levels empty — skip neuron
+                    end
+
+                    prefLevel = availableLevels(bestIdx);                 % the preferred category level
+
+                    % --- Build PSTH from preferred-level trials only ---
+                    prefMask   = trialCatValues == prefLevel;            % logical mask for preferred level
+                    prefOnsets = directimesSorted(prefMask);             % onset times of preferred trials
+
+                    MRhist = BuildBurstMatrix( ...
+                        goodU(:, u), ...                                 % spike identity for this unit
+                        round(p_sort.t), ...                             % rounded sample timestamps
+                        round(prefOnsets - lockedPreBase), ...           % trial start = onset - baseline
+                        round(windowTotal));                             % window length (ms)
+                    MRhist = squeeze(MRhist);                            % remove singleton dims
+
+                    % Handle single-trial case
+                    if isvector(MRhist) && numel(prefOnsets) == 1
+                        MRhist = MRhist(:)';                             % force row vector
+                    end
+
+                else
+                    % ==================================================
+                    % STANDARD MODE: build PSTH from all trials
+                    % ==================================================
+                    prefLevel = NaN;                                      % not applicable in standard mode
+
+                    % Binary spike matrix: trials x time at 1 ms resolution
+                    MRhist = BuildBurstMatrix( ...
+                        goodU(:, u), ...                                 % spike identity for this unit
+                        round(p_sort.t), ...                             % rounded sample timestamps
+                        round(directimesSorted - lockedPreBase), ...     % trial start = onset - baseline
+                        round(windowTotal));                             % window length (ms, integer)
+                    MRhist = squeeze(MRhist);                            % remove singleton dims
+                end
 
                 % --- Optionally keep only the highest-firing trials ---
                 if ~isempty(params.TakeTopPercentTrials) && ...
@@ -350,33 +652,42 @@ if forloop
                 % --- Z-score using pre-stimulus baseline ---
                 if params.zScore
                     baselineBins = tAxis{s} < lockedPreBase;             % mask for baseline bins
-                    bMean = mean(neuronPSTH(baselineBins));              % baseline mean
-                    bStd  = std(neuronPSTH(baselineBins));               % baseline SD
+
+                    if isempty(bMean)
+                        % Standard mode: compute baseline from this PSTH
+                        bMean = mean(neuronPSTH(baselineBins));          % baseline mean
+                        bStd  = std(neuronPSTH(baselineBins));           % baseline SD
+                    end
+                    % Category mode: bMean/bStd already set from all-trials
+                    % PSTH above (more stable, stimulus-independent estimate)
+
                     if bStd > 0
-                        neuronPSTH = (neuronPSTH - bMean) / bStd;       % z-score
+                        neuronPSTH = (neuronPSTH - bMean) / bStd;       % z-score normalisation
                     else
                         % FIX 5: count and log rather than silently skip
                         nDroppedZeroSD(s) = nDroppedZeroSD(s) + 1;
-                        continue                                          % skip: undefined z-score
+                        continue                                         % skip: undefined z-score
                     end
                 end
 
                 % --- Smooth PSTH if requested ---
                 if params.smooth > 0
                     smoothBins = round(params.smooth / params.binWidth); % smoothing SD in bin units
-                    neuronPSTH = smoothdata(neuronPSTH, 'gaussian', smoothBins);
+                    neuronPSTH = smoothdata(neuronPSTH, 'gaussian', smoothBins); % smooth in-place
                 end
 
                 % --- Append neuron row to accumulators ---
-                rasterAll{s} = [rasterAll{s}; neuronPSTH];              % PSTH row
-                phyAll{s}(end+1)  = goodPhyIDs(u);                      % Phy cluster ID for this unit
-                expAll{s}(end+1)  = ex;                                  % source experiment
+                rasterAll{s}    = [rasterAll{s}; neuronPSTH];           % PSTH row
+                phyAll{s}(end+1)    = goodPhyIDs(u);                    % Phy cluster ID for this unit
+                expAll{s}(end+1)    = ex;                                % source experiment
+                prefLevelAll{s}(end+1) = prefLevel;                     % preferred level (NaN if not catMode)
+                nAppended = nAppended + 1;                               % count actually-appended neurons
 
                 % Store recording depth
                 if params.sortBy == "depth"
                     depthRow = depthTable.Experiment == ex & depthTable.Unit == u;
                     if any(depthRow)
-                        depthAll{s}(end+1) = depthTable.Depth_um(depthRow);
+                        depthAll{s}(end+1) = depthTable.Depth_um(depthRow); % matched depth
                     else
                         depthAll{s}(end+1) = NaN;                       % not found
                     end
@@ -385,6 +696,13 @@ if forloop
                 end
 
             end % neuron loop
+
+            % Report if any responsive neurons were dropped during PSTH building
+            nDropped = numel(eNeurons) - nAppended;                      % neurons lost to zero-SD or empty levels
+            if nDropped > 0
+                fprintf('  [%s] exp %d: %d / %d responsive neurons dropped (zero-SD or empty preferred level).\n', ...
+                    stimType, ex, nDropped, numel(eNeurons));
+            end
 
         end % stimulus loop
     end % experiment loop
@@ -397,12 +715,23 @@ if forloop
         end
     end
 
+    % Report experiments skipped due to insufficient category levels
+    if params.sortBy == "preferredCategory"
+        for s = 1:nStim
+            if nSkippedCat(s) > 0
+                fprintf('  [%s] Skipped %d experiment(s) with <2 levels of "%s".\n', ...
+                    params.stimTypes(s), nSkippedCat(s), params.splitCategory(s));
+            end
+        end
+    end
+
     % FIX 9: verify accumulator alignment after all experiments
     for s = 1:nStim
-        nRows = size(rasterAll{s}, 1);
-        assert(numel(expAll{s})   == nRows, 'expAll{%d} length mismatch.', s);
-        assert(numel(phyAll{s})   == nRows, 'phyAll{%d} length mismatch.', s);
-        assert(numel(depthAll{s}) == nRows, 'depthAll{%d} length mismatch.', s);
+        nRows = size(rasterAll{s}, 1);                                   % number of neuron rows
+        assert(numel(expAll{s})       == nRows, 'expAll{%d} length mismatch.', s);
+        assert(numel(phyAll{s})       == nRows, 'phyAll{%d} length mismatch.', s);
+        assert(numel(depthAll{s})     == nRows, 'depthAll{%d} length mismatch.', s);
+        assert(numel(prefLevelAll{s}) == nRows, 'prefLevelAll{%d} length mismatch.', s);
     end
 
     % ------------------------------------------------------------------
@@ -416,13 +745,14 @@ if forloop
 
     for s = 1:numel(params.stimTypes)
         stimField = matlab.lang.makeValidName(params.stimTypes(s));      % valid struct field name
-        S.(sprintf('%s_raster', stimField)) = rasterAll{s};
-        S.(sprintf('%s_depth',  stimField)) = depthAll{s};
-        S.(sprintf('%s_exp',    stimField)) = expAll{s};
-        S.(sprintf('%s_phy',    stimField)) = phyAll{s};                 % NEW: Phy cluster IDs
+        S.(sprintf('%s_raster',    stimField)) = rasterAll{s};           % PSTH matrix
+        S.(sprintf('%s_depth',     stimField)) = depthAll{s};            % depth vector
+        S.(sprintf('%s_exp',       stimField)) = expAll{s};              % experiment ID vector
+        S.(sprintf('%s_phy',       stimField)) = phyAll{s};              % Phy cluster ID vector
+        S.(sprintf('%s_prefLevel', stimField)) = prefLevelAll{s};        % preferred level vector (NEW)
     end
 
-    save([saveDir nameOfFile], '-struct', 'S');
+    save([saveDir nameOfFile], '-struct', 'S');                          % write cache to disk
     fprintf('\nSaved raster data to:\n  %s\n', [saveDir nameOfFile]);
 
 else
@@ -433,26 +763,38 @@ else
     lockedPreBase = S.lockedPreBase;                                     % restore baseline
     stimDurAll    = S.stimDurAll;                                        % restore stim durations
 
-    rasterAll = cell(1, numel(params.stimTypes));
-    depthAll  = cell(1, numel(params.stimTypes));
-    expAll    = cell(1, numel(params.stimTypes));
-    phyAll    = cell(1, numel(params.stimTypes));
+    rasterAll    = cell(1, numel(params.stimTypes));                     % pre-allocate
+    depthAll     = cell(1, numel(params.stimTypes));
+    expAll       = cell(1, numel(params.stimTypes));
+    phyAll       = cell(1, numel(params.stimTypes));
+    prefLevelAll = cell(1, numel(params.stimTypes));                     % NEW
 
     for s = 1:numel(params.stimTypes)
-        stimField    = matlab.lang.makeValidName(params.stimTypes(s));
-        rasterAll{s} = S.(sprintf('%s_raster', stimField));
-        depthAll{s}  = S.(sprintf('%s_depth',  stimField));
-        expAll{s}    = S.(sprintf('%s_exp',    stimField));
+        stimField    = matlab.lang.makeValidName(params.stimTypes(s));   % valid struct field name
+        rasterAll{s} = S.(sprintf('%s_raster', stimField));              % restore PSTH matrix
+        depthAll{s}  = S.(sprintf('%s_depth',  stimField));              % restore depth vector
+        expAll{s}    = S.(sprintf('%s_exp',    stimField));              % restore experiment IDs
 
         % phyAll may be absent in old caches — require recompute if needed
         phyField = sprintf('%s_phy', stimField);
         if isfield(S, phyField)
             phyAll{s} = S.(phyField);                                    % restore Phy IDs
-        elseif params.sortBy == "spatialTuning"
+        elseif params.sortBy == "spatialTuning" || params.sortBy == "preferredCategory"
             error(['Cache file lacks Phy IDs (old format). ' ...
                    'Re-run with params.overwrite = true.']);
         else
             phyAll{s} = nan(1, size(rasterAll{s}, 1));                   % fill NaN if unused
+        end
+
+        % prefLevelAll may be absent in old caches
+        plField = sprintf('%s_prefLevel', stimField);
+        if isfield(S, plField)
+            prefLevelAll{s} = S.(plField);                               % restore preferred levels
+        elseif params.sortBy == "preferredCategory"
+            error(['Cache file lacks prefLevel data (old format). ' ...
+                   'Re-run with params.overwrite = true.']);
+        else
+            prefLevelAll{s} = nan(1, size(rasterAll{s}, 1));             % fill NaN if unused
         end
     end
 
@@ -531,8 +873,11 @@ if params.sortBy == "spatialTuning"
 
         if nNeu == 0; continue; end                                      % nothing to do
 
-        % Pre-filter to this stimulus for speed
-        stimMask = string(tuningTable.stimulus) == params.stimTypes(s);
+        % Pre-filter to this stimulus for speed.
+        % Use abbrevToLegacyNames so matching works whether the tuning
+        % table was built with abbreviations or legacy full names.
+        legacyNames = abbrevToLegacyNames(params.stimTypes(s));          % e.g. ["MB","linearlyMovingBall"]
+        stimMask = ismember(string(tuningTable.stimulus), legacyNames);  % match any known name variant
         subT     = tuningTable(stimMask, :);                             % subtable for this stim
 
         for k = 1:nNeu
@@ -540,7 +885,7 @@ if params.sortBy == "spatialTuning"
             row = subT.experimentNum == expAll{s}(k) & ...
                   subT.phyID         == phyAll{s}(k);
             if any(row)
-                tuningAll{s}(k) = subT.(params.tuningIndexCol)(find(row, 1));
+                tuningAll{s}(k) = subT.(params.tuningIndexCol)(find(row, 1)); % tuning index value
             end
         end
 
@@ -556,6 +901,9 @@ end
 % =========================================================================
 % SORT NEURONS
 % =========================================================================
+% Also store level-group boundaries for plotting (preferredCategory mode)
+levelGroupBounds = cell(1, numel(params.stimTypes));                     % {s}: struct with edges and labels
+
 for s = 1:numel(params.stimTypes)
 
     data = rasterAll{s};                                                 % nNeurons x nBins
@@ -568,10 +916,10 @@ for s = 1:numel(params.stimTypes)
         % Local smoothed copy for peak detection only (avoids double-smoothing)
         if size(data, 2) > 100
             dataForSort = ConvBurstMatrix( ...
-                data, fspecial('gaussian', [1 params.GaussianLength+20], 2), 'same');
+                data, fspecial('gaussian', [1 params.GaussianLength+20], 2), 'same'); % wider kernel for long windows
         else
             dataForSort = ConvBurstMatrix( ...
-                data, fspecial('gaussian', [1 params.GaussianLength], 2), 'same');
+                data, fspecial('gaussian', [1 params.GaussianLength], 2), 'same'); % narrow kernel for short windows
         end
 
         [~, peakBin] = max(dataForSort(:, postStimBins), [], 2);         % peak column per neuron
@@ -585,18 +933,80 @@ for s = 1:numel(params.stimTypes)
         % --- Sort by spatial-tuning index ---
         % MissingPlacement='last' sends NaN (unmatched) neurons to the bottom
         [~, sortIdx] = sort(tuningAll{s}, params.tuningSortOrder, ...
-            'MissingPlacement', 'last');
+            'MissingPlacement', 'last');                                  % most-tuned first (default)
+
+    elseif params.sortBy == "preferredCategory"
+        % --- Sort by preferred category level, then by response strength ---
+        % If this stim slot has no category assigned (splitCategory(s) == ""),
+        % fall through to unsorted (identity permutation).
+        if strlength(params.splitCategory(s)) == 0
+            sortIdx = 1:size(data, 1);                                   % no category for this stim: no reorder
+
+        else
+            % Primary: group neurons by preferred level (ascending level value)
+            % Secondary: within each group, sort by mean post-onset response
+            %            (descending, so strongest responder at top of group)
+
+            levels   = prefLevelAll{s};                                  % preferred level per neuron
+            nNeurons = size(data, 1);                                    % total neurons for this stim
+
+            % Compute mean post-onset response for secondary sort
+            postStimBins = tAxis{s} >= lockedPreBase;                    % post-onset mask (same as in peak sort)
+            meanPostResp = mean(data(:, postStimBins), 2)';              % 1 x nNeurons: mean post-onset value
+
+            % Get unique levels present (excluding NaN, which shouldn't occur
+            % here but is handled defensively)
+            uniqueLevels = unique(levels(~isnan(levels)));                % sorted ascending by default
+
+            % Build sort index: iterate levels in order, within each group
+            % sort by response strength
+            sortIdx   = zeros(1, nNeurons);                              % pre-allocate
+            cursor    = 0;                                               % running position counter
+            groupInfo = struct('edges', [], 'labels', {{}});             % for plot annotations
+
+            for li = 1:numel(uniqueLevels)
+                groupMask    = levels == uniqueLevels(li);               % neurons preferring this level
+                groupIndices = find(groupMask);                          % their row indices
+                groupResp    = meanPostResp(groupMask);                  % their mean responses
+
+                [~, withinOrder] = sort(groupResp, 'descend');           % strongest first within group
+                nGroup = numel(groupIndices);                            % neurons in this group
+
+                sortIdx(cursor+1 : cursor+nGroup) = groupIndices(withinOrder); % fill sorted indices
+
+                % Record group boundary for plotting
+                groupInfo.edges(end+1)  = cursor + nGroup;               % row index of last neuron in group
+                groupInfo.labels{end+1} = sprintf('%s=%g', ...
+                    params.splitCategory(s), uniqueLevels(li));          % label: e.g. "direction=0"
+
+                cursor = cursor + nGroup;                                % advance cursor
+            end
+
+            % Handle any NaN-level neurons (shouldn't happen, but defensive)
+            nanMask = isnan(levels);
+            if any(nanMask)
+                nanIndices = find(nanMask);                              % indices of NaN neurons
+                nNan       = numel(nanIndices);
+                sortIdx(cursor+1 : cursor+nNan) = nanIndices;            % append at end
+                groupInfo.edges(end+1)  = cursor + nNan;
+                groupInfo.labels{end+1} = 'unclassified';
+                cursor = cursor + nNan;
+            end
+
+            levelGroupBounds{s} = groupInfo;                             % store for plotting
+        end
 
     else
         % --- No reordering ---
-        sortIdx = 1:size(data, 1);
+        sortIdx = 1:size(data, 1);                                       % identity permutation
     end
 
     % Apply sort to all parallel vectors
-    rasterAll{s} = data(sortIdx, :);                                     % reorder PSTH rows
-    depthAll{s}  = depthAll{s}(sortIdx);                                 % reorder depths
-    expAll{s}    = expAll{s}(sortIdx);                                   % reorder experiment IDs
-    phyAll{s}    = phyAll{s}(sortIdx);                                   % reorder Phy IDs
+    rasterAll{s}    = data(sortIdx, :);                                  % reorder PSTH rows
+    depthAll{s}     = depthAll{s}(sortIdx);                              % reorder depths
+    expAll{s}       = expAll{s}(sortIdx);                                % reorder experiment IDs
+    phyAll{s}       = phyAll{s}(sortIdx);                                % reorder Phy IDs
+    prefLevelAll{s} = prefLevelAll{s}(sortIdx);                          % reorder preferred levels
 
     if params.sortBy == "spatialTuning"
         tuningAll{s} = tuningAll{s}(sortIdx);                            % keep tuning vector aligned
@@ -608,10 +1018,11 @@ end
 % PLOT
 % =========================================================================
 
-% Short display labels for each stimulus type
+% Short display labels for each stimulus type (abbreviations are already
+% concise, but the map allows custom labels if desired).
 stimLegendMap = containers.Map( ...
-    {'linearlyMovingBall', 'rectGrid', 'MovingGrating', 'StaticGrating'}, ...
-    {'MB',                 'SB',       'MG',            'SG'});
+    {'RG',  'MB',  'MBR', 'SDGs', 'SDGm', 'NI',  'NV',  'FFF'}, ...
+    {'RG',  'MB',  'MBR', 'SDGs', 'SDGm', 'NI',  'NV',  'FFF'});
 
 nStim = numel(params.stimTypes);
 
@@ -721,6 +1132,39 @@ for s = 1:nStim
             'HorizontalAlignment', 'left', 'VerticalAlignment', 'top');
     end
 
+    % ------------------------------------------------------------------
+    % Preferred-category group boundary lines and labels (NEW)
+    % ------------------------------------------------------------------
+    if params.sortBy == "preferredCategory" && ~isempty(levelGroupBounds{s})
+
+        gInfo   = levelGroupBounds{s};
+        nGroups = numel(gInfo.edges);
+
+        ytPositions = zeros(1, nGroups);
+        ytLabels    = cell(1, nGroups);
+
+        prevEdge = 0;
+        for gi = 1:nGroups
+            edgeRow  = gInfo.edges(gi);
+            nInGroup = edgeRow - prevEdge;
+
+            ytPositions(gi) = (prevEdge + edgeRow) / 2;
+            % Level value + count only, e.g. "129 (n=15)"
+            rawLabel = gInfo.labels{gi};                                 % e.g. "size=129"
+            levelVal = extractAfter(rawLabel, '=');                       % e.g. "129"
+            ytLabels{gi} = sprintf('%s (n=%d)', levelVal, nInGroup);
+
+            if gi < nGroups
+                yline(ax, edgeRow + 0.5, 'k-', 'LineWidth', 1.5);
+            end
+
+            prevEdge = edgeRow;
+        end
+
+        set(ax, 'YTick', ytPositions, 'YTickLabel', ytLabels, ...
+            'TickLength', [0 0]);
+    end
+
     % --- Stim onset / offset lines (seconds) ---
     xline(ax, 0,                  'k--', 'LineWidth', 1.0);             % onset at t = 0
     xline(ax, stimDurAll(s)/1000, 'k--', 'LineWidth', 1.0);             % offset in seconds
@@ -732,18 +1176,23 @@ for s = 1:nStim
     ticksSec     = linspace(tAxisSec(1), tAxisSec(end), 5);              % 5 equally spaced ticks
     [~, iz]      = min(abs(ticksSec));                                   % tick nearest to 0
     ticksSec(iz) = 0;                                                    % snap to exactly 0
-    xticks(ax, ticksSec);
-    xticklabels(ax, arrayfun(@(v) sprintf('%.2g', v), ticksSec, 'UniformOutput', false));
+    xticks(ax, ticksSec);                                                % apply x tick positions
+    xticklabels(ax, arrayfun(@(v) sprintf('%.2g', v), ticksSec, 'UniformOutput', false)); % formatted labels
 
     if s == 1
-        ylabel(ax, 'Neuron #', 'FontName', 'helvetica', 'FontSize', 8); % y-label on leftmost tile
+        if params.sortBy == "preferredCategory" && strlength(params.splitCategory(s)) > 0
+            ylabel(ax, params.splitCategory(s), ...
+                'FontName', 'helvetica', 'FontSize', 8);                 % category name as ylabel
+        else
+            ylabel(ax, 'Neuron #', 'FontName', 'helvetica', 'FontSize', 8);
+        end
     end
 
     title(ax, sprintf('%s  (n=%d)', shortName, size(data,1)), ...
-        'FontName', 'helvetica', 'FontSize', 8);
+        'FontName', 'helvetica', 'FontSize', 8);                        % tile title with neuron count
 
-    ax.FontName = 'helvetica';
-    ax.FontSize = 8;
+    ax.FontName = 'helvetica';                                           % consistent font
+    ax.FontSize = 8;                                                     % readable size
     ax.YDir     = 'normal';                                              % neuron 1 at bottom
     ax.TickDir  = 'out';                                                 % outward ticks
     ax.Box      = 'off';                                                 % no top/right border
@@ -761,21 +1210,88 @@ xlabel(tl, 'Time relative to stimulus onset (s)', ...
 % ------------------------------------------------------------------
 cb = colorbar(axAll(end));                                               % attach to last axes
 if params.zScore
-    cb.Label.String = 'Z-score';
+    cb.Label.String = 'Z-score';                                         % label for z-scored data
 else
-    cb.Label.String = 'Firing rate (spk/s)';
+    cb.Label.String = 'Firing rate (spk/s)';                             % label for raw rates
 end
-cb.Label.FontName = 'helvetica';
+cb.Label.FontName = 'helvetica';                                         % colorbar label font
 cb.Label.FontSize = 8;
-cb.FontName       = 'helvetica';
+cb.FontName       = 'helvetica';                                         % tick font
 cb.FontSize       = 8;
-set(fig, 'Units', 'centimeters', 'Position', [20 20 9 12]);
+set(fig, 'Units', 'centimeters', 'Position', [20 20 9 12]);             % final figure position/size
 
 sgtitle(sprintf('N = %d experiments', numel(exList)), ...
-    'FontName', 'helvetica', 'FontSize', 10);                            % super-title
+    'FontName', 'helvetica', 'FontSize', 10);                           % super-title
 
 if params.PaperFig
-    vs_first.printFig(fig, sprintf('Raster-%s', stimLabel), PaperFig=params.PaperFig);
+    vs_first.printFig(fig, sprintf('Raster-%s-%s', stimLabel,params.splitCategory), PaperFig=params.PaperFig); % export for publication
 end
 
+end
+
+% =========================================================================
+% LOCAL HELPER FUNCTIONS
+% =========================================================================
+
+function gt = detectGratingType(stimKey)
+% detectGratingType  Return the GratingType parameter from a stimulus
+%   abbreviation.  'moving' for SDGm, 'static' for SDGs, '' otherwise.
+    switch stimKey
+        case "SDGm"; gt = 'moving';                                      % moving (drifting) grating
+        case "SDGs"; gt = 'static';                                      % static grating
+        otherwise;   gt = '';                                            % not a grating stimulus
+    end
+end
+
+function fn = resolveFieldName(stimKey, speedParam)
+% resolveFieldName  Map a stimulus abbreviation + speed selector to the
+%   sub-field name used in ResponseWindow / StatisticsPerNeuron structs.
+%
+%   stimKey    — stimulus abbreviation string (e.g. "MB", "SDGs")
+%   speedParam — "max" or other speed selector
+%   fn         — sub-field key (e.g. 'Speed1', 'Static', '')
+    switch stimKey
+        case {"MB","MBR"}
+            if speedParam == "max"
+                fn = 'Speed1';                                           % fastest speed condition
+            else
+                fn = 'Speed2';                                           % slower speed condition
+            end
+        case "SDGs"
+            fn = 'Static';                                               % static grating sub-field
+        case "SDGm"
+            fn = 'Moving';                                               % moving grating sub-field
+        otherwise
+            fn = '';                                                      % flat struct (RG, NI, NV, FFF)
+    end
+end
+
+function names = abbrevToLegacyNames(stimKey)
+% abbrevToLegacyNames  Return the set of stimulus name strings that might
+%   appear in external tables (e.g. tuning tables) for a given abbreviation.
+%   Includes both the abbreviation itself and any legacy full names, so that
+%   matching works regardless of which convention the table was built with.
+    switch stimKey
+        case "RG";    names = ["RG",   "rectGrid"];
+        case "MB";    names = ["MB",   "linearlyMovingBall"];
+        case "MBR";   names = ["MBR",  "linearlyMovingBar"];
+        case "SDGs";  names = ["SDGs", "StaticGrating"];
+        case "SDGm";  names = ["SDGm", "MovingGrating"];
+        case "NI";    names = ["NI",   "naturalImage"];
+        case "NV";    names = ["NV",   "naturalMovie"];
+        case "FFF";   names = ["FFF",  "fullFieldFlash"];
+        otherwise;    names = string(stimKey);                           % fallback: just the abbreviation
+    end
+end
+
+function fName = levelToFieldName(catName, value)
+% levelToFieldName  Build a valid MATLAB field name matching
+%   StatisticsPerNeuronPerCategory's naming convention.
+%   e.g. ('direction', 0)   -> 'direction_0'
+%        ('size', 5)        -> 'size_5'
+%        ('speed', 0.3)     -> 'speed_0p3'
+%        ('offset', -1)     -> 'offset_neg1'
+    fName = sprintf('%s_%g', lower(strtrim(catName)), value);            % base: 'cat_value'
+    fName = strrep(fName, '.', 'p');                                     % decimal point -> 'p'
+    fName = strrep(fName, '-', 'neg');                                   % minus sign    -> 'neg'
 end

@@ -442,10 +442,23 @@ if runLoop
                 % Run per-category statistics for this stimulus
                 catStats = vsObj.StatisticsPerNeuronPerCategory(catStatsArgs{:});
 
+                % Fields corresponding to levels
+                allFields = fieldnames(catStats);
+
+                % Keep only fields starting with category name
+                levelFields = allFields(startsWith(allFields, cat + "_"));
+
+                % Numeric levels stored in struct
+                storedLvls = catStats.categoryLevels(:);
+
                 % Extract data for each requested level
                 for lvi = 1:numel(lvls)
                     lv      = lvls(lvi);                        % numeric level value
-                    fName   = levelToFieldName(cat, lv);        % key in catStats
+                    % Find closest matching stored level
+                    [~, idx] = min(abs(storedLvls - lv));
+
+                    % Corresponding field name
+                    fName = levelFields{idx};
                     cLabel  = makeCompLabel(sn, cat, lv);       % short composite label
 
                     stimData.(cLabel).z    = catStats.(fName).ZScoreU(:);
@@ -696,6 +709,11 @@ end
 
 % Upper y-limit: ceiling of max z-score plus headroom for significance brackets
 ZscoreYlim = ceil(max(S.TableStimComp.('Z-score'))) +0.1*ceil(max(S.TableStimComp.('Z-score')));
+
+if (mode == 3 || mode == 2) && any(contains(string(S.TableStimComp.stimulus), "SDG"))
+
+
+end
 
 % Generate swarm + bootstrap plot for z-scores
 [fig,~,~] = plotSwarmBootstrapWithComparisons( ...

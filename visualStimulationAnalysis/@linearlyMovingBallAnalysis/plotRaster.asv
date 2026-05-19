@@ -23,8 +23,7 @@ arguments (Input)
     params.OneLuminosity string = "all"
     params.PaperFig logical = false
     params.statType string = "maxPermuteTest"
-    params.sortingOrder string = ["direction","luminosity","offset","size","speed"]
-
+    params.sortingOrder string
     
 end
 
@@ -107,6 +106,9 @@ if params.OneLuminosity ~= "all"
     end
 end
 
+
+[C indexS] = sortrows(C,[2 6 3 4 5]);
+directimesSorted = C(:,1)';
 
 sortMap = struct( ...
     'direction', 2, ...
