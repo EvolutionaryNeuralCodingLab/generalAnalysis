@@ -420,7 +420,7 @@ classdef (Abstract) VStimAnalysis < handle
                 if ~isempty(matFiles)
                     for i=1:numel(matFiles)
                         tmpVars=whos('-file',[tmpFolder filesep matFiles(i).name]);
-                        if strcmp(tmpVars.name,'VSMetaData')
+                        if any(strcmp({tmpVars.name}, 'VSMetaData'))
                             copyfile([tmpFolder filesep matFiles(i).name], obj.visualStimFolder);
                             fprintf('%s was copied to the visual stimulation folder: %s\n',matFiles(i).name,obj.visualStimFolder);
                             filesFound=true;

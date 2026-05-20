@@ -738,7 +738,7 @@ for i = 1:numel(Str)
     numVal = str2double(numStr);
 
     % Format with up to 2 decimals, strip trailing zeros
-    if numVal < 0.01
+    if numVal < 0.01 && numVal ~= 0
         numFormatted = compose("%.2e", numVal);
     else
         numFormatted = compose("%.2f", numVal);

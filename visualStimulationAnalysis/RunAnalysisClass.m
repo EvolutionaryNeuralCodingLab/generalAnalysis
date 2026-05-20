@@ -29,19 +29,19 @@ end
 
 %% Moving ball
 
-for ex =[88]%97  74:84  (Neurons, 96_74, )
+for ex =[41]%97  74:84  (Neurons, 96_74, )
     NP = loadNPclassFromTable(ex); %73 81
-    vs = linearlyMovingBallAnalysis(NP,Multiplesizes=true);
-    % vs.getSessionTime("overwrite",true);
-    % vs.getDiodeTriggers('extractionMethod','digitalTriggerDiode','overwrite',true);
+    vs = linearlyMovingBallAnalysis(NP);
+    vs.getSessionTime("overwrite",true);
+    vs.getDiodeTriggers('extractionMethod','digitalTriggerDiode','overwrite',true);
     % % %vs.plotDiodeTriggers
-    % vs.getSyncedDiodeTriggers("overwrite",true);
+    vs.getSyncedDiodeTriggers("overwrite",true);
     % % % %vs.plotSpatialTuningSpikes;
-    % r = vs.ResponseWindow('overwrite',true);
+    r = vs.ResponseWindow('overwrite',true);
     % % % results = vs.ShufflingAnalysis('overwrite',true);
     % % % % vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'MergeNtrials',3)
-    vs.plotRaster('AllResponsiveNeurons',true,'overwrite',true,'MergeNtrials',1,'bin',50,'GaussianLength',30,'MaxVal_1', false, oneLuminosity = "white", OneDirection="left", ...
-        sortingOrder=["size","direction","luminosity","offset","speed"])
+    %vs.plotRaster('AllResponsiveNeurons',true,'overwrite',true,'MergeNtrials',1,'bin',50,'GaussianLength',30,'MaxVal_1', false, oneLuminosity = "white", OneDirection="left", ...
+       % sortingOrder=["size","direction","luminosity","offset","speed"])
     %vs.plotRaster('AllSomaticNeurons',true,'overwrite',true,'MergeNtrials',3,PaperFig=true)
     % % %vs.plotRaster('exNeuronsPhyID',288,'overwrite',true,'MergeNtrials',3,'PaperFig',true)
     % % % % %vs.plotCorrSpikePattern
@@ -96,6 +96,10 @@ results= SpatialTuningIndex([49:54,64:66, 68:85 87:97], indexType =  "L_amplitud
 
 %% %% Compare SDGm vs SDGs, use gridmode true, selects maximum spatial category across directions
 [tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97], overwrite=true,ComparePairs={'SDGm','SDGs'},PaperFig=true,...
+    overwriteResponse=false,overwriteStats=true,useFDR=false,maxCategory=false,BaseRespWindow=1000);
+
+%% %% Compare SDGm vs SDGs, across directions
+[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97], overwrite=false,ComparePairs={'SDGm','SDGs'},CompareCategory={"angles","angles"},CompareLevels={[0,90,180,270],[0,90,180,270]},PaperFig=true,...
     overwriteResponse=false,overwriteStats=true,useFDR=false,maxCategory=false,BaseRespWindow=1000);
 
 

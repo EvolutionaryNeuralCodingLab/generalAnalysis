@@ -746,6 +746,8 @@ figure(fig);
 set(fig, 'Units', 'centimeters', 'Position', [20 20 10 6]);
 colormap(fig, sharedCmap);
 
+set(gca,'Clipping','off')
+
 % Save figure if PaperFig mode is active
 if params.PaperFig
     vs.printFig(fig, sprintf('Zscore-Swarm-%s', strjoin(compLabels,'-')), ...
