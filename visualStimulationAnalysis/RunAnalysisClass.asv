@@ -29,7 +29,7 @@ end
 
 %% Moving ball
 
-for ex =[19:20]%97  74:84  (Neurons, 96_74, )
+for ex =[41]%97  74:84  (Neurons, 96_74, )
     NP = loadNPclassFromTable(ex); %73 81
     vs = linearlyMovingBallAnalysis(NP);
     vs.getSessionTime("overwrite",true);
@@ -114,7 +114,7 @@ results= SpatialTuningIndex([49:54,64:66, 68:85 87:97], indexType =  "L_amplitud
 %%%%%%%%
  
 %% Compares MB across different sizes
-[tempTableMW] = AllExpAnalysis([19:20], overwrite=false,ComparePairs={'MB'},CompareCategory="sizes",PaperFig=true,...
+[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97], overwrite=false,ComparePairs={'MB'},CompareCategory="sizes",PaperFig=true,...
     overwriteResponse=false,overwriteStats=true, BaseRespWindow = 500);
 
 
@@ -141,7 +141,7 @@ plotPSTH_MultiExp([49:54,64:66,68:85 87:97], overwrite=false, zScore=true,TakeTo
 plotPSTH_MultiExp([49:54,64:66,68:85 87:97], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=true, byDepth=false, smooth=50, stimTypes={"RG","SDGs","FFF"}); %stimTypes=["linearlyMovingBall"]
 
 %% Plot changes in size for MB
-plotPSTH_MultiExp([19:20], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=true, byDepth=false, smooth=50, postStim= 2000, stimTypes={"MB"},splitBy="sizes",useCategoryPvals = true); %stimTypes=["linearlyMovingBall"]
+plotPSTH_MultiExp([49:54,64:66,68:85 87:97], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=true, byDepth=false, smooth=50, postStim= 2000, stimTypes={"MB"},splitBy="sizes",useCategoryPvals = true); %stimTypes=["linearlyMovingBall"]
 
 %% SDGm spatial frequency
 [tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97], overwrite=false,ComparePairs={'SDGs'},CompareCategory="spatFrequency",PaperFig=true,...

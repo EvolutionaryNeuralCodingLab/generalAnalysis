@@ -290,11 +290,11 @@ classdef (Abstract) VStimAnalysis < handle
             elseif isfield(obj.VST,'flip')
                 allFlips=obj.VST.flip';
             elseif isfield(obj.VST,'flipOnsetTimeStamp')
-                 if ~params.analyzeOnlyOnFlips
+                if ~params.analyzeOnlyOnFlips
                     allFlips=[obj.VST.flipOnsetTimeStamp;obj.VST.flipOffsetTimeStamp];
                 else
                     allFlips=[obj.VST.flipOnsetTimeStamp];
-                 end
+                end
             end
 
 
@@ -330,16 +330,62 @@ classdef (Abstract) VStimAnalysis < handle
                     stimOnFlipTimes=allDiodeFlips(pTrialStarts);
                     stimOffFlipTimes=allDiodeFlips(pTrialEnds);
 
-                    if isequal(obj.stimName,'StaticDriftingGrating') %Change because static time could be equal to intertrial delat
-                      
-                        % Compute differences
-                        dv_prev = [NaN diff(allDiodeFlips)];      % difference from previous element
-                        dv_next = [diff(allDiodeFlips) NaN];      % difference from next element
-                        pTrialStarts = [1 find(abs(dv_prev) >= obj.VST.static_time*0.7*1000 & abs(dv_next) >= obj.VST.interTrialDelay*0.7*1000)];
-                        pTrialEnds = [find(abs(dv_prev) <= (1/obj.VST.fps)*10*1000 & abs(dv_next) >= obj.VST.interTrialDelay*0.7*1000) numel(allDiodeFlips)];
+                    if isequal(obj.stimName,'StaticDriftingGrating')
 
-                        stimOnFlipTimes=allDiodeFlips(pTrialStarts);
-                        stimOffFlipTimes=allDiodeFlips(pTrialEnds);
+                        % --- Compute the minimum gap expected between the last drifting
+                        %     flip of trial N and the first drifting flip of trial N+1.
+                        %     This gap spans: interTrialDelay + static_time (both in seconds
+                        %     in obj.VST, so convert to ms).  We use 70 % of the sum as a
+                        %     conservative threshold to absorb timing jitter.
+                        combinedGapMs = (obj.VST.interTrialDelay + obj.VST.static_time) * 1000;  % expected total gap [ms]
+                        gapThresh     = combinedGapMs * 0.7;                                      % 70 % detection threshold [ms]
+
+                        % --- Compute inter-flip intervals --------------------------------
+                        dv = diff(allDiodeFlips);                   % interval between consecutive diode flips [ms]
+
+                        % --- Identify large gaps that mark trial boundaries ---------------
+                        %     A gap >= gapThresh means "end of one trial's drifting phase
+                        %     → start of the next trial's drifting phase (static flip is
+                        %     missing)."
+                        largeGapIdx = find(dv >= gapThresh);        % indices into allDiodeFlips where large gaps START
+                        % There should be exactly nTotTrials-1 inter-trial gaps;
+                        % discard any trailing gaps beyond that count.
+                        if numel(largeGapIdx) > obj.VST.nTotTrials - 1
+                            largeGapIdx = largeGapIdx(1:obj.VST.nTotTrials - 1);
+                        end
+                        % --- Derive trial-end and trial-start indices ---------------------
+                        %     Trial N ends at the flip just BEFORE the large gap.
+                        %     The first drifting flip of trial N+1 is just AFTER the gap.
+                        pTrialEnds   = [largeGapIdx, numel(allDiodeFlips)];   % last flip index of each trial (last trial ends at final flip)
+                        driftStarts  = [1, largeGapIdx + 1];                   % first *drifting* flip index of each trial (trial 1 starts at flip 1)
+
+                        % --- Sanity-check: did we recover the expected number of trials? --
+                        nDetected = numel(driftStarts);
+                        if nDetected ~= obj.VST.nTotTrials
+                            warning('SDG fix: detected %d trial boundaries but expected %d. Check gap threshold (%.1f ms vs combinedGap %.1f ms).', ...
+                                nDetected, obj.VST.nTotTrials, gapThresh, combinedGapMs);
+                        end
+
+                        % --- Build stimOnFlipTimes by back-dating static_time -------------
+                        %     The diode did not fire at static onset, so we synthesise that
+                        %     time:  static_onset = first_drift_flip − static_time.
+                        %     This is the trial-start time the rest of the pipeline expects.
+                        staticDurMs     = obj.VST.static_time * 1000;                     % static-phase duration [ms]
+                        stimOnFlipTimes = allDiodeFlips(driftStarts) - staticDurMs;        % synthetic static-onset times [ms]
+
+                        % --- stimOffFlipTimes = last detected drifting flip of each trial --
+                        stimOffFlipTimes = allDiodeFlips(pTrialEnds);
+
+                        % --- Overwrite pTrialStarts so the per-trial loop below can use
+                        %     the *drifting* flip indices (the synthetic static onsets are
+                        %     NOT in allDiodeFlips, so we must NOT index into it with them).
+                        pTrialStarts = driftStarts;
+
+                        % --- Diagnostic printout -----------------------------------------
+                        fprintf(['SDG trial detection: %d trials found | gap threshold = %.1f ms\n' ...
+                            '  static_time = %.3f s | interTrialDelay = %.3f s\n'], ...
+                            nDetected, gapThresh, obj.VST.static_time, obj.VST.interTrialDelay);
+
                     end
 
                     if numel(pTrialEnds)~=obj.VST.nTotTrials || numel(pTrialStarts)~=obj.VST.nTotTrials
@@ -367,7 +413,11 @@ classdef (Abstract) VStimAnalysis < handle
                             [in,p]=ismembertol(currentPCFlipTimes-currentPCFlipTimes(1),currentDiodeFlipTimes-currentDiodeFlipTimes(1),obj.VST.ifi*1000/2,'DataScale',1);
                         elseif (frameMatch+sum(pDelayed))==0 && ~isequal(obj.stimName,'StaticDriftingGrating')%at least some of the frames were delayed in presentation and not just missed
                             %look for a delay in diode flips which may explain a consistent delay
-                            tmpDiode=currentDiodeFlipTimes+cumsum([zeros(1,-frameMatch) pDelayed])*(-obj.VST.ifi*1000);
+                            % tmpDiode=currentDiodeFlipTimes+cumsum([zeros(1,-frameMatch) pDelayed])*(-obj.VST.ifi*1000);
+                            % [in,p]=ismembertol(currentPCFlipTimes-currentPCFlipTimes(1),tmpDiode-tmpDiode(1),obj.VST.ifi*1000/2,'DataScale',1);
+                            compensation = [zeros(1,-frameMatch) cumsum(pDelayed)];
+                            compensation = compensation(1:numel(currentDiodeFlipTimes)); % length is n+sum(pDelayed)-1; truncate to n
+                            tmpDiode = currentDiodeFlipTimes + compensation*(-obj.VST.ifi*1000);
                             [in,p]=ismembertol(currentPCFlipTimes-currentPCFlipTimes(1),tmpDiode-tmpDiode(1),obj.VST.ifi*1000/2,'DataScale',1);
                         elseif frameMatch<0 && (numel(currentPCFlipTimes)-numel(currentDiodeFlipTimes))>=0 %identifies irregularities in timing
                             in=ones(1,numel(currentDiodeFlipTimes));

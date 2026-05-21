@@ -683,6 +683,7 @@ S.TableStimComp.stimulus  = categorical(cellstr(string(S.TableStimComp.stimulus)
 NP = loadNPclassFromTable(expList(1));
 vs = linearlyMovingBallAnalysis(NP, 'MultipleOffsets', false, 'Multiplesizes', false);
 
+[~, figTag, ~] = fileparts(nameOfFile);   % e.g. 'Ex_49-97_SpecLvl_SDGm-angles-0_1p57...'
 % Build a consistent colour map: one colour per animal, shared across all plots
 animalOrder  = categories(S.TableStimComp.animal);      % sorted unique animal names
 nAnimals     = numel(animalOrder);                       % number of animals
@@ -750,7 +751,7 @@ set(gca,'Clipping','off')
 
 % Save figure if PaperFig mode is active
 if params.PaperFig
-    vs.printFig(fig, sprintf('Zscore-Swarm-%s', strjoin(compLabels,'-')), ...
+    vs.printFig(fig, sprintf('Zscore-Swarm-%s', figTag), ...
         PaperFig = params.PaperFig);
 end
 
@@ -760,7 +761,7 @@ if numel(compLabels) == 2
         'Z-score', sharedCmap, animalIdxAll, labelMap);
     title('Z-score');
     if params.PaperFig
-        vs.printFig(fig, sprintf('Zscore-Scatter-%s', strjoin(compLabels,'-')), ...
+        vs.printFig(fig, sprintf('Zscore-Scatter-%s', figTag), ...
             PaperFig = params.PaperFig);
     end
 end
@@ -798,7 +799,7 @@ colormap(fig, sharedCmap);
 
 % Save figure if PaperFig mode is active
 if params.PaperFig
-    vs.printFig(fig, sprintf('SpkRate-Swarm-%s', strjoin(compLabels,'-')), ...
+    vs.printFig(fig, sprintf('SpkRate-Swarm-%s', figTag), ...
         PaperFig = params.PaperFig);
 end
 
@@ -808,7 +809,7 @@ if numel(compLabels) == 2
         'SpkR', sharedCmap, animalIdxAll, labelMap);
     title('Spk. rate');
     if params.PaperFig
-        vs.printFig(fig, sprintf('SpkRate-Scatter-%s', strjoin(compLabels,'-')), ...
+        vs.printFig(fig, sprintf('SpkRate-Scatter-%s', figTag), ...
             PaperFig = params.PaperFig);
     end
 end
@@ -934,7 +935,7 @@ annotation('textbox', [0.1, 0.01, 0.8, 0.04], ...
 
 % Save figure if PaperFig mode is active
 if params.PaperFig
-    vs.printFig(fig, sprintf('ResponsiveUnits-%s', strjoin(compLabels,'-')), ...
+    vs.printFig(fig, sprintf('ResponsiveUnits-%s', figTag), ...
         PaperFig = params.PaperFig);
 end
 
