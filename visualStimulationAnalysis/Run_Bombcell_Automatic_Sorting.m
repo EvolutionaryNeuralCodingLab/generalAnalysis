@@ -2,7 +2,7 @@
 %% Run/load bombcell and confusion matrices
 
 %
-exp = [19:20];%
+exp = [19];%
 %tiledlayout(numel(exp),1)
 for ex =  exp%GoodRecordingsPV%allGoodRec %GoodRecordings%GoodRecordingsPV%GoodRecordingsPV%selecN{1}(1,:) %1:size(data,1)
     %%%%%%%%%%%% Load data and data paremeters

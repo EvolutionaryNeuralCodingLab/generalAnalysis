@@ -59,6 +59,7 @@ arguments
     params.zScore     logical       = false                                % z-score each neuron's PSTH to its own baseline
     params.PaperFig   logical       = false                                % export publication-quality figure via printFig
     params.byDepth    logical       = false                                % split neurons into 3 depth bins
+    params.unionResponsive logical = false                                 % if true, include neurons responsive to ANY stimType (OR union across stim types)
 end
 
 % -------------------------------------------------------------------------
@@ -76,6 +77,23 @@ end
 if params.splitBy ~= "" && params.byDepth
     error(['splitBy and byDepth cannot both be active — the resulting ', ...
            'combinatorial line count is unreadable.  Use one at a time.']);
+end
+
+% -------------------------------------------------------------------------
+% Guard: unionResponsive requires ≥2 stim types to be meaningful
+% -------------------------------------------------------------------------
+if params.unionResponsive && numel(params.stimTypes) < 2
+    warning('unionResponsive has no effect with a single stimType — ignoring.');
+    params.unionResponsive = false;
+end
+
+% -------------------------------------------------------------------------
+% Guard: unionResponsive + useCategoryPvals is ambiguous
+% -------------------------------------------------------------------------
+if params.unionResponsive && params.useCategoryPvals
+    error(['unionResponsive and useCategoryPvals cannot both be true. ', ...
+           'The union pre-pass uses general per-neuron p-values (statType). ', ...
+           'Use one mode at a time.']);
 end
 
 % -------------------------------------------------------------------------
@@ -252,6 +270,106 @@ if forloop
             continue
         end
 
+        % =============================================================
+        %  Union-responsive pre-pass: for each stim type, identify
+        %  responsive neurons using per-neuron p-values, then take the
+        %  OR union.  The resulting index vector (unionENeurons) is
+        %  applied to ALL stim types in the main loop below.
+        %
+        %  Rationale: good-sorted units are identical across stim types
+        %  within a recording (spike sorting is stim-agnostic), so
+        %  neuron indices are directly comparable across stim types.
+        % =============================================================
+        if params.unionResponsive
+            eNeuronsPerStim = cell(1, nStim);                              % one index vector per stim type
+
+            for su = 1:nStim
+                stimTypeU = params.stimTypes(su);                          % current stim abbreviation
+                sessU     = sessionMap(ei, su);                            % pre-computed session for this exp×stim
+
+                if sessU < 0                                               % no valid session → no neurons from this stim
+                    eNeuronsPerStim{su} = [];
+                    continue
+                end
+
+                % ---- Build analysis object for this stim type -----------
+                try
+                    objU = buildStimObject(NP, stimTypeU, sessU);
+                catch
+                    eNeuronsPerStim{su} = [];
+                    continue
+                end
+                if isempty(objU)
+                    eNeuronsPerStim{su} = [];
+                    continue
+                end
+
+                % ---- Check stimulus was actually presented --------------
+                try
+                    stimMissingU = isempty(objU.VST);
+                catch
+                    stimMissingU = true;
+                end
+                if stimMissingU
+                    eNeuronsPerStim{su} = [];
+                    continue
+                end
+
+                % ---- Ensure ResponseWindow is available -----------------
+                try
+                    objU.ResponseWindow('overwrite', params.overwriteResponse);
+                catch
+                    eNeuronsPerStim{su} = [];
+                    continue
+                end
+
+                % ---- Load statistics ------------------------------------
+                try
+                    if params.statType == "BootstrapPerNeuron"
+                        StatsU = objU.BootstrapPerNeuron;
+                    elseif params.statType == "maxPermuteTest"
+                        StatsU = objU.StatisticsPerNeuron;
+                    else
+                        StatsU = objU.ShufflingAnalysis;
+                    end
+                catch
+                    eNeuronsPerStim{su} = [];
+                    continue
+                end
+
+                % ---- Extract p-values using the correct field name ------
+                [fieldNameU, ~] = getFieldAndOffset(objU, stimTypeU, params.speed);
+                try
+                    pvalsU = StatsU.(fieldNameU).pvalsResponse;            % e.g. Stats.Speed1.pvalsResponse
+                catch
+                    try
+                        pvalsU = StatsU.pvalsResponse;                     % flat struct fallback
+                    catch
+                        eNeuronsPerStim{su} = [];
+                        continue
+                    end
+                end
+
+                eNeuronsPerStim{su} = find(pvalsU < params.alpha);         % indices into goodU for this stim type
+            end
+
+            % ---- Take the union across all stim types -------------------
+            unionENeurons = [];                                            % will hold sorted unique indices
+            for su = 1:nStim
+                unionENeurons = union(unionENeurons, eNeuronsPerStim{su}); % union returns sorted, unique
+            end
+
+            fprintf('  Union-responsive: %d neuron(s) responsive to ≥1 of [%s] in exp %d.\n', ...
+                numel(unionENeurons), strjoin(params.stimTypes, ', '), ex);
+
+            % ---- If the union is empty, skip the entire experiment ------
+            if isempty(unionENeurons)
+                fprintf('  No neurons responsive to any stim type — skipping exp %d.\n', ex);
+                appendNaNRow(psthAll, nStim, nDepthBins, catLabelsAll, lockedNBins);
+                continue                                                   % skip to next experiment
+            end
+        end
+
         % =================================================================
         %  Loop over stimulus types
         % =================================================================
@@ -396,6 +514,13 @@ if forloop
                 eNeurons = find(pvals < params.alpha);
             end
 
+            % ---- Override with union set if requested -------------------
+            if params.unionResponsive
+                eNeurons = unionENeurons;                                  % replace per-stim selection with union across all stim types
+                fprintf('  [%s] Using union-responsive set: %d neuron(s) in exp %d.\n', ...
+                    stimType, numel(eNeurons), ex);
+            end
+
             if isempty(eNeurons)
                 fprintf('  [%s] No responsive neurons in exp %d.\n', stimType, ex);
                 appendNaNRowForStim(psthAll, s, nDepthBins, catLabelsAll{s}, lockedNBins);
@@ -466,7 +591,7 @@ if forloop
                     MRhist = squeeze(MRhist);
 
                     % ---- Optional: keep only top-N% of trials -----------
-                    if params.TakeTopPercentTrials < 1
+                    if ~isempty(params.TakeTopPercentTrials) && params.TakeTopPercentTrials < 1
                         MeanTrial  = mean(MRhist, 2);
                         [~, ind]   = sort(MeanTrial, 'descend');
                         nKeep      = max(1, round(numel(MeanTrial) * params.TakeTopPercentTrials));
@@ -654,7 +779,7 @@ end
 
 % ---- Create figure ------------------------------------------------------
 fig = figure;
-set(fig, 'Units', 'centimeters', 'Position', [5 5 7 10]);
+set(fig, 'Units', 'centimeters', 'Position', [5 5 10 7]);
 ax  = axes(fig);
 hold(ax, 'on');
 

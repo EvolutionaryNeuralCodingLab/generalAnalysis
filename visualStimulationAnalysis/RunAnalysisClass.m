@@ -102,7 +102,17 @@ results= SpatialTuningIndex([49:54,64:66, 68:85 87:97], indexType =  "L_amplitud
 [tempTableMW] = AllExpAnalysis([40:43 49:54,64:66,68:85 87:97], overwrite=false,ComparePairs={'SDGm','SDGs'},CompareCategory={"angles","angles"},CompareLevels={[0,90,180,270],[0,90,180,270]},PaperFig=true,...
     overwriteResponse=false,overwriteStats=true,useFDR=false,maxCategory=false,BaseRespWindow=1000);
 
+%% Plot PSTH of MG and SG
+plotPSTH_MultiExp([49:54,64:66,68:85 87:97], overwrite=false, zScore=true,TakeTopPercentTrials=[], PaperFig=true, byDepth=false, smooth=50, postStim= 1000, stimTypes={"SDGm","SDGs"},unionResponsive=true); 
 
+%% Raster for MG and SG
+plotRaster_MultiExp([49:54,64:66,68:85 87:97],overwrite=false,TakeTopPercentTrials=[],PaperFig=true,postStim=1000,stimTypes=["SDG"],unionUnits=true)
+
+%% %% Compare NI vs NV, across directions
+[tempTableMW] = AllExpAnalysis([40:43 49:54,64:66,68:85 87:97], overwrite=true,ComparePairs={'NV','NI'},PaperFig=true,...
+    overwriteResponse=false,overwriteStats=true,useFDR=false,maxCategory=false,BaseRespWindow=1000);
+%% Raster for NI and NV
+plotRaster_MultiExp([49:54,64:66,68:85 87:97],overwrite=true,TakeTopPercentTrials=[],PaperFig=true,postStim=1000,stimTypes=["NI","NV"],unionUnits=false )
 
 %% FIGURE 3 SIZES AND LOCALITY COMPARISON
 %%%%%%%%
