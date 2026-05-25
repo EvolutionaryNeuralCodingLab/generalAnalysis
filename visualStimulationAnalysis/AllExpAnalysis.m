@@ -104,7 +104,7 @@ if params.SpatialGridMode
 end
 
 % --- Detect operating mode from parameter combinations ---
-if ~isempty(params.CompareLevels)
+if ~isempty(params.CompareLevels) || iscell(params.CompareCategory)
     % MODE 3: specific category levels compared across stimuli
     mode = 3;
 
@@ -113,8 +113,14 @@ if ~isempty(params.CompareLevels)
         'Mode 3: CompareCategory must be a cell or string array, one per stimulus.');
     assert(numel(params.CompareCategory) == numel(params.ComparePairs), ...
         'Mode 3: CompareCategory must have same length as ComparePairs.');
+    % Empty CompareLevels → auto-discover all levels per stimulus
+    if isempty(params.CompareLevels)
+        params.CompareLevels = repmat({[]}, 1, numel(params.ComparePairs));
+    end
     assert(numel(params.CompareLevels) == numel(params.ComparePairs), ...
         'Mode 3: CompareLevels must have same length as ComparePairs.');
+
+    
 
     % Normalise CompareCategory to a cell of char arrays for uniform handling
     catList = cell(1, numel(params.CompareCategory));
@@ -186,9 +192,15 @@ switch mode
         % Mode 3: each (stim, cat, levels) tuple encoded
         parts = cell(1, numel(stimsNeeded));
         for si = 1:numel(stimsNeeded)
-            lvStr = strjoin(arrayfun(@(v) sprintf('%g', v), ...
-                params.CompareLevels{si}, 'UniformOutput', false), '_');
-            parts{si} = sprintf('%s-%s-%s', stimsNeeded{si}, catList{si}, lvStr);
+            if isempty(catList{si})
+                parts{si} = stimsNeeded{si};
+            elseif isempty(params.CompareLevels{si})
+                parts{si} = sprintf('%s-%s-all', stimsNeeded{si}, catList{si});
+            else
+                lvStr = strjoin(arrayfun(@(v) sprintf('%g', v), ...
+                    params.CompareLevels{si}, 'UniformOutput', false), '_');
+                parts{si} = sprintf('%s-%s-%s', stimsNeeded{si}, catList{si}, lvStr);
+            end
         end
         nameOfFile = sprintf('Ex_%d-%d_SpecLvl_%s.mat', ...
             expList(1), expList(end), strjoin(parts, '__'));
@@ -229,8 +241,11 @@ levelLabels     = {};    % mode 2: populated on first valid recording
 fixedCompLabels = {};    % mode 3: canonical labels built from parameters
 
 if isSpecificLevelMode
-    % Build the canonical comparison labels and (stim, cat, level) tuples now
-    [fixedCompLabels, mode3Items] = buildMode3Items(stimsNeeded, catList, params.CompareLevels);
+    allSpecified = all(cellfun(@(x) ~isempty(x), params.CompareLevels)) && ...
+        all(cellfun(@(x) ~isempty(x), catList));
+    if allSpecified
+        [fixedCompLabels, ~] = buildMode3Items(stimsNeeded, catList, params.CompareLevels);
+    end
 end
 
 % =========================================================================
@@ -305,26 +320,49 @@ if runLoop
                 end
             end
 
-        elseif isSpecificLevelMode
-            % Mode 3: for each stimulus, find a session containing ALL requested levels
+       elseif isSpecificLevelMode
             sessionFound = true;
             for si = 1:numel(stimsNeeded)
-                sn   = stimsNeeded{si};                 % stimulus name
-                cat  = catList{si};                     % category for this stimulus
-                lvls = params.CompareLevels{si};        % required numeric levels
+                sn   = stimsNeeded{si};
+                cat  = catList{si};
+                lvls = params.CompareLevels{si};
                 key  = getObjKey(sn);
 
-                % Try Session=1 then Session=2 for this stimulus
-                [vsObj, allFound] = findSessionWithLevels(NP, sn, cat, lvls, params);
-                if ~allFound
-                    fprintf('  -> Skipping: %s session with all levels of "%s" [%s] not found.\n', ...
-                        sn, cat, num2str(lvls(:)', '%g '));
-                    sessionFound = false;  break
+                if isempty(cat)
+                    % No category — general stats will be used in 4d
+                    continue
+
+                elseif isempty(lvls)
+                    % Category specified but no levels → auto-discover all
+                    vsObj = vsObjs(key);
+                    [discoveredLvls, ~, vsObj] = findCategoryLevels( ...
+                        vsObj, NP, sn, cat, params);
+                    if numel(discoveredLvls) < 2
+                        fprintf('  -> Skipping: <2 levels for "%s" in %s.\n', cat, sn);
+                        sessionFound = false; break
+                    end
+                    params.CompareLevels{si} = discoveredLvls(:)';
+                    vsObjs(key) = vsObj;
+
+                else
+                    % Specific levels → find session containing all of them
+                    [vsObj, allFound] = findSessionWithLevels( ...
+                        NP, sn, cat, lvls, params);
+                    if ~allFound
+                        fprintf('  -> Skipping: %s levels [%s] of "%s" not found.\n', ...
+                            sn, num2str(lvls(:)','%g '), cat);
+                        sessionFound = false; break
+                    end
+                    vsObjs(key) = vsObj;
                 end
-                vsObjs(key) = vsObj;                    % store the valid session object
             end
-            if ~sessionFound
-                continue                                % skip this experiment entirely
+            if ~sessionFound, continue; end
+
+            % Build labels from (possibly auto-discovered) levels
+            [currentLabels, ~] = buildMode3Items(stimsNeeded, catList, params.CompareLevels);
+            if isempty(fixedCompLabels)
+                fixedCompLabels = currentLabels;
+                fprintf('  Labels locked: %s\n', strjoin(fixedCompLabels, ', '));
             end
         end
 
@@ -419,6 +457,20 @@ if runLoop
 
                 % Run general per-neuron statistics
                 runStimStats(vsObj, params);
+                
+                if isempty(cat)
+                    runStimStats(vsObj, params);
+                    vsObjs(key) = vsObj;
+                    [z, p, spkR, ~] = extractStimData(vsObj, sn, params.useZmean);
+                    generalPbyStim.(sn) = p;
+                    stimData.(sn).z    = z(:);
+                    stimData.(sn).p    = p(:);
+                    stimData.(sn).spkR = spkR(:);
+                    compLabels{end+1}  = sn;                    %#ok<AGROW>
+                    if isempty(nUnits), nUnits = numel(z); end
+                    continue
+                end
+
                 vsObjs(key) = vsObj;
 
                 % Extract general p-values (for optional useGeneralFilter)
@@ -446,7 +498,7 @@ if runLoop
                 allFields = fieldnames(catStats);
 
                 % Keep only fields starting with category name
-                levelFields = allFields(startsWith(allFields, cat + "_"));
+                levelFields = allFields(startsWith(lower(allFields), lower(cat) + "_"));
 
                 % Numeric levels stored in struct
                 storedLvls = catStats.categoryLevels(:);
@@ -470,8 +522,8 @@ if runLoop
                 end
             end
 
-            % Verify that we recovered all expected labels
-            if ~isequal(sort(compLabels(:)), sort(fixedCompLabels(:)))
+            % Verify labels match (skip check if labels were just locked above)
+            if ~isempty(fixedCompLabels) && ~isequal(sort(compLabels(:)), sort(fixedCompLabels(:)))
                 fprintf('  -> Skipping: comparison label mismatch.\n');
                 continue
             end
@@ -731,7 +783,7 @@ end
 ZscoreYlim = ceil(max(S.TableStimComp.('Z-score'))) +0.1*ceil(max(S.TableStimComp.('Z-score')));
 
 % Generate swarm + bootstrap plot for z-scores
-[fig,~,~] = plotSwarmBootstrapWithComparisons( ...
+[fig,~,figAllDiffs] = plotSwarmBootstrapWithComparisons( ...
     S.TableStimComp, pairsAll, pValsZ, {'Z-score'}, ...
     yLegend = 'Z-score', yMaxVis = ZscoreYlim, ...
     diff = true, plotMeanSem = true, Alpha = 0.7);
@@ -747,13 +799,27 @@ figure(fig);
 set(fig, 'Units', 'centimeters', 'Position', [20 20 10 6]);
 colormap(fig, sharedCmap);
 
-set(gca,'Clipping','off')
-
+%set(gca,'Clipping','off')
+pause(2)
 % Save figure if PaperFig mode is active
 if params.PaperFig
     vs.printFig(fig, sprintf('Zscore-Swarm-%s', figTag), ...
         PaperFig = params.PaperFig);
 end
+
+ax = findobj(figAllDiffs, 'Type', 'axes');
+for i = 1:numel(ax)
+    formatAxes(ax(i), 8, 'helvetica');
+end
+
+figure(figAllDiffs);
+pause(2)
+% Save figure if PaperFig mode is active
+if params.PaperFig
+    vs.printFig(figAllDiffs, sprintf('AllDiff-Zscore-Swarm-%s', figTag), ...
+        PaperFig = params.PaperFig);
+end
+
 
 % For exactly two items, also produce a paired scatter plot
 if numel(compLabels) == 2
@@ -781,7 +847,7 @@ end
 spkMax = max(S.TableStimComp.SpkR) +0.1*max(S.TableStimComp.SpkR);
 
 % Generate swarm + bootstrap plot for spike rates
-[fig,~,~] = plotSwarmBootstrapWithComparisons( ...
+[fig,~,figAllDiffs] = plotSwarmBootstrapWithComparisons( ...
     S.TableStimComp, pairsAll, pValsSpk, {'SpkR'}, ...
     yLegend = 'SpkR', yMaxVis = spkMax, ...
     diff = true, plotMeanSem = true, Alpha = 0.7);
@@ -796,10 +862,25 @@ end
 figure(fig);
 set(fig, 'Units', 'centimeters', 'Position', [20 20 10 6]);
 colormap(fig, sharedCmap);
-
+pause(2)
 % Save figure if PaperFig mode is active
 if params.PaperFig
     vs.printFig(fig, sprintf('SpkRate-Swarm-%s', figTag), ...
+        PaperFig = params.PaperFig);
+end
+
+ax = findobj(figAllDiffs, 'Type', 'axes');
+for i = 1:numel(ax)
+    formatAxes(ax(i), 8, 'helvetica');
+end
+
+
+figure(figAllDiffs);
+pause(2)
+
+% Save figure if PaperFig mode is active
+if params.PaperFig
+    vs.printFig(figAllDiffs, sprintf('AllDiff-SpkRate-Swarm-%s', figTag), ...
         PaperFig = params.PaperFig);
 end
 
@@ -881,7 +962,7 @@ totals                  = splitapply(@sum, tempTable.respNeur, G);
 tempTable.TotalRespNeur = totals(G);
 
 % Generate swarm plot for fraction responsive
-fig = plotSwarmBootstrapWithComparisons( ...
+[fig,~,figAllDiffs] = plotSwarmBootstrapWithComparisons( ...
     tempTable, pairsAll, pValsFrac, ...
     {'respNeur','totalSomaticN'}, ...
     fraction = true, showBothAndDiff = false, ...
@@ -939,6 +1020,13 @@ if params.PaperFig
         PaperFig = params.PaperFig);
 end
 
+figure(figAllDiffs);
+% Save figure if PaperFig mode is active
+if params.PaperFig
+    vs.printFig(figAllDiffs, sprintf('AllDiff-RespUnits-%s', figTag), ...
+        PaperFig = params.PaperFig);
+end
+
 % =========================================================================
 % SECTION 11 — SAVE ANALYSIS STRUCT TO FIGURE DIRECTORY
 % =========================================================================
@@ -986,20 +1074,27 @@ function [labels, items] = buildMode3Items(stimsNeeded, catList, levelsCell)
 %   labels{k} = 'MB_dir_0' etc.
 %   items(k)  = struct('stim','MB', 'cat','direction', 'lv',0).
 
-    labels = {};
-    items  = struct('stim', {}, 'cat', {}, 'lv', {});
+labels = {};
+items  = struct('stim', {}, 'cat', {}, 'lv', {});
 
-    for si = 1:numel(stimsNeeded)
-        sn   = stimsNeeded{si};         % stimulus name
-        cat  = catList{si};             % category name
-        lvls = levelsCell{si};          % numeric level vector
+for si = 1:numel(stimsNeeded)
+    sn   = stimsNeeded{si};
+    cat  = catList{si};
+    lvls = levelsCell{si};
 
-        for lvi = 1:numel(lvls)
-            lv = lvls(lvi);             % single level value
-            labels{end+1} = makeCompLabel(sn, cat, lv);                     %#ok<AGROW>
-            items(end+1)  = struct('stim', sn, 'cat', cat, 'lv', lv);      %#ok<AGROW>
-        end
+    if isempty(cat)
+        % No category → single item labeled with plain stimulus name
+        labels{end+1} = sn;                                             %#ok<AGROW>
+        items(end+1)  = struct('stim', sn, 'cat', '', 'lv', NaN);      %#ok<AGROW>
+        continue
     end
+
+    for lvi = 1:numel(lvls)
+        lv = lvls(lvi);             % single level value
+        labels{end+1} = makeCompLabel(sn, cat, lv);                     %#ok<AGROW>
+        items(end+1)  = struct('stim', sn, 'cat', cat, 'lv', lv);      %#ok<AGROW>
+    end
+end
 end
 
 

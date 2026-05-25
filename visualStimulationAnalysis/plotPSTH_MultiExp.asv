@@ -573,7 +573,8 @@ if forloop
                     if ~isSplitActive
                         trialMask = true(size(directimesSorted));
                     else
-                        trialMask = abs(catValues - str2double(catLabelsAll{s}(ci))) < 1e-6;
+                        targetVal = str2double(catLabelsAll{s}(ci));
+                        trialMask = ismembertol(catValues, targetVal, 1e-3);
                     end
                     catOnsets = directimesSorted(trialMask);
 
@@ -788,19 +789,43 @@ legendLabels  = {};
 
 % ---- Category colour maps -----------------------------------------------
 catColorMaps = cell(nStim, 1);
+
+% Distinct base palette
+basePalette =  [
+    0.0000    0.4470    0.7410   % blue
+    0.8500    0.3250    0.0980   % orange
+    0.4940    0.1840    0.5560   % purple
+    ];
+
 for s = 1:nStim
+
     nc = numel(catLabelsAll{s});
-    if nc == 1
-        catColorMaps{s} = baseColors(s, :);
-    else
-        cmap = zeros(nc, 3);
-        for ci = 1:nc
-            frac       = (ci - 1) / max(nc - 1, 1);
-            cmap(ci,:) = baseColors(s,:) .* (1 - 0.5*frac) + [0.3 0.1 0]*frac;
-            cmap(ci,:) = min(max(cmap(ci,:), 0), 1);
+    cmap = zeros(nc, 3);
+
+    for ci = 1:nc
+
+        % Which base color
+        baseIdx = mod(ci-1, size(basePalette,1)) + 1;
+
+        % Alternate between dark/light shade
+        shadeIdx = floor((ci-1) / size(basePalette,1));
+
+        baseC = basePalette(baseIdx,:);
+
+        if shadeIdx == 0
+            % darker/full version
+            newC = baseC;
+        else
+            % lighter version
+            newC = baseC + (1-baseC)*0.45;
         end
-        catColorMaps{s} = cmap;
+
+        cmap(ci,:) = min(max(newC,0),1);
+
     end
+
+    catColorMaps{s} = cmap;
+
 end
 
 % ---- Plot each condition ------------------------------------------------
@@ -831,7 +856,7 @@ for s = 1:nStim
                     depthBinEdges(b), depthBinEdges(b+1), nValid);
             elseif isSplitHere
                 lineColor   = catColorMaps{s}(ci, :);
-                legendLabel = sprintf('%s %s=%s (n=%d)', ...
+                legendLabel = sprintf('%s (n=%d)', ...
                     shortName, params.splitBy, catLabelsAll{s}(ci), nValid);
             else
                 lineColor   = baseColors(s,:);

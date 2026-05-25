@@ -287,7 +287,7 @@ end
 % Significance brackets. When >5 pairs, only bracket adjacent groups to
 % avoid visual clutter; the full set is in figAllDiffs.
 if ~isempty(pairs) && numel(pValues) == size(pairs, 1)
-    adjacentOnly = size(pairs, 1) > 5;
+    adjacentOnly = size(pairs, 1) > 6;
     plotBrackets(ax, tblPlot, stimuli, pairs, pValues, ...
         yMaxVis, bracketPad, stackPad, textPad, adjacentOnly);
 end
@@ -718,26 +718,33 @@ end
 % e.g. 'MB_dir_1p57' -> 'MB 1.57', 'MG_ang_90' -> 'MG 90'
 % =========================================================================
 function out = buildTickLabels(Str)
+
+% ---- detect whether prefix is informative ----
+prefixes = strings(size(Str));
+for i = 1:numel(Str)
+    prefixes(i) = regexp(Str(i), '^[A-Z]+', 'match', 'once');
+end
+
+uniquePrefixes = unique(prefixes);
+removePrefix = numel(uniquePrefixes) == 1;   % <-- key logic
+
 out = strings(size(Str));
+
 for i = 1:numel(Str)
     s = Str(i);
 
-    % Extract uppercase prefix (MB, MG, etc.)
-    prefix = regexp(s, '^[A-Z]+', 'match', 'once');
+    prefix = prefixes(i);
 
-    % Extract number-like string (possibly negative or with 'p' for decimal)
     numStr = regexp(s, '-?\d+(?:[p\.]\d+)?', 'match', 'once');
 
     if isempty(numStr)
-        out(i) = s;                                    % no number found — use original
+        out(i) = s;
         continue
     end
 
-    % Decode 'p' -> '.' and convert to number
     numStr = replace(numStr, 'p', '.');
     numVal = str2double(numStr);
 
-    % Format with up to 2 decimals, strip trailing zeros
     if numVal < 0.01 && numVal ~= 0
         numFormatted = compose("%.2e", numVal);
     else
@@ -745,7 +752,8 @@ for i = 1:numel(Str)
     end
     numFormatted = regexprep(numFormatted, '\.?0+$', '');
 
-    if ~ismissing(prefix)
+    % ---- conditional prefix removal ----
+    if ~ismissing(prefix) && ~removePrefix
         out(i) = prefix + " " + numFormatted;
     else
         out(i) = numFormatted;

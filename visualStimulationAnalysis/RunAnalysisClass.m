@@ -94,8 +94,8 @@ results= SpatialTuningIndex([49:54,64:66, 68:85 87:97], indexType =  "L_amplitud
 %%%%%%%%
 %%%%%%%%
 
-%% %% Compare SDGm vs SDGs, use gridmode true, selects maximum spatial category across directions
-[tempTableMW] = AllExpAnalysis([40:43, 49:54,64:66,68:85 87:97], overwrite=true,ComparePairs={'SDGm','SDGs'},PaperFig=true,...
+%% %% Compare SDGm vs SDGs
+[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97], overwrite=true,ComparePairs={'SDGm','SDGs'},PaperFig=true,...
     overwriteResponse=true,overwriteStats=true,useFDR=false,maxCategory=false,BaseRespWindow=1000);
 
 %% %% Compare SDGm vs SDGs, across directions
@@ -106,11 +106,15 @@ results= SpatialTuningIndex([49:54,64:66, 68:85 87:97], indexType =  "L_amplitud
 plotPSTH_MultiExp([49:54,64:66,68:85 87:97], overwrite=false, zScore=true,TakeTopPercentTrials=[], PaperFig=true, byDepth=false, smooth=50, postStim= 1000, stimTypes={"SDGm","SDGs"},unionResponsive=true); 
 
 %% Raster for MG and SG
-plotRaster_MultiExp([49:54,64:66,68:85 87:97],overwrite=false,TakeTopPercentTrials=[],PaperFig=true,postStim=1000,stimTypes=["SDG"],unionUnits=true)
+plotRaster_MultiExp([49:54,64:66,68:85 87:97],overwrite=true,TakeTopPercentTrials=[],PaperFig=true,postStim=500,stimTypes=["SDG"],unionUnits=true,preBase=500)
 
-%% %% Compare NI vs NV, across directions
+%% %% Compare NI vs NV, 
 [tempTableMW] = AllExpAnalysis([40:43 49:54,64:66,68:85 87:97], overwrite=true,ComparePairs={'NV','NI'},PaperFig=true,...
     overwriteResponse=false,overwriteStats=true,useFDR=false,maxCategory=false,BaseRespWindow=1000);
+%% %% Compare NI vs NV, 
+[tempTableMW] = AllExpAnalysis([92:97], overwrite=false,ComparePairs={'NI','NV'},CompareCategory={"imgeOrder",""},CompareLevels={[1,9],[]},PaperFig=true,...
+    overwriteResponse=true,overwriteStats=true,useFDR=false,maxCategory=false,BaseRespWindow=1000);
+
 %% Raster for NI and NV
 plotRaster_MultiExp([49:54,64:66,68:85 87:97],overwrite=true,TakeTopPercentTrials=[],PaperFig=true,postStim=1000,stimTypes=["NI","NV"],unionUnits=false )
 
@@ -179,9 +183,20 @@ plotRaster_MultiExp([49:54,64:66,68:85 87:97], overwrite=true, sortBy="preferred
 %%%%%%%%
 
 %%  Compares MB across differen directions
-[tempTableMW] = AllExpAnalysis([49:54,64:66,68:85 87:97], overwrite=false,ComparePairs={'MB'},CompareCategory="sizes",PaperFig=true,...
-    overwriteResponse=false,overwriteStats=true, BaseRespWindow = 500);
+[tempTableMW] = AllExpAnalysis([40:43, 49:54,64:66,68:85 87:97], overwrite=false,ComparePairs={'MB'},CompareCategory="directions",PaperFig=true,...
+    overwriteResponse=false,overwriteStats=true, BaseRespWindow = 1500);
+%%
+plotPSTH_MultiExp([40:43, 49:54,64:66,68:85 87:97], overwrite=false, zScore=true,TakeTopPercentTrials=[], PaperFig=true,postStim =2000, byDepth=false, smooth=50, stimTypes={"MB"},splitBy="directions"); %stimTypes=["linearlyMovingBall"]
 
+%%  Compares MB across differen directions
+[tempTableMW] = AllExpAnalysis([40:43, 49:54,64:66,68:85 87:97], overwrite=false,ComparePairs={'SDGm'},CompareCategory="angles",CompareLevels = {[0,90,180,270]},PaperFig=true,...
+    overwriteResponse=false,overwriteStats=true, BaseRespWindow = 1000);
+%%
+plotPSTH_MultiExp([40:43, 49:54,64:66,68:85 87:97], overwrite=true, zScore=true,TakeTopPercentTrials=[], PaperFig=true,postStim =1000, byDepth=false, smooth=50, stimTypes={"SDGm"},splitBy="angles",splitLevels=[0,90,180,270]); %stimTypes=["linearlyMovingBall"]
+
+%% 
+
+AllExpDirectionTuning([40:43, 49:54,64:66,68:85 87:97])
 %%
 %%%%%%%%
 %%%%%%%%
@@ -247,7 +262,7 @@ for ex = [97]
     %dT = vs.getDiodeTriggers;
     % vs.plotDiodeTriggers
     %vs.getSyncedDiodeTriggers("overwrite",true);
-    %r = vs.ResponseWindow('overwrite',true);
+    r = vs.ResponseWindow('overwrite',true);
     %results = vs.ShufflingAnalysis('overwrite',true);
     vs.plotRaster('exNeurons',13,MergeNtrials=1,overwrite=true, selectCats =[], PaperFig=true)
     close all

@@ -40,7 +40,7 @@ arguments (Input)
     params.overwrite        = false   % recompute even if saved file exists
     params.randomSeed       = 42      % fixed seed for reproducibility
     params.ApplyFDR         = false    % Benjamini-Hochberg FDR correction for pairwise
-    params.MovingWindowDuration = 200   % ms sliding window for moving ball per-trial peak response
+    params.MovingWindowDuration = []   % ms sliding window for moving ball per-trial peak response
                                      % Applied to full stimulus duration, response only (not baseline)
                                      % Only used when stimulus is linearlyMovingBall
     params.GratingType       = "moving"  %If the stimulus is grating, select it's mode.                                  
@@ -196,13 +196,22 @@ if isSpeedComp
         Mr_s = BuildBurstMatrix(goodU, round(p.t), ...
             round(trialTimes_s), round(stimDur_s));
 
+        if ~isempty(params.MovingWindowDuration)
+
         assert(size(Mr_s,3) >= params.MovingWindowDuration, ...
             'Speed%d stimulus duration (%d ms) shorter than MovingWindowDuration (%d ms).', ...
             s, size(Mr_s,3), params.MovingWindowDuration);
 
+
+
         mrMov_s     = movmean(Mr_s, params.MovingWindowDuration, 3, ...
             'Endpoints', 'discard');
         responses_s = max(mrMov_s, [], 3);              % [nTrials_s × nNeurons] peak window
+
+        else
+             responses_s = mean(Mr_s,3);
+
+        end
 
         % Baseline: fixed window — no moving window on baseline
         Mb_s = BuildBurstMatrix(goodU, round(p.t), ...
@@ -263,13 +272,23 @@ else
             Mr_s = BuildBurstMatrix(goodU, round(p.t), ...
                 round(trialTimes_s), round(stimDur_s));
 
-            assert(size(Mr_s,3) >= params.MovingWindowDuration, ...
-                'Speed%d: stimulus (%d ms) shorter than MovingWindowDuration (%d ms).', ...
-                s, size(Mr_s,3), params.MovingWindowDuration);
 
-            mrMov_s          = movmean(Mr_s, params.MovingWindowDuration, 3, ...
-                'Endpoints', 'discard');
-            responsesList{s} = max(mrMov_s, [], 3);   % [nTrials_s × nNeurons]
+            if ~isempty(params.MovingWindowDuration)
+
+                assert(size(Mr_s,3) >= params.MovingWindowDuration, ...
+                    'Speed%d: stimulus (%d ms) shorter than MovingWindowDuration (%d ms).', ...
+                    s, size(Mr_s,3), params.MovingWindowDuration);
+
+                mrMov_s          = movmean(Mr_s, params.MovingWindowDuration, 3, ...
+                    'Endpoints', 'discard');
+                responsesList{s} = max(mrMov_s, [], 3);   % [nTrials_s × nNeurons]
+
+            else
+                responsesList{s} = mean(Mr_s,3);
+
+            end
+
+
 
             % Baseline: fixed window — same approach for all speeds
             Mb_s = BuildBurstMatrix(goodU, round(p.t), ...
