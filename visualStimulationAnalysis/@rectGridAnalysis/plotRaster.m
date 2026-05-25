@@ -6,24 +6,32 @@ arguments (Input)
     params.analysisTime = datetime('now')
     params.inputParams = false
     params.preBase = 200
-    params.bin = 40
-    params.exNeurons = []
+    params.bin =15
+    params.exNeurons double = []
+    params.exNeuronsPhyID double = []   % alternative to exNeurons: specify neurons by phy cluster ID
     params.AllSomaticNeurons = false
-    params.AllResponsiveNeurons = true
+    params.AllResponsiveNeurons = false
     params.fixedWindow = true
     params.MergeNtrials =1
     params.GaussianLength = 50
-    params.oneTrial = false
+    params.oneTrial = false %Highlight one trial
     params.selectedLum = []
     params.plotPatch logical = true
     params.PaperFig logical = false
     params.stim2show = 300
+    params.statType string = "BootstrapPerNeuron"
     
 end
 
 
 NeuronResp = obj.ResponseWindow;
-Stats = obj.ShufflingAnalysis;
+
+if params.statType == "BootstrapPerNeuron"
+    Stats = obj.BootstrapPerNeuron;
+else
+    Stats = obj.StatisticsPerNeuron;
+end
+
 directimesSorted = NeuronResp.C(:,1)';
 
 nSize = numel(unique(NeuronResp.C(:,3)));
@@ -38,11 +46,24 @@ end
 
 proportionTrials = 1/(numel(NeuronResp.C(:,1))/numel(directimesSorted));
 
-goodU = NeuronResp.goodU;
 p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
 phy_IDg = p.phy_ID(string(p.label') == 'good');
 pvals = Stats.pvalsResponse;
+label = string(p.label');
+goodU = p.ic(:,label == 'good'); %somatic neurons
 
+% Convert phy IDs to unit indices if exNeuronsPhyID is provided.
+% This overrides exNeurons if both are set — phy ID is more explicit.
+if ~isempty(params.exNeuronsPhyID)
+    [found, neuronIdx] = ismember(params.exNeuronsPhyID, phy_IDg);
+    if any(~found)
+        warning('The following phy IDs were not found in good units and will be skipped: %s', ...
+            num2str(params.exNeuronsPhyID(~found)));
+    end
+    params.exNeurons = neuronIdx(found);  % convert to regular indices
+    fprintf('  Converted phy IDs [%s] -> unit indices [%s]\n', ...
+        num2str(params.exNeuronsPhyID(found)), num2str(params.exNeurons));
+end
 
 stimDur = NeuronResp.stimDur;
 stimInter = NeuronResp.stimInter;
@@ -79,6 +100,8 @@ win= preBase+params.stim2show; %stimDur+preBase*2;
 [Mr]=BuildBurstMatrix(goodU,round(p.t/bin),round((directimesSorted-preBase)/bin),round(win/bin));
 
 %Mr = ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
+
+%%%%Sort 
 
 
 
@@ -288,18 +311,21 @@ for u = eNeuron
     % pos1 = cb.Position(1);
     % cb.Position(1) = pos1 + 0.03;
 
+    figName = sprintf('%s-rect-GRid-raster-eNeuron-%d-Lum-%d',obj.dataObj.recordingName,u,params.selectedLum);
+
 
     if params.PaperFig
-        obj.printFig(fig,sprintf('%s-rect-GRid-raster-eNeuron-%d',obj.dataObj.recordingName,u),PaperFig = params.PaperFig)
+        obj.printFig(fig,figName,PaperFig = params.PaperFig)
     elseif params.overwrite
-        obj.printFig(fig,sprintf('%s-rect-GRid-raster-eNeuron-%d',obj.dataObj.recordingName,u))
+        obj.printFig(fig,figName)
     end
 
 
     %%Plot raw data
 
-    maxRespIn = maxRespIn-1;
 
+    maxRespIn = maxRespIn-1;
+    % 
     trialsPerCath = length(directimesSorted)/(length(unique(seqMatrix)));
     trials = maxRespIn*trialsPerCath+1:maxRespIn*trialsPerCath + trialsPerCath;
 
@@ -311,7 +337,7 @@ for u = eNeuron
 
     typeData = "line"; %or heatmap
 
-    spikes = squeeze(BuildBurstMatrix(goodU(:,u),round(p.t),round(startTimes),round((window))));
+    spikes = squeeze(BuildBurstMatrix(goodU(:,u),round(p.t),round(startTimes),round(window)));
 
     if params.oneTrial
         [mx ind] = max(sum(spikes,2)); %select trial with most spikes
@@ -320,8 +346,8 @@ for u = eNeuron
     end
     fig2 = figure;
 
-    [fig2, mx, mn] = PlotRawDataNP(obj,fig = fig2,c = chan, startTimes = startTimes(ind),...
-        window = window,spikeTimes = spikes(ind,:));
+    [fig2, mx, mn] = PlotRawDataNP(obj,fig = fig2,chan = chan, startTimes = startTimes(ind),...
+        window = window,spikeTimes = spikes(ind,:)); % 
     %
     % xline(-start/1000,'r','LineWidth',1.5)
     % xline((stimDur+abs(start))/1000,'r','LineWidth',1.5)
@@ -345,10 +371,11 @@ for u = eNeuron
         tr = numel(ind);
     end
 
+    figName = sprintf('%s-rect-GRid-rawData-%d-Trials-raster-eNeuron-%d-Lum%d',obj.dataObj.recordingName,tr,u,params.selectedLum);
     if params.PaperFig
-        obj.printFig(fig2,sprintf('%s-rect-GRid-rawData-%d-Trials-raster-eNeuron-%d',obj.dataObj.recordingName,tr,u),PaperFig = params.PaperFig)
+        obj.printFig(fig2,figName,PaperFig = params.PaperFig)
     elseif params.overwrite
-        obj.printFig(fig2,sprintf('%s-rect-GRid-rawData-%d-Trials-raster-eNeuron-%d',obj.dataObj.recordingName,u))
+        obj.printFig(fig2,figName)
     end
 
     %prettify_plot

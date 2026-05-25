@@ -16,6 +16,8 @@ arguments (Input)
     params.nShuffle = 2 %Number of shuffles to generate shuffled receptive fields. 
     params.testConvolution = false
     params.reduceFactor = 20 %reduce factor for screen resolution
+    params.statType string = "maxPermutationTest"
+    params.nGrid = 9
 end
 
 if params.inputParams,disp(params),return,end
@@ -37,10 +39,18 @@ if isfile(sprintf('%s-Speed-%d.mat',filename,params.speed)) && ~params.overwrite
 end
 
 NeuronResp = obj.ResponseWindow;
-Stats = obj.ShufflingAnalysis;
-goodU = NeuronResp.goodU;
+
+% Stats struct for p-values
+if params.statType == "BootstrapPerNeuron"
+    Stats = obj.BootstrapPerNeuron;
+else
+    Stats = obj.StatisticsPerNeuron;
+end
+
 p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
 phy_IDg = p.phy_ID(string(p.label') == 'good');
+label  = string(p.label');
+goodU  = p.ic(:, label == 'good');
 
 fieldName = sprintf('Speed%d', params.speed);
 pvals = Stats.(fieldName).pvalsResponse;
@@ -53,7 +63,10 @@ if params.AllResponsiveNeurons
         fprintf('No responsive neurons.\n')
         return
     end
+else
+    respU = 1:size(goodU,2);
 end
+
 
 if params.exNeurons >0
     respU = params.exNeurons;
@@ -100,6 +113,7 @@ sizeX = size(Xpos());
 
 trialDivisionVid = size(C,1)/numel(unique(C(:,2)))/numel(unique(C(:,3)))/numel(unique(C(:,4)))...
     /numel(unique(C(:,5)));
+
 
 %%%Create a matrix with trials that have unique positions
 ChangePosX = zeros(sizeX(1)*sizeX(2)*sizeX(3)*sizeN*trialDivisionVid,sizeX(4));
@@ -308,7 +322,7 @@ offsetN = length(unique(C(:,3)));
 if params.testConvolution
 %%%Test convolution
 spikeSumArt = zeros(size(spikeSum));
-spikeSumArt([1:10 91:100 181:190 271:280],1,end-20:end)=1;%Spiking at the end of first offset
+spikeSumArt([1:10 91:100 161:180],1,end-20:end)=1;%Spiking at the end of first offset
 %spikeSumArt(nT/4+1:nT/4+15,7,end-20:end) =1;%
 spikeSumsDiv{1}{1} = spikeSumArt;
 figure;imagesc(squeeze( spikeSumsDiv{1}{1}(:,:,:)));colormap(flipud(gray(64)));
@@ -358,18 +372,36 @@ Ulum = unique(C(:,6));
 % Generate video trials (this part stays the same)
 videoTrials = zeros(nT/trialDivisionVid,redCoorY,redCoorY,sizeX(4),'single');
 h =1;
+pad = ceil(max(sizesU)/(2*reduceFactor)) + 1;
+[x_pad, y_pad] = meshgrid(1:redCoorY + 2*pad, 1:redCoorY + 2*pad);
+x_pad = fliplr(x_pad);
+cropOffsetX = (redCoorX - redCoorY)/2;
+
 for i = 1:trialDivisionVid:nT
+    % for j = 1:sizeX(4)
+    %     xyScreen = zeros(redCoorY,redCoorX,"single");
+    %     centerX = ChangePosX(i,j)/reduceFactor;
+    %     centerY = ChangePosY(i,j)/reduceFactor;
+    %     radius = sizeV(i)/2;
+    %     distances = sqrt((x - centerX).^2 + (y - centerY).^2);
+    %     xyScreen(distances <= radius/reduceFactor+0.5) = 1;
+    %     videoTrials(h,:,:,j) = xyScreen(:,(redCoorX-redCoorY)/2+1:(redCoorX-redCoorY)/2+redCoorY);       
+    % end
+
     for j = 1:sizeX(4)
-        xyScreen = zeros(redCoorY,redCoorX,"single");
-        centerX = ChangePosX(i,j)/reduceFactor;
-        centerY = ChangePosY(i,j)/reduceFactor;
+        xyScreen = zeros(redCoorY + 2*pad, redCoorY + 2*pad, "single");
+        centerX = ChangePosX(i,j)/reduceFactor - cropOffsetX + pad;
+        centerY = ChangePosY(i,j)/reduceFactor + pad;
         radius = sizeV(i)/2;
-        distances = sqrt((x - centerX).^2 + (y - centerY).^2);
-        xyScreen(distances <= radius/reduceFactor+0.5) = 1;
-        videoTrials(h,:,:,j) = xyScreen(:,(redCoorX-redCoorY)/2+1:(redCoorX-redCoorY)/2+redCoorY);       
+        distances = sqrt((x_pad - centerX).^2 + (y_pad - centerY).^2);
+        xyScreen(distances <= radius/reduceFactor + 0.5) = 1;
+        % Crop back to original square size, removing padding
+        videoTrials(h,:,:,j) = xyScreen(pad+1:pad+redCoorY, pad+1:pad+redCoorY);
     end
     h = h+1;
 end
+
+implay(squeeze(videoTrials(9,:,:,:)));
 
 for t = 1:numel(IndexDiv)
 
@@ -406,7 +438,11 @@ for t = 1:numel(IndexDiv)
             %     videoTrials(:,:,j) = xyScreen(:,(redCoorX-redCoorY)/2+1:(redCoorX-redCoorY)/2+redCoorY);
             % end
 
-            videoTrialsi = squeeze(videoTrials(ceil(p/2),:,:,:));
+            if trialDivision*2 == trialDivisionVid %two luminosities are used, so trial division for videos are twicethe trialdivision
+                videoTrialsi = squeeze(videoTrials(ceil(p/2),:,:,:));
+            else
+                videoTrialsi = squeeze(videoTrials(p,:,:,:));
+            end
             % OPTIMIZATION 3: Vectorized spike mean calculation
             spikeMean = mean(spikeSum(i:i+trialDivision-1,:,:), 'omitnan');
             spikeMeanShuff = mean(shuffledData(i:i+trialDivision-1,:,:,:), 'omitnan');
@@ -456,6 +492,58 @@ for t = 1:numel(IndexDiv)
         %implay(squeeze(RFu(:,:,:,1)));
         %implay(videoTrials)
 
+        %%%%%%%%%% Spike rate grid map
+        nGrid = params.nGrid;
+        cropOffsetX = (redCoorX - redCoorY)/2;
+
+        xMin = cropOffsetX * reduceFactor;
+        xMax = (cropOffsetX + redCoorY) * reduceFactor;
+        yMin = 0;
+        yMax = redCoorY * reduceFactor;
+
+        xEdges = linspace(xMin, xMax, nGrid+1);
+        yEdges = linspace(yMin, yMax, nGrid+1);
+
+        gridSpikeRate = zeros(nGrid, nGrid, nNeurons, length(Usize), length(Ulum));
+        gridSpikeRateShuff = zeros(nGrid, nGrid, nNeurons, nShuffle, length(Usize), length(Ulum));
+        trialCount = zeros(nGrid, nGrid, length(Usize), length(Ulum));
+
+        for i = 1:nT
+            xPos = mean(ChangePosX(i,:));
+            yPos = mean(ChangePosY(i,:));
+
+            xBin = discretize(xPos, xEdges);
+            yBin = discretize(yPos, yEdges);
+
+            if isnan(xBin) || isnan(yBin)
+                continue
+            end
+
+            sizeIdx = find(Usize == C(i,5));
+            lumIdx  = find(Ulum  == C(i,6));
+
+            trialCount(yBin, xBin, sizeIdx, lumIdx) = trialCount(yBin, xBin, sizeIdx, lumIdx) + 1;
+
+            gridSpikeRate(yBin, xBin, :, sizeIdx, lumIdx) = gridSpikeRate(yBin, xBin, :, sizeIdx, lumIdx) + ...
+                reshape(mean(spikeSum(i,:,:), 3), [1 1 nNeurons]);
+
+            for s = 1:nShuffle
+                gridSpikeRateShuff(yBin, xBin, :, s, sizeIdx, lumIdx) = gridSpikeRateShuff(yBin, xBin, :, s, sizeIdx, lumIdx) + ...
+                    reshape(mean(shuffledData(i,:,:,s), 3), [1 1 nNeurons]);
+            end
+        end
+
+        % Normalize by trial count
+        for si = 1:length(Usize)
+            for li = 1:length(Ulum)
+                tc = max(trialCount(:,:,si,li), 1);
+                gridSpikeRate(:,:,:,si,li) = gridSpikeRate(:,:,:,si,li) ./ tc;
+                for s = 1:nShuffle
+                    gridSpikeRateShuff(:,:,:,s,si,li) = gridSpikeRateShuff(:,:,:,s,si,li) ./ tc;
+                end
+            end
+        end
+
         %%%%%%%%%% Normalization parameters
         L = size(spikeSum,3);
         time_zero_index = ceil(L / 2);
@@ -501,6 +589,8 @@ for t = 1:numel(IndexDiv)
 
         names = {'X','Y'};
 
+        %figure;imagesc(squeeze(RFuDirSizeLumFilt(1,:,:,:,:)));
+
         if params.noEyeMoves
             save(sprintf('NEM-RFuSTDirSizeLumFilt-Q%d-Div-%s-%s',q,names{t},NP.recordingName),'RFuDirSizeLumFilt','-v7.3')
             save(sprintf('NEM-RFuSTDirSize-Q%d-Div-%s-%s',q,names{t},NP.recordingName),'RFuSTDirSize','-v7.3')
@@ -528,6 +618,8 @@ for t = 1:numel(IndexDiv)
             S.RFuSTDirSizeLum = RFuSTDirSizeLum;
             S.RFuST = RFuST;
             S.RFuShuffST = RFuShuffST;
+            S.gridSpikeRate = gridSpikeRate;
+            S.gridSpikeRateShuff = gridSpikeRateShuff;
             save(sprintf('%s-Speed-%d.mat',filename,params.speed),'-struct','S');
             results =  S;
         end

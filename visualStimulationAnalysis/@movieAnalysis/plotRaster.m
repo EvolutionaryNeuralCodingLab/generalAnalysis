@@ -5,8 +5,8 @@ arguments (Input)
     params.overwrite logical = false
     params.analysisTime = datetime('now')
     params.inputParams = false
-    params.preBase = 500
-    params.bin = 30
+    params.preBase = 750
+    params.bin = 60
     params.exNeurons = 1
     params.AllSomaticNeurons = false
     params.AllResponsiveNeurons = false
@@ -20,13 +20,14 @@ end
 
 
 NeuronResp = obj.ResponseWindow;
-Stats = obj.ShufflingAnalysis;
+Stats = obj.StatisticsPerNeuron;
 directimesSorted = NeuronResp.C(:,1)';
 
-goodU = NeuronResp.goodU;
 p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
 phy_IDg = p.phy_ID(string(p.label') == 'good');
 pvals = Stats.pvalsResponse;
+label   = string(p.label');
+goodU   = p.ic(:, label == 'good');
 
 stimDur = NeuronResp.stimDur;
 stimInter = NeuronResp.stimInter;

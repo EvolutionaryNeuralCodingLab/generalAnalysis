@@ -6,8 +6,9 @@ arguments (Input)
     params.analysisTime = datetime('now')
     params.inputParams = false
     params.preBase = 200
-    params.bin = 15
+    params.bin = 30
     params.exNeurons = 1
+     params.exNeuronsPhyID double = []   % alternative to exNeurons: specify neurons by phy cluster ID
     params.AllSomaticNeurons = false
     params.AllResponsiveNeurons = false
     params.SelectedWindow = true
@@ -15,16 +16,27 @@ arguments (Input)
     params.MergeNtrials =1
     params.oneTrial = false
     params.GaussianLength = 10
+    params.Gaussian logical = false
     params.MaxVal_1 =true
     params.useNormTrialWindow = false
     params.OneDirection string = "all"
     params.OneLuminosity string = "all"
     params.PaperFig logical = false
+    params.statType string = "maxPermuteTest"
+    params.sortingOrder string = ["direction","luminosity","offset","size","speed"]
+
     
 end
 
 NeuronResp = obj.ResponseWindow;
-Stats = obj.ShufflingAnalysis;
+
+if params.statType == "BootstrapPerNeuron"
+    Stats = obj.BootstrapPerNeuron;
+else
+    Stats = obj.StatisticsPerNeuron;
+end
+
+
 
 if params.speed ~= "max"
     fieldName =  sprintf('Speed%d',  str2double(params.speed));
@@ -46,12 +58,26 @@ else
 
 end
 
-goodU = NeuronResp.goodU;
 p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
 phy_IDg = p.phy_ID(string(p.label') == 'good');
 pvals = Stats.(fieldName).pvalsResponse;
 stimDur = NeuronResp.(fieldName).stimDur;
 stimInter = NeuronResp.stimInter;
+label = string(p.label');
+goodU = p.ic(:,label == 'good'); %somatic neurons
+
+% Convert phy IDs to unit indices if exNeuronsPhyID is provided.
+% This overrides exNeurons if both are set — phy ID is more explicit.
+if ~isempty(params.exNeuronsPhyID)
+    [found, neuronIdx] = ismember(params.exNeuronsPhyID, phy_IDg);
+    if any(~found)
+        warning('The following phy IDs were not found in good units and will be skipped: %s', ...
+            num2str(params.exNeuronsPhyID(~found)));
+    end
+    params.exNeurons = neuronIdx(found);  % convert to regular indices
+    fprintf('  Converted phy IDs [%s] -> unit indices [%s]\n', ...
+        num2str(params.exNeuronsPhyID(found)), num2str(params.exNeurons));
+end
 
 C = NeuronResp.(fieldName).C;
 
@@ -73,16 +99,30 @@ end
 if params.OneLuminosity ~= "all"
     switch params.OneLuminosity
         case "black"
-            C = NeuronResp.(fieldName).C(round(C(:,6), 2)==1,:);
+            C = C(round(C(:,6), 2)==1,:);
         case "white"
-            C = NeuronResp.(fieldName).C(round(C(:,6), 2)==255,:);
+            C = C(round(C(:,6), 2)==255,:);
         otherwise
             error("Unknown inputPa value: %s", params.OneLuminosity)
     end
 end
 
 
-[C indexS] = sortrows(C,[2 6 3 4 5]);
+sortMap = struct( ...
+    'direction', 2, ...
+    'offset',      3, ...
+    'size',       4,...
+    'speed', 5, ...
+    'luminosity',6);
+
+sortCols = zeros(1,numel(params.sortingOrder));
+
+for k = 1:numel(params.sortingOrder)
+    sortCols(k) = sortMap.(params.sortingOrder(k));
+end
+
+[C, sortIdx] = sortrows(C, sortCols);
+
 directimesSorted = C(:,1)';
 
 %Unique parmeters of the different categories
@@ -91,7 +131,6 @@ uOffset = unique(C(:,3));
 uSize = unique(C(:,4));
 uSpeed = unique(C(:,5));
 uLums= unique(C(:,6));
-
 
 %Number of unique parameters per category
 offsetN = length(uOffset);
@@ -103,6 +142,132 @@ lumsN = length(uLums);
 trialDivision = nT/(offsetN*direcN*speedN*sizeN*lumsN); %Number of trials per unique conditions
 
 preBase = round(stimInter-stimInter/4);
+
+%Calculate size of ball in degrees:
+%Standard measurements for last set of experiments:
+eye_to_monitor_distance = 21.5000;
+pixel_size = 33;
+resolution = 1080;
+pixel_size =  pixel_size/resolution;
+monitor_resolution = [1920 1080];
+[theta_x,theta_y] = pixels2eyeDegrees(eye_to_monitor_distance,pixel_size,monitor_resolution);
+
+for i = 1:sizeN
+    sizeBall(i) = round(abs(abs(theta_x(1,uSize(i)))-abs(theta_x(1,1))),2);
+end
+
+sizesString = strjoin(string(sizeBall), "_");
+
+% ==========================================================
+% OUTER GROUP INFO
+% ==========================================================
+
+outerGroup = params.sortingOrder(1);
+outerCol   = sortMap.(outerGroup);
+
+outerVals = C(:,outerCol);
+
+uOuter = unique(outerVals,'stable');
+
+groupStarts = zeros(numel(uOuter),1);
+groupEnds   = zeros(numel(uOuter),1);
+
+for i = 1:numel(uOuter)
+
+    idx = find(outerVals == uOuter(i));
+
+    groupStarts(i) = idx(1);
+    groupEnds(i)   = idx(end);
+
+end
+
+groupCenters = (groupStarts + groupEnds)/2;
+
+% ==========================================================
+% BUILD GROUP LABELS
+% ==========================================================
+
+groupLabels = strings(size(uOuter));
+
+switch outerGroup
+
+    % ======================================================
+    case "direction"
+
+        for i = 1:numel(uOuter)
+
+            val = round(uOuter(i),2);
+
+            switch val
+
+                case 0
+                    groupLabels(i) = "U";
+
+                case 1.57
+                    groupLabels(i) = "L";
+
+                case 3.14
+                    groupLabels(i) = "D";
+
+                case 4.71
+                    groupLabels(i) = "R";
+
+                otherwise
+                    groupLabels(i) = string(val);
+
+            end
+        end
+
+    % ======================================================
+    case "size"
+
+        groupLabels = strings(size(uOuter));
+
+        for i = 1:numel(uOuter)
+
+            idxSize = find(uSize == uOuter(i));
+
+            if ~isempty(idxSize)
+                groupLabels(i) = sprintf('%.1f°', sizeBall(idxSize));
+            else
+                groupLabels(i) = string(uOuter(i));
+            end
+
+        end
+
+    % ======================================================
+    case "luminosity"
+
+        for i = 1:numel(uOuter)
+
+            if uOuter(i) == 1
+                groupLabels(i) = "B";
+            elseif uOuter(i) == 255
+                groupLabels(i) = "W";
+            else
+                groupLabels(i) = string(uOuter(i));
+            end
+
+        end
+
+    % ======================================================
+    case "offset"
+
+        for i = 1:numel(uOuter)
+            groupLabels(i) = sprintf('O%d',uOuter(i));
+        end
+
+    % ======================================================
+    case "speed"
+
+        for i = 1:numel(uOuter)
+            groupLabels(i) = sprintf('S%d',uOuter(i));
+        end
+
+end
+
+
+
 
 if params.AllSomaticNeurons    
     eNeuron = 1:size(goodU,2);
@@ -119,9 +284,12 @@ else
     pvals = [eNeuron;pvals(eNeuron)];
 end
 
+
 [Mr] = BuildBurstMatrix(goodU(:,eNeuron),round(p.t/params.bin),round((directimesSorted-preBase)/params.bin),round((stimDur+preBase*2)/params.bin));
 
-[Mr]=ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
+if params.Gaussian
+    [Mr]=ConvBurstMatrix(Mr,fspecial('gaussian',[1 params.GaussianLength],3),'same');
+end
 
 channels = goodU(1,eNeuron);
 
@@ -131,20 +299,6 @@ Mr2 = [];
 
 ur = 1;
 
-%Calculate size of ball in degrees:
-%Standard measurements for last set of experiments:
-eye_to_monitor_distance = 21.5000;
-pixel_size = 33;
-resolution = 1080;
-pixel_size =  pixel_size/resolution;
-monitor_resolution = [1920 1080];
-[theta_x,theta_y] = pixels2eyeDegrees(eye_to_monitor_distance,pixel_size,monitor_resolution);
-
-for i = 1:sizeN
-    sizeBall(i) = round(abs(abs(theta_x(1,uSize(i)))-abs(theta_x(1,1))),2);
-end
-
-sizesString = strjoin(string(sizeBall), "_");
 
 for u = eNeuron
 
@@ -187,6 +341,7 @@ for u = eNeuron
 
     subplot(18,1,[6 16]);
     imagesc(squeeze(Mr2).*(1000/params.bin));colormap(flipud(gray(64)));
+    set(gca,'Clipping','off')
     %Plot stim start:
     xline(preBase/params.bin,'k', LineWidth=1.5)
     %Plot stim end:
@@ -196,30 +351,75 @@ for u = eNeuron
     if params.MaxVal_1
         caxis([0 1])
     end
-    dirStart = C(1,2);
-    offStart = C(1,3);
-    lumStart = C(1,6);
-    sizeStart = C(1,4);
-    for t = 1:nT
-        if dirStart ~= C(t,2)
-            yline(t-0.5,'k',LineWidth=2);
-            dirStart = C(t,2);
-        end
-        if offStart ~= C(t,3)
-            yline(t-0.5,'k',LineWidth=0.5);
-            offStart = C(t,3);
-        end
-        if lumStart ~= C(t,6)
-            yline(t-0.5,'--b',LineWidth=1);
-            lumStart = C(t,6);
-        end
-        if sizeStart ~= C(t,4)
-            yline(t-0.5,'--r',LineWidth=0.05);
-            sizeStart = C(t,4);
-        end
+    % ==========================================================
+    % DYNAMIC GROUP LINES
+    % ==========================================================
+
+    hold on
+
+    % --- outer group (thick lines) ---
+    for i = 2:numel(groupStarts)
+
+        yline(groupStarts(i)-0.5, ...
+            'k', ...
+            'LineWidth',2);
 
     end
 
+    % ==========================================================
+    % INNER GROUPS
+    % ==========================================================
+
+    innerOrders = params.sortingOrder(2:end);
+
+    lineStyles = {'-','--',':'};
+    lineWidths = [0.8 0.8 0.8];
+
+    for s = 1:numel(innerOrders)
+
+        thisGroup = innerOrders(s);
+
+        thisCol = sortMap.(thisGroup);
+
+        vals = C(:,thisCol);
+
+        prevVal = vals(1);
+
+        for t = 2:nT
+
+            if vals(t) ~= prevVal
+
+                yline(t-0.5, ...
+                    'Color',[0.4 0.4 0.4], ...
+                    'LineStyle',lineStyles{min(s,numel(lineStyles))}, ...
+                    'LineWidth',lineWidths(min(s,numel(lineWidths))));
+
+                prevVal = vals(t);
+
+            end
+
+        end
+    end
+
+    % ==========================================================
+    % GROUP LABELS
+    % ==========================================================
+
+    xText = -8;
+
+    for i = 1:numel(groupCenters)
+
+        text(xText, ...
+            groupCenters(i), ...
+            groupLabels(i), ...
+            'HorizontalAlignment','right', ...
+            'VerticalAlignment','middle', ...
+            'FontWeight','bold', ...
+            'FontSize',8, ...
+            'FontName','helvetica', ...
+            'Clipping','off');
+
+    end
     hold on
 
     xticklabels([])
@@ -257,15 +457,50 @@ for u = eNeuron
         maxRespIn = maxRespIn-1;
         X = squeeze(Mr2(maxRespIn*trialDivision+1:maxRespIn*trialDivision + trialDivision,:,:));
         window = 500; %in ms
-        % Moving mean across 2nd dimension
-        mm = movmean(X, round(window/params.bin), 2, 'Endpoints', 'discard');
-        % Average across rows to get kernel score
-        score = mean(mm, 1);
-        % Find max kernel location
-        [maxVal, idx] = max(score);
+
+
+        % % Moving mean across 2nd dimension
+        % mm = movmean(X, round(window/params.bin), 2, 'Endpoints', 'discard');
+        % % Average across rows to get kernel score
+        % score = mean(mm, 1);
+        % % Find max kernel location
+        % [maxVal, idx] = max(score);
+
+        X(X>1) = 1;
+        [n_rows, n_cols] = size(X);
+        n_windows = n_cols - round(window/params.bin) + 1;
+
+        % Compute mean for every sliding window in every row
+        % Result: 20 x n_windows matrix
+        window_means = zeros(n_rows, n_windows);
+        for col = 1:n_windows
+            window_means(:, col) = mean(X(:, col:col+round(window/params.bin)-1), 2);
+        end
+
+        % Find the overall maximum mean across all rows and windows
+        [~, linear_idx] = max(window_means(:));
+
+        % Convert linear index to (row, col) — col = start of window
+        [best_row, best_col] = ind2sub(size(window_means), linear_idx);
 
         % Kernel column range
-        start = idx;
+        start = best_col*params.bin;
+
+
+        % % --- Plot ---
+        % figure;
+        % imagesc(X);
+        % colorbar;
+        % axis tight;
+        % hold on;
+        % 
+        % % Highlight the full best row (horizontal span)
+        % rectangle('Position', [0.5, best_row - 0.5, n_cols, 1], ...
+        %     'EdgeColor', 'r', 'LineWidth', 1.5, 'LineStyle', '--');
+        % 
+        % % Highlight the selected window (column span within best row)
+        % rectangle('Position', [best_col - 0.5, best_row - 0.5, round(window/params.bin), 1], ...
+        %     'EdgeColor', 'y', 'LineWidth', 2.5);
 
     else
         if params.useNormTrialWindow
@@ -292,15 +527,20 @@ for u = eNeuron
         'k','FaceAlpha',0.1,'EdgeColor','none')
 
 
-    TrialM = squeeze(Mr2(trials,:,round((preBase+start)/params.bin):round((preBase+start+window)/params.bin)))';
+    % TrialM = squeeze(Mr2(trials,round((preBase+start)/params.bin):round((preBase+start+window)/params.bin)))';
+    % 
+    % [mxTrial TrialNumber] = max(sum(TrialM));
 
-    [mxTrial TrialNumber] = max(sum(TrialM));
+    RasterTrials = trials(best_row);
 
-    RasterTrials = trials(TrialNumber);
+    % patch([(preBase+start)/params.bin (preBase+start+window)/params.bin (preBase+start+window)/params.bin (preBase+start)/params.bin],...
+    %     [RasterTrials-0.5 RasterTrials-0.5 RasterTrials+0.5 RasterTrials+0.5],...
+    %     'r','FaceAlpha',0.3,'EdgeColor','none')
 
-    patch([(preBase+start)/params.bin (preBase+start+window)/params.bin (preBase+start+window)/params.bin (preBase+start)/params.bin],...
+    patch([(start)/params.bin (start+window)/params.bin (start+window)/params.bin (start)/params.bin],...
         [RasterTrials-0.5 RasterTrials-0.5 RasterTrials+0.5 RasterTrials+0.5],...
         'r','FaceAlpha',0.3,'EdgeColor','none')
+
 
 
 
@@ -362,7 +602,7 @@ for u = eNeuron
     xlabel('Time [s]','FontSize',10,'FontName','helvetica');
 
     ylims = ylim;
-    yticks([round(ylims(2)/10)*5 round(ylims(2)/10)*10])
+    yticks([round(ylims(2)/10)*5 ceil(ylims(2)/10)*10])
 
 
     %%%%PLot raw data several trials one
@@ -370,19 +610,21 @@ for u = eNeuron
     
     %Mark selected trial
    
-    bin3 = 2;
+    bin3 = 1;
     trialM = BuildBurstMatrix(goodU(:,u),round(p.t/bin3),round((directimesSorted+start)/bin3),round((window)/bin3));
     TrialM = squeeze(trialM(trials,:,:))';
     
-    [mxTrial TrialNumber] = max(sum(TrialM));
+    [mxTrial TrialNumber] = max(mean(TrialM));
 
-    RasterTrials = trials(TrialNumber);
+    %RasterTrials = trials(TrialNumber);
+
+    RasterTrials = trials(best_row); 
 
     chan = goodU(1,u);
 
     subplot(18,1,[1 3])
 
-    startTimes = directimesSorted(RasterTrials)+start;
+    startTimes = directimesSorted(RasterTrials)+start-preBase;
 
     freq = "AP"; %or "LFP"
 
@@ -411,7 +653,7 @@ for u = eNeuron
     ax.XRuler.TickDirection = 'out';   % ticks only outward (bottom)
     ax.XAxisLocation = 'bottom';
     ylabel('[\muV]','FontSize',10,'FontName','helvetica')
-    title({sprintf('U.%d-Chan-%d-U.phy-%d-p-%d',u,channels(ur),phy_IDg(u),pvals(2,ur)),...
+    title({sprintf('U.%d-Chan-%d-U.phy-%d-p=%.4f',u,channels(ur),phy_IDg(u),pvals(2,ur)),...
         sprintf('Ball-sizes-deg-%s',sizesString)});
 
     %%%%%%%%%%% Plot raster of selected trials

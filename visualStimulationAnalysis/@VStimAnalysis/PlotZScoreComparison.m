@@ -201,8 +201,10 @@ if forloop
             vs.ResponseWindow('overwrite',params.overwriteResponse,'durationWindow',params.RespDurationWin);
             if isequal(params.StatMethod,'ObsWindow')
                 vs.ShufflingAnalysis('overwrite',params.overwriteStats,"N_bootstrap", params.shuffles);
-            else
+            elseif isequal(params.StatMethod,'bootsrapRespBase')
                 vs.BootstrapPerNeuron('overwrite',params.overwriteStats);
+            elseif isequal(params.StatMethod,'maxPermuteTest')
+                vs.StatisticsPerNeuron('overwrite',params.overwriteStats);
             end
         end
         
@@ -212,8 +214,10 @@ if forloop
              vsR.ResponseWindow('overwrite',params.overwriteResponse,'durationWindow',params.RespDurationWin);
              if isequal(params.StatMethod,'ObsWindow')
                  vsR.ShufflingAnalysis('overwrite',params.overwriteStats,"N_bootstrap", params.shuffles);
-             else
+             elseif isequal(params.StatMethod,'bootsrapRespBase')
                  vsR.BootstrapPerNeuron('overwrite',params.overwriteStats);
+             elseif isequal(params.StatMethod,'maxPermuteTest')
+                 vsR.StatisticsPerNeuron('overwrite',params.overwriteStats);
              end
         end
         if isequal(params.StimsPresent{3},'') || ~ismember(params.StimsPresent{3}, Stims2Comp)
@@ -222,8 +226,10 @@ if forloop
              vsBr.ResponseWindow('overwrite',params.overwriteResponse,'durationWindow',params.RespDurationWin);
              if isequal(params.StatMethod,'ObsWindow')
                  vsBr.ShufflingAnalysis('overwrite',params.overwriteStats,"N_bootstrap", params.shuffles);
-             else
+             elseif isequal(params.StatMethod,'bootsrapRespBase')
                  vsBr.BootstrapPerNeuron('overwrite',params.overwriteStats);
+             elseif isequal(params.StatMethod,'maxPermuteTest')
+                 vsBr.StatisticsPerNeuron('overwrite',params.overwriteStats);
              end
         end
         if isequal(params.StimsPresent{4},'') || ~ismember(params.StimsPresent{4}, Stims2Comp)
@@ -232,8 +238,10 @@ if forloop
             vsG.ResponseWindow('overwrite',params.overwriteResponse,'durationWindow',params.RespDurationWin);
             if isequal(params.StatMethod,'ObsWindow')
                 vsG.ShufflingAnalysis('overwrite',params.overwriteStats,"N_bootstrap", params.shuffles);
-            else
+            elseif isequal(params.StatMethod,'bootsrapRespBase')
                 vsG.BootstrapPerNeuron('overwrite',params.overwriteStats);
+            elseif isequal(params.StatMethod,'maxPermuteTest')
+                vsG.StatisticsPerNeuron('overwrite',params.overwriteStats);
             end
         end
         if isequal(params.StimsPresent{5},'') || ~ismember(params.StimsPresent{5}, Stims2Comp)
@@ -242,8 +250,10 @@ if forloop
             vsNI.ResponseWindow('overwrite',params.overwriteResponse,'durationWindow',params.RespDurationWin);
             if isequal(params.StatMethod,'ObsWindow')
                 vsNI.ShufflingAnalysis('overwrite',params.overwriteStats,"N_bootstrap", params.shuffles);
-            else
+            elseif isequal(params.StatMethod,'bootsrapRespBase')
                 vsNI.BootstrapPerNeuron('overwrite',params.overwriteStats);
+            elseif isequal(params.StatMethod,'maxPermuteTest')
+                vsNI.StatisticsPerNeuron('overwrite',params.overwriteStats);
             end
         end
         if isequal(params.StimsPresent{6},'') || ~ismember(params.StimsPresent{6}, Stims2Comp)
@@ -252,8 +262,10 @@ if forloop
             vsNV.ResponseWindow('overwrite',params.overwriteResponse,'durationWindow',params.RespDurationWin);
             if isequal(params.StatMethod,'ObsWindow')
                 vsNV.ShufflingAnalysis('overwrite',params.overwriteStats,"N_bootstrap", params.shuffles);
-            else
+            elseif isequal(params.StatMethod,'bootsrapRespBase')
                 vsNV.BootstrapPerNeuron('overwrite',params.overwriteStats);
+            elseif isequal(params.StatMethod,'maxPermuteTest')
+                vsNV.StatisticsPerNeuron('overwrite',params.overwriteStats);
             end
         end
         if isequal(params.StimsPresent{7},'') || ~ismember(params.StimsPresent{7}, Stims2Comp)
@@ -262,8 +274,10 @@ if forloop
             vsFFF.ResponseWindow('overwrite',params.overwriteResponse,'durationWindow',params.RespDurationWin);
             if isequal(params.StatMethod,'ObsWindow')
                 vsFFF.ShufflingAnalysis('overwrite',params.overwriteStats,"N_bootstrap", params.shuffles);
-            else
+            elseif isequal(params.StatMethod,'bootsrapRespBase')
                 vsFFF.BootstrapPerNeuron('overwrite',params.overwriteStats);
+            elseif isequal(params.StatMethod,'maxPermuteTest')
+                vsFFF.StatisticsPerNeuron('overwrite',params.overwriteStats);
             end
         end
 
@@ -275,7 +289,7 @@ if forloop
             statsFFF =  vsFFF.ShufflingAnalysis;
             statsNI =  vsNI.ShufflingAnalysis;
             statsNV =  vsNV.ShufflingAnalysis;
-        else
+        elseif isequal(params.StatMethod,'bootsrapRespBase')
             statsMB = vs.BootstrapPerNeuron;
             statsRG =  vsR.BootstrapPerNeuron;
             statsMBR =  vsBr.BootstrapPerNeuron;
@@ -283,6 +297,14 @@ if forloop
             statsFFF =  vsFFF.BootstrapPerNeuron;
             statsNI =  vsNI.BootstrapPerNeuron;
             statsNV =  vsNV.BootstrapPerNeuron;
+        else
+            statsMB = vs.StatisticsPerNeuron;
+            statsRG =  vsR.StatisticsPerNeuron;
+            statsMBR =  vsBr.StatisticsPerNeuron;
+            statsSDG =  vsG.StatisticsPerNeuron;
+            statsFFF =  vsFFF.StatisticsPerNeuron;
+            statsNI =  vsNI.StatisticsPerNeuron;
+            statsNV =  vsNV.StatisticsPerNeuron;
         end
 
         rwRG = vsR.ResponseWindow;
@@ -367,32 +389,32 @@ if forloop
 
         if ~isequal(params.StatMethod,'ObsWindow')
 
-            spkR_NV =  mean(statsNV.ObsReponse,1);
-            spkR_NI =  mean(statsNI.ObsReponse,1);
+            spkR_NV =  mean(statsNV.ObsResponse,1);
+            spkR_NI =  mean(statsNI.ObsResponse,1);
 
             try
-                spkR_SDGs =  mean(statsSDG.Static.ObsReponse,1);
-                spkR_SDGm =  mean(statsSDG.Moving.ObsReponse,1);
+                spkR_SDGs =  mean(statsSDG.Static.ObsResponse,1);
+                spkR_SDGm =  mean(statsSDG.Moving.ObsResponse,1);
 
             catch             
-                spkR_SDGs =  mean(statsSDG.ObsReponse,1);
-                spkR_SDGm =  mean(statsSDG.ObsReponse,1);
+                spkR_SDGs =  mean(statsSDG.ObsResponse,1);
+                spkR_SDGm =  mean(statsSDG.ObsResponse,1);
             end
 
-            spkR_FFF =  mean(statsFFF.ObsReponse,1);
+            spkR_FFF =  mean(statsFFF.ObsResponse,1);
 
             try
-                spkR_MBR =  mean(statsMBR.Speed1.ObsReponse,1);
+                spkR_MBR =  mean(statsMBR.Speed1.ObsResponse,1);
             catch 
-                spkR_MBR =  mean(statsMBR.ObsReponse,1);
+                spkR_MBR =  mean(statsMBR.ObsResponse,1);
             end
 
-            spkR_RG =  mean(statsRG.ObsReponse,1);
+            spkR_RG =  mean(statsRG.ObsResponse,1);
 
             if isfield(statsMB, 'Speed2')
-                spkR_MB = mean(statsMB.Speed2.ObsReponse);
+                spkR_MB = mean(statsMB.Speed2.ObsResponse);
             else
-                spkR_MB = mean(statsMB.Speed1.ObsReponse);
+                spkR_MB = mean(statsMB.Speed1.ObsResponse);
             end
 
         end
