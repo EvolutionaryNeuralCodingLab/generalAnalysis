@@ -124,17 +124,20 @@ nN    = size(goodU, 2);                                    % number of good soma
 % Access C from the resolved subfield
 if isempty(fieldName)
     C = rw.C;                                              % flat struct (no subfield)
+elseif isequal(fieldName,'Moving') 
+    C(:,1) =
+    
 else
-    C = rw.(fieldName).C;                                  % subfield struct (SDGm, MB, etc.)
+    C = rw.(fieldName).C;  
 end
 
 colNames = rw.colNames{1}(5:end);                          % condition parameter names (cell array)
 
 % Find the direction column: search colNames for 'direction' or 'angles'
-catIdx = find(strcmpi(colNames, 'directions') | strcmpi(colNames, 'angles'), 1);
+catIdx = find(strcmpi(colNames, 'direction') | strcmpi(colNames, 'angles'), 1);
 if isempty(catIdx)
     error('DirectionTuning:noDirCol', ...
-        'Could not find "directions" or "angles" in colNames: {%s}.\n', ...
+        'Could not find "direction" or "angles" in colNames: {%s}.\n', ...
         strjoin(colNames, ', '));
 end
 catColIdx = catIdx + 1;                                    % +1 because C(:,1) is onset times
@@ -148,50 +151,13 @@ fprintf('Direction column: colNames{%d} = "%s" → C(:,%d)\n', ...
 
 dirRaw = C(:, catColIdx);                                  % raw direction values per trial [nTrials × 1]
 
-% Normalise direction values to radians in [0, 2π).
-%
-% SDGm / SDGs require a remapping step before normalisation because gratings
-% store directions in a different degree convention than MB:
-%   SDG 0°   → π/2   rad  (MB "up")
-%   SDG 90°  → 0     rad  (MB "right")
-%   SDG 180° → 3π/2  rad  (MB "down")
-%   SDG 270° → π     rad  (MB "left")
-% Without this, OSI/DSI would be numerically correct for each stimulus
-% independently but the preferred-direction angles would not be comparable
-% across SDG and MB in cross-stimulus analyses.
-if contains(class(vsObj), 'StaticDrifting', 'IgnoreCase', true)
-    % Lookup table: [SDG_degree → MB_radian]
-    sdgMap = [  0,   pi/2; ...                              % 0°   → π/2
-               90,   0;    ...                              % 90°  → 0
-              180,   3*pi/2; ...                            % 180° → 3π/2
-              270,   pi];                                   % 270° → π
-
-    dirRemapped = nan(size(dirRaw));                        % pre-fill with NaN to catch unmapped values
-    for k = 1:size(sdgMap, 1)
-        mask = abs(dirRaw - sdgMap(k, 1)) < 1e-6;          % trials at this SDG degree value
-        dirRemapped(mask) = sdgMap(k, 2);                  % assign the corresponding MB radian
-    end
-
-    % Warn if any trial has a direction value not covered by the map
-    if any(isnan(dirRemapped))
-        warning('DirectionTuning:unmappedSDGdir', ...
-            'Some SDGm/SDGs direction values could not be remapped: [%s] deg. ' + ...
-            'Extend sdgMap if the stimulus uses additional directions.', ...
-            num2str(unique(dirRaw(isnan(dirRemapped)))', '%.4g '));
-    end
-
-    dirNorm = mod(dirRemapped, 2*pi);                       % normalise to [0, 2π); values already radians
-    fprintf('SDGm/SDGs: directions remapped to MB radian convention.\n');
-
+% Detect whether values are in degrees or radians.
+% If any absolute value exceeds 2π + a small tolerance, assume degrees.
+if max(abs(dirRaw)) > 2*pi + 0.1
+    dirNorm = mod(deg2rad(dirRaw), 2*pi);                  % convert degrees → radians, then normalise
+    fprintf('Directions detected as degrees → converted to radians.\n');
 else
-    % All other stimuli: detect whether values are in degrees or radians.
-    % If any absolute value exceeds 2π + a small tolerance, assume degrees.
-    if max(abs(dirRaw)) > 2*pi + 0.1
-        dirNorm = mod(deg2rad(dirRaw), 2*pi);               % convert degrees → radians, normalise
-        fprintf('Directions detected as degrees → converted to radians.\n');
-    else
-        dirNorm = mod(dirRaw, 2*pi);                        % already radians, normalise to [0, 2π)
-    end
+    dirNorm = mod(dirRaw, 2*pi);                           % already radians, normalise to [0, 2π)
 end
 
 % Unique directions after normalisation.

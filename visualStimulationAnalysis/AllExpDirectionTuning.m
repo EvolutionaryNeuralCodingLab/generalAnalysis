@@ -45,9 +45,6 @@ arguments
     % --- Responsiveness filter ---
     params.threshold        double  = 0.05                  % p-value cutoff for responsiveness mask
 
-    % --- Tuning curve construction ---
-    params.aggMethod        string  = "mean"                % "mean" or "max" passed to DirectionTuning
-
     % --- ResponseWindow / Statistics recomputation ---
     params.overwriteRW      logical = false                 % force recompute ResponseWindow
     params.overwriteStats   logical = false                 % force recompute StatisticsPerNeuron
@@ -60,8 +57,7 @@ arguments
     params.plot             logical = true                   % generate swarm plots
     params.PaperFig         logical = false                  % save publication-quality figures via printFig
     params.Alpha            double  = 0.4                    % dot transparency in swarm plot
-    params.yMaxOSI          double  = 1                      % y-axis upper limit for OSI plot
-    params.yMaxDSI          double  = 1                      % y-axis upper limit for DSI plot
+    params.yMax             double  = 1                      % y-axis upper limit for both OSI and DSI
 
     % --- Saving ---
     params.overwrite        logical = false                  % overwrite previously saved pooled results
@@ -117,9 +113,14 @@ else
         categorical.empty(0,1), ...                         % insertion — stable numeric ID
         categorical.empty(0,1), ...                         % stimulus — e.g. SDGm, MB
         categorical.empty(0,1), ...                         % NeurID   — unique neuron identifier
-        categorical.empty(0,1), ...                         % metric   — 'OSI' or 'DSI'
-        double.empty(0,1), ...                              % value    — the index value
+        categorical.empty(0,1), ...                         % metric   — 'OSI','DSI','prefDir','prefOri'
+        double.empty(0,1), ...                              % value    — the index or angle value
         'VariableNames', {'animal','insertion','stimulus','NeurID','metric','value'});
+
+    % Tuning curve accumulator: one struct field per stimulus name.
+    % tcAll.(stimName).curves  : [nNeurons_pooled × nDir] spike rates (spks/s)
+    % tcAll.(stimName).uDirRad : [1 × nDir] direction axis in radians (locked to first experiment)
+    tcAll = struct();
 
     % Maps for stable numeric IDs across experiments (same as AllExpAnalysis)
     animalMap       = containers.Map();                      % animalKey → unique integer
@@ -175,10 +176,10 @@ else
         %  1b. Get phy IDs for good somatic units (shared across stimuli)
         % -----------------------------------------------------------------
         firstStimObj = createStimulusObject(NP, params.stimuli{1}, 0);
-        if isempty(firstStimObj)
-            warning('Cannot create stimulus object for %s. Skipping experiment %d.', ...
+        if isempty(firstStimObj) || isempty(firstStimObj.VST)
+            fprintf('  Stimulus %s not present in experiment %d. Skipping.\n', ...
                 params.stimuli{1}, ex);
-            continue
+            continue                                        % skip experiment — no direction stimulus found
         end
         p_sort  = NP.convertPhySorting2tIc(firstStimObj.spikeSortingFolder, 0, 1, 1);
         phy_IDg = p_sort.phy_ID(string(p_sort.label') == 'good');
@@ -200,7 +201,6 @@ else
             % Run DirectionTuning for this stimulus and experiment
             try
                 res = DirectionTuning(vsObj, ...
-                    'aggMethod',      params.aggMethod, ...
                     'threshold',      params.threshold, ...
                     'overwriteRW',    params.overwriteRW, ...
                     'overwriteStats', params.overwriteStats, ...
@@ -248,8 +248,51 @@ else
                 res.DSI(respIdx), ...
                 'VariableNames', tblOut.Properties.VariableNames);
 
-            % Concatenate to master table
-            tblOut = [tblOut; osiRows; dsiRows];            %#ok<AGROW>
+            % Append preferred direction rows (degrees, [0, 360))
+            prefDirRows = table( ...
+                repmat(categorical(animalID),  nRows, 1), ...
+                repmat(categorical(insertionIdx), nRows, 1), ...
+                repmat(categorical(string(stimName)), nRows, 1), ...
+                categorical(neurIDs(:)), ...
+                repmat(categorical("prefDir"), nRows, 1), ...
+                res.prefDirDeg(respIdx), ...
+                'VariableNames', tblOut.Properties.VariableNames);
+
+            % Append preferred orientation rows (degrees, [0, 180))
+            prefOriRows = table( ...
+                repmat(categorical(animalID),  nRows, 1), ...
+                repmat(categorical(insertionIdx), nRows, 1), ...
+                repmat(categorical(string(stimName)), nRows, 1), ...
+                categorical(neurIDs(:)), ...
+                repmat(categorical("prefOri"), nRows, 1), ...
+                res.prefOriDeg(respIdx), ...
+                'VariableNames', tblOut.Properties.VariableNames);
+
+            % Concatenate all metrics to master table
+            tblOut = [tblOut; osiRows; dsiRows; prefDirRows; prefOriRows]; %#ok<AGROW>
+
+            % ----------------------------------------------------------
+            % Accumulate tuning curves for mean-curve plot.
+            % Directions must match across experiments for the mean to be
+            % valid — lock to first experiment and skip if they diverge.
+            % ----------------------------------------------------------
+            fn = matlab.lang.makeValidName(stimName);       % valid struct field name
+            if ~isfield(tcAll, fn)
+                % First encounter: initialise with this experiment's directions
+                tcAll.(fn).uDirRad = res.uDirRad;          % [1 × nDir] direction axis (radians)
+                tcAll.(fn).curves  = res.tuningCurve(respIdx, :);  % [nResp × nDir]
+            else
+                % Subsequent experiments: stack only if direction axes match
+                if numel(res.uDirRad) == numel(tcAll.(fn).uDirRad) && ...
+                        all(abs(res.uDirRad - tcAll.(fn).uDirRad) < 1e-4)
+                    tcAll.(fn).curves = [tcAll.(fn).curves; ...
+                        res.tuningCurve(respIdx, :)];       %#ok<AGROW>
+                else
+                    warning('AllExpDirectionTuning:dirMismatch', ...
+                        'Direction axis differs in exp %d for %s — skipping tuning curve.', ...
+                        ex, stimName);
+                end
+            end
 
         end   % stimulus loop
     end   % experiment loop
@@ -261,88 +304,209 @@ else
     tblOut.NeurID    = removecats(tblOut.NeurID);
     tblOut.metric    = removecats(tblOut.metric);
 
-    % Save the pooled long table
-    save(savePath, 'tblOut', 'params');
+    % Save the pooled long table and tuning curve accumulator
+    save(savePath, 'tblOut', 'tcAll', 'params');
     fprintf('\nSaved pooled results: %s\n', savePath);
 end
 
-% =========================================================================
-%  2.  GENERATE COMPARISON PAIRS (IF MORE THAN ONE STIMULUS)
-% =========================================================================
-
-% Build all pairwise combinations of stimuli for statistical testing
-if nStim >= 2
-    pairs = nchoosek(params.stimuli, 2);                    % [nPairs × 2] cell array
-else
-    pairs = {};                                             % nothing to compare
+% Load tcAll if coming from a cached file (may be absent in older saves)
+if ~exist('tcAll', 'var')
+    S2 = load(savePath, '-mat');
+    if isfield(S2, 'tcAll')
+        tcAll = S2.tcAll;
+    else
+        tcAll = struct();                                   % graceful fallback for old cache files
+        warning('AllExpDirectionTuning:noTcAll', ...
+            'Cached file has no tuning curve data. Re-run with overwrite=true to regenerate.');
+    end
 end
 
 % =========================================================================
-%  3.  PLOT OSI AND DSI WITH HIERARCHICAL BOOTSTRAP
+%  2.  BUILD COMBINED CONDITION TABLE AND GENERATE ALL COMPARISON PAIRS
+% =========================================================================
+
+% Merge OSI and DSI into one table for a single combined plot.
+% The 'stimulus' column is repurposed as a condition label that encodes
+% both the metric and the stimulus, e.g. "OSI SDGm", "DSI MB".
+% NeurID-based pairing in hierBoot still works correctly:
+%   • OSI vs DSI of the same stimulus → paired within neuron (same NeurID)
+%   • OSI/DSI of stim1 vs stim2       → paired across stimuli (same NeurID)
+tblPlot = tblOut;                                           % copy to avoid modifying tblOut
+condLabels = string(tblOut.metric) + " " + string(tblOut.stimulus);
+tblPlot.stimulus = categorical(condLabels);                 % overwrite with combined label
+
+% Build ordered condition list: for each stimulus, OSI first then DSI.
+% This gives a natural grouping on the x-axis:
+%   [OSI SDGm | DSI SDGm | OSI MB | DSI MB | ...]
+orderedConds = {};                                          % cell of condition label strings
+for s = 1:nStim
+    orderedConds{end+1} = "OSI " + params.stimuli{s};      %#ok<AGROW>
+    orderedConds{end+1} = "DSI " + params.stimuli{s};      %#ok<AGROW>
+end
+
+% All pairwise comparisons from the ordered condition list.
+% For 1 stimulus  → 1 pair:  OSI vs DSI
+% For 2 stimuli   → 6 pairs: OSI_s1/DSI_s1, OSI_s2/DSI_s2,
+%                             OSI_s1/OSI_s2, DSI_s1/DSI_s2,
+%                             OSI_s1/DSI_s2, DSI_s1/OSI_s2
+pairs = nchoosek(orderedConds, 2);                         % [nPairs × 2] cell array
+
+% =========================================================================
+%  3.  PLOT COMBINED OSI + DSI WITH HIERARCHICAL BOOTSTRAP
+% =========================================================================
+
+if params.plot && height(tblPlot) > 0
+
+    % Compute hierBoot p-values for every pair
+    psAll = computeHierBootPvals(tblPlot, pairs, params.nBoot);
+
+    % Single combined plot: one swarm per condition group
+    [figAll, ~] = plotSwarmBootstrapWithComparisons(tblPlot, pairs, psAll, {'value'}, ...
+        yLegend     = 'OSI / DSI', ...
+        yMaxVis     = params.yMax, ...
+        diff        = false, ...                            % all conditions on same axis, no diff panel
+        Alpha       = params.Alpha, ...
+        plotMeanSem = true);
+
+    title(sprintf('Direction & Orientation Selectivity — %s', stimLabel), 'FontSize', 10);
+
+    if params.PaperFig
+        firstObj.printFig(figAll, sprintf('OSI-DSI-%s', stimLabel), ...
+            PaperFig = params.PaperFig);
+    end
+
+    figs.OSIDSI = figAll;
+end
+
+% =========================================================================
+%  4.  ADDITIONAL PLOTS: MEAN TUNING CURVE, PREFERRED DIRECTION/ORIENTATION
 % =========================================================================
 
 if params.plot
 
     % -----------------------------------------------------------------
-    %  3a. OSI plot
+    %  4a. Mean tuning curve — polar plot, one line per stimulus
     % -----------------------------------------------------------------
-    tblOSI = tblOut(tblOut.metric == 'OSI', :);             % filter to OSI rows only
-    if ~isempty(tblOSI) && height(tblOSI) > 0
+    figTC = figure;
+    ax = polaraxes;                                         % polar axes for direction tuning
+    hold(ax, 'on');
+    colors = lines(nStim);                                  % one colour per stimulus
 
-        % Compute hierBoot p-values for each stimulus pair
-        psOSI = computeHierBootPvals(tblOSI, pairs, params.nBoot);
-
-        % Generate swarm plot with bootstrap mean/CI and significance brackets
-        [figOSI, ~] = plotSwarmBootstrapWithComparisons(tblOSI, pairs, psOSI, {'value'}, ...
-            yLegend     = 'OSI', ...
-            yMaxVis     = params.yMaxOSI, ...
-            diff        = (nStim >= 2), ...                 % paired diff plot only if comparing
-            Alpha       = params.Alpha, ...
-            plotMeanSem = true);
-
-        % Add title and format
-        title('Orientation Selectivity Index', 'FontSize', 10);
-        applyPaperAxes(gca);                                % standardise axis formatting
-
-        % Save figure if PaperFig mode is enabled
-        if params.PaperFig
-            firstObj.printFig(figOSI, sprintf('OSI-comparison-%s', stimLabel), ...
-                PaperFig = params.PaperFig);
+    for s = 1:nStim
+        fn = matlab.lang.makeValidName(params.stimuli{s});  % struct field name
+        if ~isfield(tcAll, fn) || isempty(tcAll.(fn).curves)
+            fprintf('  No tuning curve data for %s.\n', params.stimuli{s});
+            continue
         end
 
-        figs.OSI = figOSI;                                  % store figure handle
+        curves  = tcAll.(fn).curves;                        % [nNeurons × nDir] spike rates
+        uDirs   = tcAll.(fn).uDirRad;                       % [1 × nDir] direction axis
+
+        meanTC  = mean(curves, 1);                          % [1 × nDir] mean across neurons
+        semTC   = std(curves, 0, 1) / sqrt(size(curves,1));% [1 × nDir] SEM across neurons
+
+        % Close the polar curve by repeating the first direction
+        theta   = [uDirs, uDirs(1)];                        % [1 × nDir+1]
+        rhoMean = [meanTC, meanTC(1)];                      % [1 × nDir+1]
+        rhoUp   = [meanTC + semTC, meanTC(1) + semTC(1)];
+        rhoDown = [max(meanTC - semTC, 0), max(meanTC(1) - semTC(1), 0)];
+
+        % SEM shading as a filled polygon
+        thetaShade = [theta, fliplr(theta)];
+        rhoShade   = [rhoUp, fliplr(rhoDown)];
+        fill(ax, thetaShade, rhoShade, colors(s,:), ...
+            'FaceAlpha', 0.15, 'EdgeColor', 'none');        % shaded SEM band
+
+        % Mean line
+        polarplot(ax, theta, rhoMean, ...
+            'Color', colors(s,:), 'LineWidth', 1.5, ...
+            'DisplayName', params.stimuli{s});
     end
 
+    legend(ax, 'Location', 'best');
+    title(ax, sprintf('Mean Tuning Curve (n neurons pooled) — %s', stimLabel), 'FontSize', 10);
+
+    if params.PaperFig
+        firstObj.printFig(figTC, sprintf('MeanTuningCurve-%s', stimLabel), ...
+            PaperFig = params.PaperFig);
+    end
+    figs.tuningCurve = figTC;
+
     % -----------------------------------------------------------------
-    %  3b. DSI plot
+    %  4b. Preferred direction — rose (polar histogram), one per stimulus
     % -----------------------------------------------------------------
-    tblDSI = tblOut(tblOut.metric == 'DSI', :);             % filter to DSI rows only
-    if ~isempty(tblDSI) && height(tblDSI) > 0
+    figPD = figure;
+    nBinsDir = 16;                                          % 16 bins = 22.5° each, covers 0–360°
 
-        % Compute hierBoot p-values for each stimulus pair
-        psDSI = computeHierBootPvals(tblDSI, pairs, params.nBoot);
+    for s = 1:nStim
+        sName = params.stimuli{s};
+        subplot(1, nStim, s);
+        ax2 = gca;
 
-        % Generate swarm plot with bootstrap mean/CI and significance brackets
-        [figDSI, ~] = plotSwarmBootstrapWithComparisons(tblDSI, pairs, psDSI, {'value'}, ...
-            yLegend     = 'DSI', ...
-            yMaxVis     = params.yMaxDSI, ...
-            diff        = (nStim >= 2), ...
-            Alpha       = params.Alpha, ...
-            plotMeanSem = true);
+        % Filter table for this stimulus's preferred directions
+        tblPD = tblOut(tblOut.metric    == 'prefDir' & ...
+                       tblOut.stimulus  == categorical({sName}), :);
 
-        title('Direction Selectivity Index', 'FontSize', 10);
-        applyPaperAxes(gca);
-
-        if params.PaperFig
-            firstObj.printFig(figDSI, sprintf('DSI-comparison-%s', stimLabel), ...
-                PaperFig = params.PaperFig);
+        if isempty(tblPD)
+            title(ax2, sprintf('Pref Dir — %s\n(no data)', sName), 'FontSize', 9);
+            continue
         end
 
-        figs.DSI = figDSI;
-    end
-end
+        % Plot as a polar histogram (rose plot)
+        anglesRad = deg2rad(tblPD.value);                   % convert to radians for polarhistogram
+        polarhistogram(anglesRad, nBinsDir, ...
+            'Normalization', 'probability', ...             % normalise so bars sum to 1
+            'FaceColor', colors(s,:), ...
+            'EdgeColor', 'w', 'FaceAlpha', 0.7);
 
-fprintf('\nDone. Table: %d rows, %d experiments, %d stimuli.\n', ...
+        title(ax2, sprintf('Pref Direction — %s  (n=%d)', sName, height(tblPD)), 'FontSize', 9);
+    end
+
+    if params.PaperFig
+        firstObj.printFig(figPD, sprintf('PrefDirection-%s', stimLabel), ...
+            PaperFig = params.PaperFig);
+    end
+    figs.prefDir = figPD;
+
+    % -----------------------------------------------------------------
+    %  4c. Preferred orientation — linear histogram 0–180°, one per stimulus
+    %      Orientation wraps at 180°, so a linear histogram is clearer than
+    %      a polar plot for this quantity.
+    % -----------------------------------------------------------------
+    figPO = figure;
+    binEdgesOri = 0 : 10 : 180;                             % 10° bins
+
+    for s = 1:nStim
+        sName = params.stimuli{s};
+        subplot(1, nStim, s);
+
+        tblPO = tblOut(tblOut.metric    == 'prefOri' & ...
+                       tblOut.stimulus  == categorical({sName}), :);
+
+        if isempty(tblPO)
+            title(sprintf('Pref Ori — %s\n(no data)', sName), 'FontSize', 9);
+            continue
+        end
+
+        histogram(tblPO.value, binEdgesOri, ...
+            'FaceColor', colors(s,:), ...
+            'EdgeColor', 'w', 'FaceAlpha', 0.7);
+
+        xlabel('Preferred orientation (°)');
+        ylabel('Neuron count');
+        xlim([0 180]);
+        xticks(0:45:180);
+        title(sprintf('Pref Orientation — %s  (n=%d)', sName, height(tblPO)), 'FontSize', 9);
+        box off;
+    end
+
+    if params.PaperFig
+        firstObj.printFig(figPO, sprintf('PrefOrientation-%s', stimLabel), ...
+            PaperFig = params.PaperFig);
+    end
+    figs.prefOri = figPO;
+
+end   % if params.plot
     height(tblOut), numel(expList), nStim);
 
 end   % ===== END OF MAIN FUNCTION =====
