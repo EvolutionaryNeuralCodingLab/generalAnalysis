@@ -507,7 +507,7 @@ if params.plot
     figs.prefOri = figPO;
 
 end   % if params.plot
-    height(tblOut), numel(expList), nStim);
+    height(tblOut, numel(expList), nStim);
 
 end   % ===== END OF MAIN FUNCTION =====
 

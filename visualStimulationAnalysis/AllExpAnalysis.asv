@@ -988,14 +988,15 @@ for a = 1:numel(animals)
     end
 end
 
+totalSomatic = 0;
 
-% --- Compute total somatic neurons across all unique insertions ---
-totalSomatic   = 0;                                                     % initialize accumulator
-allInsertions  = unique(S.TableRespNeurs.insertion);                     % unique insertion IDs across all animals
-for in = 1:numel(allInsertions)                                         % iterate over every insertion (BUG FIX: was "= numel(inser)", only hit last index)
-    insRows = S.TableRespNeurs.totalSomaticN( ...                       % extract totalSomaticN for all rows matching this insertion
-        S.TableRespNeurs.insertion == allInsertions(in));
-    totalSomatic = totalSomatic + insRows(1);                           % take first value (identical across stimulus rows within an insertion)
+for a = 1:numel(animals)
+    inser = unique(S.TableRespNeurs.insertion);
+    
+    for in =numel(inser)
+        totalSomatic = totalSomatic+unique(S.TableRespNeurs.totalSomaticN(S.TableRespNeurs.insertion == inser(in)));
+    end
+
 end
 
 % Build annotation string with per-item responsive neuron counts
@@ -1003,7 +1004,7 @@ perItemN  = arrayfun(@(s) sum(tempTable.respNeur(tempTable.stimulus == s)), ...
     categorical(compLabels));
 annotParts = arrayfun(@(i) sprintf('%s = %d', compLabels{i}, perItemN(i)), ...
     1:numel(compLabels), 'UniformOutput', false);
-annotStr = ['TS=' num2str(totalSomatic) '-' 'TR=' num2str(totalResp) '-' strjoin(annotParts, '-')];
+annotStr = ['TR = ' num2str(totalResp) ' - ' strjoin(annotParts, ' - ')];
 
 % Apply consistent font formatting
 ax = findobj(fig, 'Type', 'axes');

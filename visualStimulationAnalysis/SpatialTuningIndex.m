@@ -52,6 +52,25 @@ arguments
                                            % type's tuning index; neurons not responsive
                                            % to the plotted stim type are annotated "n/r"
                                            % and sink to the bottom.
+    params.detectStripe   logical = false  % If true: run Radon-based stripe
+                                           % detection on each neuron's full-
+                                           % resolution RF.  Adds stripe
+                                           % classification columns to the
+                                           % output table.
+    params.stripeAlpha    double  = 0.05   % Significance level for the stripe
+                                           % permutation test.
+    params.stripeNSurr    double  = 1000   % Number of pixel-permutation
+                                           % surrogates per RF image.
+    params.stripeAngleStep double = 5      % Degrees between tested projection
+                                           % angles (0 to 175).
+    params.testStripeDetection logical = false  % If true: after detection,
+                                               % generate a diagnostic figure
+                                               % showing a subsample of neurons
+                                               % that pass and fail, with their
+                                               % RFs and Radon variance profiles.
+    params.testStripeN     double = 20     % Number of neurons to include in
+                                           % the test visualisation (half pass,
+                                           % half fail, if available).
 end
 
 % -------------------------------------------------------------------------
@@ -412,6 +431,10 @@ if ~goto_plot
 
                             % Build rfRaw by selecting each neuron's preferred direction slice
                             % Result: [nSize, nLum, rfY, rfX, nShared] — no direction dim
+
+                            assert(nN_rf == numel(phy_IDg), ...
+                                'RFuSTDirSizeLum dim 6 (%d) ≠ number of good units (%d) in exp %d. RF may need recomputation.', ...
+                                nN_rf, numel(phy_IDg), ex);
                             rfRaw = zeros(nSize_rf, nLum_rf, rfY, rfY, nShared);
                             for u = 1:nShared
                                 % Slice preferred direction for this neuron and squeeze
@@ -610,6 +633,143 @@ if ~goto_plot
                 storePrefDirDeg = nan(size(gridSpikeRateSelected, 3), 1);
             end
 
+                   % Pre-allocate stripe result vectors (one value per neuron).
+            % These will be appended to each table row in the si/li loop.
+            stripeIsAny      = false(nN, 1);  % does any direction pass?
+            stripeNPassDirs  = zeros(nN, 1);  % count of passing directions
+            stripePassDirStr = repmat({''}, nN, 1);  % comma-separated passing dir indices
+            stripeBestScore  = zeros(nN, 1);  % highest stripe score across dirs
+            stripeBestPval   = ones(nN, 1);   % p-value at the best direction
+            stripeBestAngle  = nan(nN, 1);    % stripe orientation at best dir (degrees)
+            stripeBestDir    = nan(nN, 1);    % direction index with strongest stripe (MB only)
+
+            if params.detectStripe
+
+                fprintf('  [%s] Running stripe detection...\n', stimType);
+
+                switch stimType
+
+                    case "linearlyMovingBall"
+                        % -------------------------------------------------
+                        % MB: test each direction independently.
+                        % RFuSTDirSizeLum: [nDir, nSize, nLum, rfY, rfX, nN_rf]
+                        % RFuShuffST:      [rfY, rfX, nN_rf]
+                        % -------------------------------------------------
+
+                        % Number of directions available in the RF data
+                        nDirRF = size(S_rf.RFuSTDirSizeLum, 1);
+
+                        for u = 1:nN
+
+                            % Index into the RF data's neuron dimension.
+                            % Use rfIdx if the indexing fix from the earlier
+                            % bug discussion has been applied; otherwise use
+                            % neuronIdx.  Adjust the variable name to match
+                            % your current code.
+                            uRF = neuronIdx(u);
+
+                            % Extract the shuffle-mean baseline for this neuron
+                            % RFuShuffST: [rfY, rfX, nN_rf] — already averaged over shuffles
+                            rfShuff = S_rf.RFuShuffST(:, :, uRF);
+
+                            % Per-direction results accumulator
+                            dirScores  = zeros(nDirRF, 1);  % stripe score per direction
+                            dirPvals   = ones(nDirRF, 1);   % p-value per direction
+                            dirAngles  = nan(nDirRF, 1);    % stripe angle per direction
+                            dirIsPass  = false(nDirRF, 1);  % pass/fail per direction
+
+                            for d = 1:nDirRF
+
+                                % Extract the full-resolution RF for this direction,
+                                % at the requested size and luminance condition.
+                                % Squeeze removes the singleton dir/size/lum dims.
+                                rfSlice = squeeze( ...
+                                    S_rf.RFuSTDirSizeLum(d, params.sizeIdx, params.lumIdx, :, :, uRF));
+
+                                % Subtract the shuffle-mean to isolate signal above noise
+                                rfSub = rfSlice - rfShuff;
+
+                                % Run the stripe detector.
+                                % Each direction gets its own RNG seed offset so that
+                                % the surrogate sequences are independent but reproducible.
+                                res = detectStripeRF(rfSub, ...
+                                    'angleStep',   params.stripeAngleStep, ...
+                                    'nSurrogates', params.stripeNSurr, ...
+                                    'alpha',       params.stripeAlpha, ...
+                                    'rngSeed',     42 + (u-1)*nDirRF + d);  % unique, reproducible seed
+
+                                % Store per-direction results
+                                dirScores(d)  = res.stripeScore;
+                                dirPvals(d)   = res.stripePval;
+                                dirAngles(d)  = res.stripeAngle;    % NaN if not significant
+                                dirIsPass(d)  = res.isStripe;
+
+                            end  % direction loop
+
+                            % Aggregate across directions for this neuron
+                            stripeIsAny(u)     = any(dirIsPass);           % any direction passes?
+                            stripeNPassDirs(u) = sum(dirIsPass);           % how many pass?
+                            passingDirs        = find(dirIsPass);          % indices of passing dirs
+                            stripePassDirStr{u} = strjoin(string(passingDirs), ',');  % e.g. "1,3,5"
+
+                            % Best direction = direction with highest stripe score
+                            [stripeBestScore(u), bestDirIdx] = max(dirScores);
+                            stripeBestPval(u)  = dirPvals(bestDirIdx);
+                            stripeBestAngle(u) = dirAngles(bestDirIdx);
+                            stripeBestDir(u)   = bestDirIdx;              % direction index (1:nDir)
+
+                            if mod(u, 10) == 0
+                                fprintf('    stripe detection: %d/%d neurons done.\n', u, nN);
+                            end
+
+                        end  % neuron loop
+
+                    case "rectGrid"
+                        % -------------------------------------------------
+                        % RG: single RF per neuron (9×9 resolution).
+                        % Use the downsampled gridSpikeRateSelected and
+                        % gridShuffMean already computed above.
+                        % Both are [nGrid, nGrid, nN, nSize, nLum].
+                        % -------------------------------------------------
+
+                        for u = 1:nN
+
+                            % Extract the 9×9 RF at the requested condition
+                            rfGrid = gridSpikeRateSelected(:, :, u, params.sizeIdx, params.lumIdx);
+                            % Extract the 9×9 shuffle-mean at the same condition
+                            rfGridShuff = gridShuffMean(:, :, u, params.sizeIdx, params.lumIdx);
+                            % Subtract shuffle to isolate signal
+                            rfSub = rfGrid - rfGridShuff;
+
+                            % Run the stripe detector on the 9×9 image
+                            res = detectStripeRF(rfSub, ...
+                                'angleStep',   params.stripeAngleStep, ...
+                                'nSurrogates', params.stripeNSurr, ...
+                                'alpha',       params.stripeAlpha, ...
+                                'rngSeed',     42 + u);  % reproducible seed per neuron
+
+                            % Store results (RG has no direction dimension)
+                            stripeIsAny(u)      = res.isStripe;
+                            stripeNPassDirs(u)  = double(res.isStripe);   % 0 or 1
+                            if res.isStripe
+                                stripePassDirStr{u} = '1';                % single "direction"
+                            end
+                            stripeBestScore(u)  = res.stripeScore;
+                            stripeBestPval(u)   = res.stripePval;
+                            stripeBestAngle(u)  = res.stripeAngle;
+                            stripeBestDir(u)    = NaN;                    % no direction dim for RG
+
+                        end  % neuron loop
+
+                end  % switch stimType (stripe detection)
+
+                % Summary statistics
+                nStripe = sum(stripeIsAny);
+                fprintf('  [%s] Stripe detection: %d/%d neurons classified as stripe RFs.\n', ...
+                    stimType, nStripe, nN);
+
+            end  % if detectStripe
+
             % ----------------------------------------------------------
             % Compute spatial tuning indices per neuron, size, and lum
             % ----------------------------------------------------------
@@ -725,15 +885,443 @@ if ~goto_plot
                     % Preferred direction in degrees (0–360). NaN when not applicable.
                     rows.prefDirDeg = storePrefDirDeg;
 
+                    % Stripe detection columns.
+                    % If detectStripe=false these vectors are pre-filled
+                    % with their default values (false / 0 / '' / NaN),
+                    % so the columns exist even when detection is skipped.
+                    rows.isStripe         = stripeIsAny;            % any direction passes?
+                    rows.stripeNPassDirs  = stripeNPassDirs;        % count of passing directions
+                    rows.stripePassDirs   = stripePassDirStr;       % comma-sep dir indices (MB only)
+                    rows.stripeBestScore  = stripeBestScore;        % max stripe score across dirs
+                    rows.stripeBestPval   = stripeBestPval;         % p-value at best direction
+                    rows.stripeBestAngle  = stripeBestAngle;        % stripe orientation (degrees)
+                    rows.stripeBestDir    = stripeBestDir;          % best direction index (MB only)
+
                     tbl = [tbl; rows];  %#ok<AGROW>
 
                 end % lum loop
             end % size loop
 
+
+            % ----------------------------------------------------------
+            % Stripe RF detection (optional)
+            % Runs on the full-resolution RF at the requested condition.
+            % For MB: tests every direction independently.
+            % For RG: tests the single 9×9 RF.
+            % ----------------------------------------------------------
+
+            % Pre-allocate stripe result vectors (one value per neuron).
+            % These will be appended to each table row in the si/li loop.
+            stripeIsAny      = false(nN, 1);  % does any direction pass?
+            stripeNPassDirs  = zeros(nN, 1);  % count of passing directions
+            stripePassDirStr = repmat({''}, nN, 1);  % comma-separated passing dir indices
+            stripeBestScore  = zeros(nN, 1);  % highest stripe score across dirs
+            stripeBestPval   = ones(nN, 1);   % p-value at the best direction
+            stripeBestAngle  = nan(nN, 1);    % stripe orientation at best dir (degrees)
+            stripeBestDir    = nan(nN, 1);    % direction index with strongest stripe (MB only)
+
+            if params.detectStripe
+
+                fprintf('  [%s] Running stripe detection...\n', stimType);
+
+                switch stimType
+
+                    case "linearlyMovingBall"
+                        % -------------------------------------------------
+                        % MB: test each direction independently.
+                        % RFuSTDirSizeLum: [nDir, nSize, nLum, rfY, rfX, nN_rf]
+                        % RFuShuffST:      [rfY, rfX, nN_rf]
+                        % -------------------------------------------------
+
+                        % Number of directions available in the RF data
+                        nDirRF = size(S_rf.RFuSTDirSizeLum, 1);
+
+                        for u = 1:nN
+
+                            % Index into the RF data's neuron dimension.
+                            % Use rfIdx if the indexing fix from the earlier
+                            % bug discussion has been applied; otherwise use
+                            % neuronIdx.  Adjust the variable name to match
+                            % your current code.
+                            uRF = neuronIdx(u);
+
+                            % Extract the shuffle-mean baseline for this neuron
+                            % RFuShuffST: [rfY, rfX, nN_rf] — already averaged over shuffles
+                            rfShuff = S_rf.RFuShuffST(:, :, uRF);
+
+                            % Per-direction results accumulator
+                            dirScores  = zeros(nDirRF, 1);  % stripe score per direction
+                            dirPvals   = ones(nDirRF, 1);   % p-value per direction
+                            dirAngles  = nan(nDirRF, 1);    % stripe angle per direction
+                            dirIsPass  = false(nDirRF, 1);  % pass/fail per direction
+
+                            for d = 1:nDirRF
+
+                                % Extract the full-resolution RF for this direction,
+                                % at the requested size and luminance condition.
+                                % Squeeze removes the singleton dir/size/lum dims.
+                                rfSlice = squeeze( ...
+                                    S_rf.RFuSTDirSizeLum(d, params.sizeIdx, params.lumIdx, :, :, uRF));
+
+                                % Subtract the shuffle-mean to isolate signal above noise
+                                rfSub = rfSlice - rfShuff;
+
+                                % Run the stripe detector.
+                                % Each direction gets its own RNG seed offset so that
+                                % the surrogate sequences are independent but reproducible.
+                                res = detectStripeRF(rfSub, ...
+                                    'angleStep',   params.stripeAngleStep, ...
+                                    'nSurrogates', params.stripeNSurr, ...
+                                    'alpha',       params.stripeAlpha, ...
+                                    'rngSeed',     42 + (u-1)*nDirRF + d);  % unique, reproducible seed
+
+                                % Store per-direction results
+                                dirScores(d)  = res.stripeScore;
+                                dirPvals(d)   = res.stripePval;
+                                dirAngles(d)  = res.stripeAngle;    % NaN if not significant
+                                dirIsPass(d)  = res.isStripe;
+
+                            end  % direction loop
+
+                            % Aggregate across directions for this neuron
+                            stripeIsAny(u)     = any(dirIsPass);           % any direction passes?
+                            stripeNPassDirs(u) = sum(dirIsPass);           % how many pass?
+                            passingDirs        = find(dirIsPass);          % indices of passing dirs
+                            stripePassDirStr{u} = strjoin(string(passingDirs), ',');  % e.g. "1,3,5"
+
+                            % Best direction = direction with highest stripe score
+                            [stripeBestScore(u), bestDirIdx] = max(dirScores);
+                            stripeBestPval(u)  = dirPvals(bestDirIdx);
+                            stripeBestAngle(u) = dirAngles(bestDirIdx);
+                            stripeBestDir(u)   = bestDirIdx;              % direction index (1:nDir)
+
+                            if mod(u, 10) == 0
+                                fprintf('    stripe detection: %d/%d neurons done.\n', u, nN);
+                            end
+
+                        end  % neuron loop
+
+                    case "rectGrid"
+                        % -------------------------------------------------
+                        % RG: single RF per neuron (9×9 resolution).
+                        % Use the downsampled gridSpikeRateSelected and
+                        % gridShuffMean already computed above.
+                        % Both are [nGrid, nGrid, nN, nSize, nLum].
+                        % -------------------------------------------------
+
+                        for u = 1:nN
+
+                            % Extract the 9×9 RF at the requested condition
+                            rfGrid = gridSpikeRateSelected(:, :, u, params.sizeIdx, params.lumIdx);
+                            % Extract the 9×9 shuffle-mean at the same condition
+                            rfGridShuff = gridShuffMean(:, :, u, params.sizeIdx, params.lumIdx);
+                            % Subtract shuffle to isolate signal
+                            rfSub = rfGrid - rfGridShuff;
+
+                            % Run the stripe detector on the 9×9 image
+                            res = detectStripeRF(rfSub, ...
+                                'angleStep',   params.stripeAngleStep, ...
+                                'nSurrogates', params.stripeNSurr, ...
+                                'alpha',       params.stripeAlpha, ...
+                                'rngSeed',     42 + u);  % reproducible seed per neuron
+
+                            % Store results (RG has no direction dimension)
+                            stripeIsAny(u)      = res.isStripe;
+                            stripeNPassDirs(u)  = double(res.isStripe);   % 0 or 1
+                            if res.isStripe
+                                stripePassDirStr{u} = '1';                % single "direction"
+                            end
+                            stripeBestScore(u)  = res.stripeScore;
+                            stripeBestPval(u)   = res.stripePval;
+                            stripeBestAngle(u)  = res.stripeAngle;
+                            stripeBestDir(u)    = NaN;                    % no direction dim for RG
+
+                        end  % neuron loop
+
+                end  % switch stimType (stripe detection)
+
+                % Summary statistics
+                nStripe = sum(stripeIsAny);
+                fprintf('  [%s] Stripe detection: %d/%d neurons classified as stripe RFs.\n', ...
+                    stimType, nStripe, nN);
+
+            end  % if detectStripe
+
             fprintf('  [%s] Indices computed. %d neurons.\n', stimType, nN);
 
         end % stim loop
     end % exp loop
+
+    % =========================================================================
+    %  STRIPE DETECTION TEST VISUALISATION  (larger fonts)
+    %
+    %  Drop-in replacement for the block in SpatialTuningIndex.m that starts:
+    %     if params.detectStripe && params.testStripeDetection
+    %  ...and ends:
+    %     end  % testStripeDetection
+    %
+    %  Changes from the previous version: every label, axis tick, and title is
+    %  larger; row height bumped from 3.5 cm to 5 cm so the bigger text fits.
+    % =========================================================================
+
+    if params.detectStripe && params.testStripeDetection
+
+        fprintf('\n=== Stripe Detection Test Visualisation ===\n');
+
+        % ---- Filter table to the requested condition --------------------
+        idxCondTest       = tbl.onOff   == params.onOff   & ...
+            tbl.sizeIdx == params.sizeIdx & ...
+            tbl.lumIdx  == params.lumIdx;
+        tblTest           = tbl(idxCondTest, :);
+        tblTest.value     = tblTest.(params.indexType);
+
+        % ---- Split into stripe and non-stripe ---------------------------
+        stripeRows    = tblTest(tblTest.isStripe == true,  :);
+        nonStripeRows = tblTest(tblTest.isStripe == false, :);
+
+        fprintf('  Total stripe: %d,  non-stripe: %d\n', ...
+            height(stripeRows), height(nonStripeRows));
+
+        % ---- Subsample: half pass, half fail ----------------------------
+        nHalf   = floor(params.testStripeN / 2);
+        nPass   = min(nHalf, height(stripeRows));
+        nFail   = min(nHalf, height(nonStripeRows));
+        nSample = nPass + nFail;
+
+        rng(99, 'twister');
+        if nPass > 0
+            passIdx     = randperm(height(stripeRows), nPass);
+            samplePass  = stripeRows(passIdx, :);
+        else
+            samplePass  = stripeRows([], :);
+        end
+        if nFail > 0
+            failIdx     = randperm(height(nonStripeRows), nFail);
+            sampleFail  = nonStripeRows(failIdx, :);
+        else
+            sampleFail  = nonStripeRows([], :);
+        end
+
+        tblSample = [samplePass; sampleFail];
+
+        if nSample == 0
+            fprintf('  No neurons to visualise — skipping test plot.\n');
+        else
+
+            fprintf('  Visualising %d pass + %d fail = %d neurons.\n', ...
+                nPass, nFail, nSample);
+
+            % ---- Figure layout ------------------------------------------
+            % 4 tiles per row = 2 neurons (RF + profile each).  Row height
+            % bumped to 5 cm so the bigger fonts have room to breathe.
+            nTestCols   = 4;
+            nTestRows   = ceil(nSample / 2);
+            figTest     = figure('Visible', 'on', ...
+                'Units', 'centimeters', ...
+                'Position', [2 2 28 nTestRows * 5]);
+
+            tlTest = tiledlayout(nTestRows, nTestCols, ...
+                'TileSpacing', 'compact', ...
+                'Padding',     'compact');
+
+            % Main figure title — large and bold
+            title(tlTest, 'Stripe Detection Test', ...
+                'FontSize', 14, 'FontName', 'Helvetica', 'FontWeight', 'bold');
+
+            % Experiment cache for loading RF data (reuse if available)
+            if ~exist('cachedExp', 'var') || ~isa(cachedExp, 'containers.Map')
+                cachedExp = containers.Map('KeyType', 'double', 'ValueType', 'any');
+            end
+
+            for ti = 1:nSample
+
+                % --- Metadata for this neuron ---
+                phyID_t    = tblSample.phyID(ti);
+                ex_t       = str2double(string(tblSample.experimentNum(ti)));
+                stimType_t = char(string(tblSample.stimulus(ti)));
+                isStr_t    = tblSample.isStripe(ti);
+                score_t    = tblSample.stripeBestScore(ti);
+                pval_t     = tblSample.stripeBestPval(ti);
+                angle_t    = tblSample.stripeBestAngle(ti);
+
+                % --- Load experiment data (with caching) -----------------
+                if ~cachedExp.isKey(ex_t)
+                    NP_t      = loadNPclassFromTable(ex_t);
+                    obj_lmb   = linearlyMovingBallAnalysis(NP_t);
+                    p_s_t     = NP_t.convertPhySorting2tIc(obj_lmb.spikeSortingFolder);
+                    phy_IDg_t = p_s_t.phy_ID(string(p_s_t.label') == 'good');
+
+                    S_rf_lmb_t = obj_lmb.CalculateReceptiveFields;
+                    try
+                        obj_rg_t  = rectGridAnalysis(NP_t);
+                        S_rf_rg_t = obj_rg_t.CalculateReceptiveFields;
+                    catch
+                        S_rf_rg_t = [];
+                    end
+
+                    rfSpeed_t  = S_rf_lmb_t.params.speed;
+                    rfField_t  = sprintf('Speed%d', rfSpeed_t);
+                    NR_t       = obj_lmb.ResponseWindow;
+                    NV_t       = NR_t.(rfField_t).NeuronVals;
+                    dL_t       = NV_t(:,:,6);
+                    sR_t       = NV_t(:,:,1);
+                    uD_t       = unique(dL_t(1,:));
+                    nGU_t      = size(NV_t, 1);
+                    mRPD_t     = zeros(nGU_t, numel(uD_t));
+                    for dd = 1:numel(uD_t)
+                        mRPD_t(:,dd) = max(sR_t(:, dL_t(1,:)==uD_t(dd)), [], 2);
+                    end
+                    [~, pDI_t] = max(mRPD_t, [], 2);
+
+                    cachedExp(ex_t) = struct( ...
+                        'S_rf_lmb',      S_rf_lmb_t, ...
+                        'S_rf_rg',       {S_rf_rg_t}, ...
+                        'phy_IDg',       phy_IDg_t, ...
+                        'prefDirIdxAll', pDI_t);
+                end
+                cached_t = cachedExp(ex_t);
+
+                [~, nIdx_t] = ismember(phyID_t, cached_t.phy_IDg);
+                if nIdx_t == 0, continue; end
+
+                % --- Extract the RF slice for visualisation --------------
+                switch stimType_t
+                    case 'linearlyMovingBall'
+                        bestDir_t = tblSample.stripeBestDir(ti);
+                        if isnan(bestDir_t)
+                            bestDir_t = cached_t.prefDirIdxAll(nIdx_t);
+                        end
+                        rfSlice_t = squeeze( ...
+                            cached_t.S_rf_lmb.RFuSTDirSizeLum( ...
+                            bestDir_t, params.sizeIdx, params.lumIdx, :, :, nIdx_t));
+                        rfShuff_t = cached_t.S_rf_lmb.RFuShuffST(:, :, nIdx_t);
+                        rfSub_t   = rfSlice_t - rfShuff_t;
+
+                    case 'rectGrid'
+                        if ~isempty(cached_t.S_rf_rg)
+                            rfFull_t  = squeeze(cached_t.S_rf_rg.RFu( ...
+                                params.onOff, params.lumIdx, params.sizeIdx, :, :, nIdx_t));
+                            rfSFull_t = squeeze(cached_t.S_rf_rg.RFuShuffMean( ...
+                                params.onOff, params.lumIdx, params.sizeIdx, :, :, nIdx_t));
+                            rfSub_t   = rfFull_t - rfSFull_t;
+                        else
+                            rfSub_t = zeros(9);
+                        end
+
+                    otherwise
+                        rfSub_t = zeros(9);
+                end
+
+                % --- Run stripe detection to get the Radon profile -------
+                resTest = detectStripeRF(rfSub_t, ...
+                    'angleStep',   params.stripeAngleStep, ...
+                    'nSurrogates', 200, ...
+                    'alpha',       params.stripeAlpha, ...
+                    'rngSeed',     42 + ti);
+
+                % =========================================================
+                % LEFT TILE: RF image
+                % =========================================================
+                nexttile;
+                imagesc(rfSub_t);
+                axis equal tight off;
+                maxAbs_t = max(abs(rfSub_t(:)));
+                if maxAbs_t > 0, clim([-maxAbs_t maxAbs_t]); end
+
+                % Title: colour-coded by classification — BIG FONT
+                if isStr_t
+                    titleColor = [0.8 0 0];
+                    passLabel  = 'STRIPE';
+                else
+                    titleColor = [0 0.5 0];
+                    passLabel  = 'clean';
+                end
+                title(sprintf('phy%d  %s   S=%.1f  p=%.3f', ...
+                    phyID_t, passLabel, score_t, pval_t), ...
+                    'FontSize', 11, ...                  % bumped from 10
+                    'FontName', 'Helvetica', ...
+                    'FontWeight', 'bold', ...            % new — emphasise classification
+                    'Color', titleColor);
+
+                % Overlay stripe angle line if detected
+                if isStr_t && ~isnan(angle_t)
+                    hold on;
+                    cx = size(rfSub_t, 2) / 2;
+                    cy = size(rfSub_t, 1) / 2;
+                    lineLen = max(size(rfSub_t)) * 0.4;
+                    dx = lineLen * cosd(angle_t);
+                    dy = -lineLen * sind(angle_t);
+                    plot([cx-dx, cx+dx], [cy-dy, cy+dy], ...
+                        'r-', 'LineWidth', 2);            % thicker line
+                    hold off;
+                end
+
+                % Colourbar with readable tick labels
+                cb = colorbar;
+                cb.FontSize      = 8;                    % readable
+                cb.TickDirection = 'out';
+                cb.Ticks         = linspace(cb.Limits(1), cb.Limits(2), 3);
+
+                % =========================================================
+                % RIGHT TILE: Radon variance profile
+                % =========================================================
+                nexttile;
+                bar(resTest.angles, resTest.varProfile, 1, ...
+                    'FaceColor', [0.4 0.6 0.8], ...
+                    'EdgeColor', 'none');
+                hold on;
+
+                % Reference line at the mean projection variance
+                meanVarAll = mean(resTest.varProfile);
+                yline(meanVarAll, '--', ...
+                    'Color',     [0.5 0.5 0.5], ...
+                    'LineWidth', 1, ...                  % bumped from 0.5
+                    'Label',     'mean', ...
+                    'FontSize',  9, ...                  % new — readable label
+                    'LabelHorizontalAlignment', 'left');
+
+                % Shade the diagonal-acceptance windows (45° ± 30°, 135° ± 30°)
+                % so it's visually obvious why some peaks pass and others fail.
+                yl = ylim;
+
+                % Shade the accepted projection-angle window for BL→TR
+                % stripes with 3° margin from horizontal and vertical.
+                % stripeAngle = projAngle + 90 (mod 180), so
+                %   stripeAngle ∈ (3°, 87°)  ⇔  projAngle ∈ (93°, 177°).
+                patch([93 177 177 93], [yl(1) yl(1) yl(2) yl(2)], ...
+                    [0.9 0.95 0.7], 'EdgeColor', 'none', 'FaceAlpha', 0.3);
+                % Re-draw bars on top of the patches
+                bar(resTest.angles, resTest.varProfile, 1, ...
+                    'FaceColor', [0.4 0.6 0.8], 'EdgeColor', 'none');
+
+                % Axis labels — BIG FONT
+                xlabel('Radon projection angle (°)', 'FontSize', 10);
+                ylabel('projection variance',         'FontSize', 10);
+
+                % Title: stim type, best direction, stripe orientation
+                title(sprintf('%s  dir=%s  ang=%.0f°', ...
+                    stimType_t(1:min(2,end)), ...
+                    num2str(tblSample.stripeBestDir(ti)), ...
+                    angle_t), ...
+                    'FontSize', 11, ...                  % bumped from 5
+                    'FontName', 'Helvetica');
+
+                % Axis tick labels — BIG FONT
+                set(gca, 'FontSize', 9);                  % bumped from 4
+
+                xlim([0 180]);
+                hold off;
+
+            end  % test neuron loop
+
+            % Save test figure
+            testPdfPath = fullfile(saveDir, sprintf('StripeTest_%s.pdf', params.indexType));
+            exportgraphics(figTest, testPdfPath, 'ContentType', 'vector');
+            fprintf('  Stripe test figure saved to:\n    %s\n', testPdfPath);
+
+        end  % nSample > 0
+
+    end  % testStripeDetection
 
     % Remove unused categorical levels introduced by partial data
     tbl.stimulus      = removecats(tbl.stimulus);
@@ -942,363 +1530,750 @@ if params.plot
 end
 
 % =========================================================================
-% RECEPTIVE FIELD PAGES (multi-page PDF)
-% Generates one PDF per stim type.  Each page shows a tile-layout of
-% full-resolution RFs, sorted by descending tuning index.  Each tile is
-% annotated with the neuron's phy ID, tuning-index value, and (for
-% linearlyMovingBall) the preferred direction in degrees.
+% RECEPTIVE FIELD PAGES  (multi-page PDF)
+%
+% Layout:  One page per animal.  Within each animal, neurons are grouped
+%          by insertion (experimentNum).  Each insertion group begins with
+%          a labelled header tile so the reader knows which recording the
+%          following RFs come from.  Neurons within an insertion are sorted
+%          by descending tuning index.
+%
+% Standard mode (plotRFunion=false):
+%   One PDF per stim type.  Each tile shows one neuron's RF.
+%   Grid: nCols_rf=5 × nRows_rf=8  (40 tiles/page).
+%
+% Union mode (plotRFunion=true):
+%   Single PDF.  Each neuron occupies TWO adjacent tiles: MB on the left,
+%   SB (rectGrid) on the right.  Tiles are arranged in "pair columns".
+%   Grid: nPairCols=3 → nCols_rf=6 × nRows_rf=7  (21 neuron-pairs/page).
+%   Neurons not responsive to one stim type show "n/r" in that tile.
 % =========================================================================
 if params.plotRFs
 
-    % ---- Guard: prefDir must be true for MB RF pages --------------------
+    % prefDir is required for linearlyMovingBall because without it
+    % the RF slice to display is ambiguous (which direction to show?)
     if ~params.prefDir
-        % Without preferred-direction selection the RF slice to plot is
-        % ambiguous for linearlyMovingBall, so we skip entirely.
         fprintf(['plotRFs requires prefDir=true for linearlyMovingBall.\n' ...
                  'Skipping RF page generation.\n']);
     else
 
-        % ---- Page geometry ----------------------------------------------
-        nCols        = 5;          % number of tile columns per page
-        nRows        = 8;          % number of tile rows per page
-        tilesPerPage = nCols * nRows;  % total tiles that fit on one page
+        % -----------------------------------------------------------------
+        % Tile layout constants
+        % -----------------------------------------------------------------
+        if params.plotRFunion
+            nPairCols    = 3;              % neuron-pair columns per row (each pair = MB + SB)
+            nCols_rf     = nPairCols * 2;  % total tile columns (6)
+            nRows_rf     = 7;              % tile rows per page
+        else
+            nCols_rf = 5;                  % tile columns per page (standard mode)
+            nRows_rf = 8;                  % tile rows per page (standard mode)
+        end
+        tilesPerPage = nCols_rf * nRows_rf;  % total tiles that fit on one A4 page
 
-        % ---- Filter the results table to the requested condition --------
-        idxCond_rf       = tbl.onOff   == params.onOff   & ...
-                           tbl.sizeIdx == params.sizeIdx & ...
-                           tbl.lumIdx  == params.lumIdx;
-        tblCondRF        = tbl(idxCond_rf, :);           % rows matching condition
-        tblCondRF.value  = tblCondRF.(params.indexType);  % copy chosen index into 'value'
+        % Width of one "neuron item" in tile units:
+        % union → 2 tiles (MB + SB side by side); standard → 1 tile
+        neuronWidth = 1 + params.plotRFunion;
 
-        % ---------------------------------------------------------
-        % If plotRFunion: build a single neuron set from the union
-        % of neurons responsive to either stim type, BEFORE entering
-        % the stim-type loop.  Both PDFs will show the same neurons.
-        % ---------------------------------------------------------
+        % -----------------------------------------------------------------
+        % Inline ternary helper for compact annotation formatting:
+        % returns trueStr when cond is true, falseStr otherwise.
+        % Used for "n/r" vs numeric value in tile titles.
+        % -----------------------------------------------------------------
+        ternaryStr = @(cond, trueStr, falseStr) ...
+            subsref({falseStr; trueStr}, substruct('{}', {cond + 1}));
+
+        % -----------------------------------------------------------------
+        % Filter the full results table to the requested condition
+        % (onOff, sizeIdx, lumIdx) — same filter used for the swarm plot.
+        % -----------------------------------------------------------------
+        idxCond_rf      = tbl.onOff   == params.onOff   & ...
+                          tbl.sizeIdx == params.sizeIdx & ...
+                          tbl.lumIdx  == params.lumIdx;
+        tblCondRF       = tbl(idxCond_rf, :);            % rows matching condition
+        tblCondRF.value = tblCondRF.(params.indexType);   % copy chosen index into 'value'
+
+        % -----------------------------------------------------------------
+        % Build neuron list for union mode
+        % -----------------------------------------------------------------
         if params.plotRFunion
 
-            % Inline ternary helper for compact annotation formatting:
-            % returns trueStr when cond is true, falseStr otherwise.
-            ternaryStr = @(cond, trueStr, falseStr) ...
-                subsref({falseStr; trueStr}, substruct('{}', {cond + 1}));
-
-            % Separate table rows by stim type for per-stim-type lookup
+            % Separate rows by stim type for per-stim lookup
             mbRows = tblCondRF(tblCondRF.stimulus == "linearlyMovingBall", :);
             sbRows = tblCondRF(tblCondRF.stimulus == "rectGrid", :);
 
-            % Collect every unique (experimentNum, phyID) pair across both
-            % stim types — this is the union neuron set
-            keysMB  = mbRows(:, {'experimentNum', 'phyID'});
-            keysSB  = sbRows(:, {'experimentNum', 'phyID'});
-            allKeys = unique([keysMB; keysSB], 'rows');
+            % Extract unique (animal, experimentNum, phyID) keys from each
+            % stim type. Including 'animal' in the key prevents accidental
+            % merging if two animals ever share an experimentNum.
+            keysMB  = mbRows(:, {'animal', 'experimentNum', 'phyID'});
+            keysSB  = sbRows(:, {'animal', 'experimentNum', 'phyID'});
+            allKeys = unique([keysMB; keysSB], 'rows');  % union of both key sets
+            nUnion  = height(allKeys);                   % total unique neurons
 
-            % Pre-allocate columns for each stim type's tuning index and
-            % preferred-direction metadata (MB only)
-            nUnion = height(allKeys);
-            allKeys.valueMB    = nan(nUnion, 1);  % MB tuning index  (NaN = not responsive)
-            allKeys.valueSB    = nan(nUnion, 1);  % SB tuning index  (NaN = not responsive)
+            % Pre-allocate per-stim-type value columns and pref-dir metadata
+            allKeys.valueMB    = nan(nUnion, 1);  % MB tuning index (NaN = not responsive)
+            allKeys.valueSB    = nan(nUnion, 1);  % SB tuning index (NaN = not responsive)
             allKeys.prefDirIdx = nan(nUnion, 1);  % preferred direction index (MB only)
-            allKeys.prefDirDeg = nan(nUnion, 1);  % preferred direction degrees (MB only)
+            allKeys.prefDirDeg = nan(nUnion, 1);  % preferred direction in degrees (MB only)
+            allKeys.isStripeMB = false(nUnion, 1);
+            allKeys.isStripeSB = false(nUnion, 1);
+            allKeys.stripeScoreMB = nan(nUnion, 1);
+            allKeys.stripeScoreSB = nan(nUnion, 1);
+            allKeys.stripeAngleMB = nan(nUnion, 1);
+            allKeys.stripeAngleSB = nan(nUnion, 1);
+          
 
-            % Fill per-neuron values by matching on experiment + phyID
+            % Fill each neuron's stim-specific values by matching on
+            % (experimentNum, phyID).  A neuron may appear in one or both
+            % stim types; missing entries stay NaN.
             for ri = 1:nUnion
                 % Look up this neuron in the MB rows
                 mMatch = mbRows.experimentNum == allKeys.experimentNum(ri) & ...
-                    mbRows.phyID         == allKeys.phyID(ri);
+                         mbRows.phyID         == allKeys.phyID(ri);
                 if any(mMatch)
-                    mIdx = find(mMatch, 1);              % first (only) matching row
-                    allKeys.valueMB(ri)    = mbRows.value(mIdx);
+                    mIdx = find(mMatch, 1);                        % first (only) match
+                    allKeys.valueMB(ri)    = mbRows.value(mIdx);   % MB tuning index
                     allKeys.prefDirIdx(ri) = mbRows.prefDirIdx(mIdx);
                     allKeys.prefDirDeg(ri) = mbRows.prefDirDeg(mIdx);
+                    allKeys.isStripeMB(ri)    = mbRows.isStripe(mIdx);
+                    allKeys.stripeScoreMB(ri) = mbRows.stripeBestScore(mIdx);
+                    allKeys.stripeAngleMB(ri) = mbRows.stripeBestAngle(mIdx);
                 end
 
                 % Look up this neuron in the SB rows
                 sMatch = sbRows.experimentNum == allKeys.experimentNum(ri) & ...
-                    sbRows.phyID         == allKeys.phyID(ri);
+                         sbRows.phyID         == allKeys.phyID(ri);
                 if any(sMatch)
                     allKeys.valueSB(ri) = sbRows.value(find(sMatch, 1));
+                    allKeys.isStripeSB(ri)    = sbRows.isStripe(find(sMatch,1));
+                    allKeys.stripeScoreSB(ri) = sbRows.stripeBestScore(find(sMatch,1));
+                    allKeys.stripeAngleSB(ri) = sbRows.stripeBestAngle(find(sMatch,1));
                 end
             end
+
+            % Use MB tuning index as the primary sort key so neuron order
+            % is consistent between the MB and SB tiles.
+            allKeys.value = allKeys.valueMB;
 
             fprintf('  [plotRFunion] %d unique neurons in union set.\n', nUnion);
         end
 
-        % ---- Iterate over each stimulus type ----------------------------
-        for ss = 1:numel(params.stimTypes)
+        % -----------------------------------------------------------------
+        % Determine how many stim-type iterations the PDF loop needs:
+        %   union → 1 pass (single PDF with paired tiles)
+        %   standard → one pass per stim type (one PDF each)
+        % -----------------------------------------------------------------
+        if params.plotRFunion
+            nStimLoop = 1;                         % single combined PDF
+        else
+            nStimLoop = numel(params.stimTypes);   % one PDF per stim type
+        end
 
-            stimType = params.stimTypes(ss);  % current stimulus type string
+        % -----------------------------------------------------------------
+        % Build filename tags that reflect the current mode
+        % -----------------------------------------------------------------
+        if params.subtractShuffle
+            shuffTag = '_shuffSub';   % shuffle baseline subtracted
+        else
+            shuffTag = '_raw';        % raw RF plotted
+        end
+        if params.plotRFunion
+            unionTag = '_union';      % union neuron set
+        else
+            unionTag = '';            % per-stim neuron set
+        end
 
-            % ---------------------------------------------------------
-            % Select neurons: union set or per-stim-type set
-            % ---------------------------------------------------------
+        % Experiment data cache: avoids reloading heavy RF data for each
+        % neuron.  Key = experiment number (double), value = struct with
+        % RF data for both stim types plus preferred-direction metadata.
+        cachedExp = containers.Map('KeyType', 'double', 'ValueType', 'any');
+
+        % =================================================================
+        % STIM-TYPE (OR UNION) LOOP — one iteration per output PDF
+        % =================================================================
+        for ssLoop = 1:nStimLoop
+
+            % Select the neuron table for this PDF
             if params.plotRFunion
-
-                % Use the pre-built union table — same neurons for both PDFs
-                tblStim = allKeys;
-
-                % Sort both PDFs by MB tuning index so neuron positions
-                % match across the two PDFs for direct visual comparison.
-                % Neurons not responsive to MB (NaN) sink to the bottom.
-                tblStim.value = tblStim.valueMB;
-                tblStim = sortrows(tblStim, 'value', 'descend', ...
-                    'MissingPlacement', 'last');
+                tblStim        = allKeys;         % pre-built union table
+                stimLabel_file = 'union';          % filename label
+                stimType_loop  = "union";          % sentinel — not a real stim type
             else
-                % Default: only neurons responsive to this stim type
-                stimMask = tblCondRF.stimulus == char(stimType);
-                tblStim  = tblCondRF(stimMask, :);
+                stimType_loop  = params.stimTypes(ssLoop);       % current stim type string
+                stimMask       = tblCondRF.stimulus == char(stimType_loop);
+                tblStim        = tblCondRF(stimMask, :);         % rows for this stim type
+                stimLabel_file = char(stimType_loop);            % filename label
             end
 
-            % Skip if no data for this stim type
+            % Skip if no neurons for this stim type / union
             if isempty(tblStim)
-                fprintf('  [plotRFs] No neurons for %s — skipping.\n', char(stimType));
+                fprintf('  [plotRFs] No neurons for %s — skipping.\n', stimLabel_file);
                 continue
             end
 
-            % Sort by tuning index descending (only for the non-union path;
-            % the union path was already sorted above)
-            if ~params.plotRFunion
-                tblStim = sortrows(tblStim, 'value', 'descend');
-            end
-
-            nNeurons = height(tblStim);                % total neurons to plot
-            nPages   = ceil(nNeurons / tilesPerPage);  % number of PDF pages
-
             % Build the output PDF path inside the combined-analysis directory
-            if params.subtractShuffle
-                shuffTag = '_shuffSub';   % tag indicating shuffle was subtracted
-            else
-                shuffTag = '_raw';        % tag indicating raw RF plotted
-            end
-            unionTag = '';  if params.plotRFunion, unionTag = '_union'; end
             pdfName = sprintf('RFpages_%s_%s%s%s.pdf', ...
-                char(stimType), params.indexType, shuffTag, unionTag);
-            pdfPath = fullfile(saveDir, pdfName);  % full path for the PDF
+                stimLabel_file, params.indexType, shuffTag, unionTag);
+            pdfPath = fullfile(saveDir, pdfName);  % full path for the PDF file
 
-            % Cache loaded experiments so each experiment's heavy data is
-            % read from disk only once (key = experiment number)
-            cachedExp = containers.Map('KeyType', 'double', 'ValueType', 'any');
+            % Flag: true until the first page is exported (create vs append)
+            firstPdfPage = true;
 
-            % ---- Loop over pages ----------------------------------------
-            for pg = 1:nPages
+            % Get unique animal names from this neuron set.
+            % removecats drops levels with zero rows; categories returns
+            % the remaining level names as a cell array of char vectors.
+            animals_rf = categories(removecats(tblStim.animal));
 
-                % Create an invisible figure sized to A4 portrait (21 × 29.7 cm)
-                fig_rf = figure('Visible', 'off', ...
-                    'Units', 'centimeters', ...
-                    'Position', [0 0 21 29.7]);
+            % =============================================================
+            % ANIMAL LOOP — one or more pages per animal
+            % =============================================================
+            for ai = 1:numel(animals_rf)
 
-                % Tiled layout with compact spacing to maximise tile area
-                tl = tiledlayout(nRows, nCols, ...
-                    'TileSpacing', 'compact', ...
-                    'Padding',     'compact');
+                animalCat  = animals_rf{ai};   % current animal name (char)
 
-                % Page-level title indicating stim type, mode, and page number
-                if stimType == "linearlyMovingBall"
-                    stimLabel_pg = 'Moving Ball RFs';
-                else
-                    stimLabel_pg = 'Rect Grid RFs';
+                % Select rows belonging to this animal
+                animalRows = tblStim(tblStim.animal == animalCat, :);
+
+                % Get unique insertions (experiments) for this animal,
+                % preserving their natural categorical order.
+                insertions_rf = categories(removecats(animalRows.experimentNum));
+
+                % Sort neurons within each insertion by descending tuning
+                % index, but keep insertion groups in their original order.
+                sortedAnimalRows = table();                      % accumulator
+                for ii = 1:numel(insertions_rf)
+                    % Extract rows for this insertion
+                    insRows = animalRows(animalRows.experimentNum == insertions_rf{ii}, :);
+                    % Sort descending by tuning index; NaN values go last
+                    insRows = sortrows(insRows, 'value', 'descend', ...
+                        'MissingPlacement', 'last');
+                    % Append to the sorted accumulator
+                    sortedAnimalRows = [sortedAnimalRows; insRows]; %#ok<AGROW>
                 end
-                if params.plotRFunion
-                    stimLabel_pg = [stimLabel_pg ' (union)'];  %#ok<AGROW>
+                animalRows = sortedAnimalRows;   % overwrite with sorted version
+
+                nNeuronsAnimal = height(animalRows);  % neurons for this animal
+                if nNeuronsAnimal == 0, continue; end  % skip empty animals
+
+                % ---------------------------------------------------------
+                % Build a flat "slot" list for this animal.
+                % Each slot is either:
+                %   'header' — marks the start of a new insertion group
+                %   'neuron' — one RF tile (or pair of tiles in union mode)
+                % Headers always begin at column 1 of a fresh row.
+                % ---------------------------------------------------------
+                slots = struct('type', {}, 'expNum', {}, 'rowIdx', {});
+                currentIns = '';   % track current insertion to detect boundaries
+                for ri = 1:nNeuronsAnimal
+                    % Convert categorical experimentNum to char for comparison
+                    thisIns = char(string(animalRows.experimentNum(ri)));
+                    if ~strcmp(thisIns, currentIns)
+                        % New insertion detected — insert a header slot
+                        currentIns = thisIns;
+                        slots(end+1) = struct('type', 'header', ...  %#ok<AGROW>
+                            'expNum', thisIns, ...      % insertion label
+                            'rowIdx', NaN);             % not a neuron — no row index
+                    end
+                    % Append a neuron slot referencing this row of animalRows
+                    slots(end+1) = struct('type', 'neuron', ...  %#ok<AGROW>
+                        'expNum', thisIns, ...        % for reference (not used in layout)
+                        'rowIdx', ri);                % index into animalRows
                 end
-                pageTitleStr = sprintf('%s — %s  (page %d/%d)', ...
-                    stimLabel_pg, params.indexType, pg, nPages);
-                title(tl, pageTitleStr, 'FontSize', 9, 'FontName', 'Helvetica');
 
-                % Index range for the neurons that belong to this page
-                startNeuron = (pg - 1) * tilesPerPage + 1;
-                endNeuron   = min(pg * tilesPerPage, nNeurons);
+                % ---------------------------------------------------------
+                % Assign tile positions and paginate.
+                % Walk through the slot list, tracking the current tile
+                % position (1-based linear index within a page) and the
+                % current column (1-based).  When a header is encountered,
+                % jump to column 1 of the next row.  When a page fills up,
+                % start a new page.
+                % ---------------------------------------------------------
+                assignments = struct('page',{}, 'tile',{}, 'type',{}, ...
+                    'expNum',{}, 'rowIdx',{});  % output: per-tile render plan
+                pg = 1;        % current page number (1-based)
+                tilePos = 1;   % current tile position within the page (1-based, linear)
+                col = 1;       % current column within the page (1-based)
 
-                % ---- Loop over neurons on this page ---------------------
-                for ni = startNeuron:endNeuron
+                for si = 1:numel(slots)
+                    slot = slots(si);   % current slot to place
 
-                    nexttile;  % advance to the next tile in the layout
+                    if strcmp(slot.type, 'header')
+                        % --- Insertion header: must start at column 1 ----
 
-                    % Read metadata for this neuron from the sorted table
-                    phyID = tblStim.phyID(ni);
-                    tVal  = tblStim.value(ni);
-                    ex    = str2double(string(tblStim.experimentNum(ni)));
-
-                    % ----- Load experiment data (with caching) -----------
-                    if ~cachedExp.isKey(ex)
-
-                        NP_tmp = loadNPclassFromTable(ex);
-
-                        % Always derive phy_IDg from linearlyMovingBallAnalysis
-                        % to match the phyIDs stored in the results table
-                        obj_lmb     = linearlyMovingBallAnalysis(NP_tmp);
-                        p_s_tmp     = NP_tmp.convertPhySorting2tIc(obj_lmb.spikeSortingFolder);
-                        phy_IDg_tmp = p_s_tmp.phy_ID(string(p_s_tmp.label') == 'good');
-
-                        % Load RF data from the stim-specific analysis object
-                        switch stimType
-                            case "linearlyMovingBall"
-                                obj_stim = obj_lmb;
-                            case "rectGrid"
-                                obj_stim = rectGridAnalysis(NP_tmp);
+                        % If not already at column 1, skip remaining tiles
+                        % in the current row to reach the start of the next row
+                        if col > 1
+                            tilePos = tilePos + (nCols_rf - col + 1);  % advance to next row
+                            col = 1;                                    % reset column counter
                         end
-                        S_rf_tmp = obj_stim.CalculateReceptiveFields;
 
-                        % -------------------------------------------------
-                        % Compute preferred direction for ALL good units
-                        % (needed for union mode, where some neurons may not
-                        %  be MB-responsive and thus lack prefDirIdx in the
-                        %  table).  Uses the same logic as the main computation.
-                        % -------------------------------------------------
-                        S_rf_lmb   = obj_lmb.CalculateReceptiveFields;
-                        rfSpeed    = S_rf_lmb.params.speed;
-                        rfField    = sprintf('Speed%d', rfSpeed);
-                        NeuronResp = obj_lmb.ResponseWindow;
-                        NeuronVals = NeuronResp.(rfField).NeuronVals;
-                        % NeuronVals: [nGoodUnits, nConditions, nFeatures]
-
-                        dirLabels  = NeuronVals(:,:,6);         % direction (radians)
-                        spikeRates = NeuronVals(:,:,1);         % spike rate
-                        uDirsLocal = unique(dirLabels(1,:));    % sorted unique directions
-
-                        % Max spike rate per direction per good unit
-                        nGU = size(NeuronVals, 1);
-                        maxRPD = zeros(nGU, numel(uDirsLocal));
-                        for dd = 1:numel(uDirsLocal)
-                            dMask = dirLabels(1,:) == uDirsLocal(dd);
-                            maxRPD(:,dd) = max(spikeRates(:, dMask), [], 2);
+                        % Check whether we've exceeded the current page
+                        if tilePos > tilesPerPage
+                            pg = pg + 1;       % move to a new page
+                            tilePos = 1;       % reset tile counter
+                            col = 1;           % reset column counter
                         end
-                        [~, prefDirIdxAll] = max(maxRPD, [], 2);        % [nGU,1]
-                        prefDirDegAll = rad2deg(uDirsLocal(prefDirIdxAll))';  % [nGU,1]
 
-                        % Store everything in the cache
-                        cachedExp(ex) = struct( ...
-                            'S_rf',           S_rf_tmp, ...
-                            'S_rf_lmb',       S_rf_lmb, ...
-                            'phy_IDg',        phy_IDg_tmp, ...
-                            'prefDirIdxAll',  prefDirIdxAll, ...
-                            'prefDirDegAll',  prefDirDegAll);
+                        % Record this header's position in the render plan.
+                        % In union mode the header will span 2 tile columns
+                        % (one pair width) via nexttile([1,2]); in standard
+                        % mode it occupies a single tile.
+                        assignments(end+1) = struct( ...
+                            'page', pg, ...            % page this header appears on
+                            'tile', tilePos, ...       % tile position within the page
+                            'type', 'header', ...      % slot type
+                            'expNum', slot.expNum, ... % insertion label to display
+                            'rowIdx', NaN);            %#ok<AGROW>
+
+                        % Advance the tile counter past the header.
+                        % neuronWidth is 2 for union (header spans a pair) or 1 for standard.
+                        tilePos = tilePos + neuronWidth;
+                        col     = col     + neuronWidth;
+
+                    else
+                        % --- Neuron slot ---------------------------------
+
+                        % Check whether the neuron fits in the remaining
+                        % columns of the current row.  If not, jump to the
+                        % next row.
+                        if col + neuronWidth - 1 > nCols_rf
+                            tilePos = tilePos + (nCols_rf - col + 1);  % skip to next row
+                            col = 1;                                    % reset column
+                        end
+
+                        % Check page overflow after the potential row skip
+                        if tilePos + neuronWidth - 1 > tilesPerPage
+                            pg = pg + 1;       % new page
+                            tilePos = 1;       % reset tile counter
+                            col = 1;           % reset column counter
+                        end
+
+                        % Record the neuron's position
+                        assignments(end+1) = struct( ...
+                            'page', pg, ...             % page number
+                            'tile', tilePos, ...        % starting tile position
+                            'type', 'neuron', ...       % slot type
+                            'expNum', slot.expNum, ...  % insertion (for reference)
+                            'rowIdx', slot.rowIdx);     %#ok<AGROW>  index into animalRows
+
+                        % Advance the tile counter
+                        tilePos = tilePos + neuronWidth;
+                        col     = col     + neuronWidth;
                     end
 
-                    % Retrieve cached data for this experiment
-                    cached = cachedExp(ex);
-
-                    % Find this neuron's index within the good-unit array
-                    [~, nIdx] = ismember(phyID, cached.phy_IDg);
-
-                    % Guard: if phyID is not found, skip this tile
-                    if nIdx == 0
-                        text(0.5, 0.5, sprintf('phy%d\nnot found', phyID), ...
-                            'HorizontalAlignment', 'center', ...
-                            'FontSize', 5);
-                        axis off;
-                        continue
+                    % Wrap column counter when a full row is consumed
+                    if col > nCols_rf
+                        col = 1;
                     end
+                end  % slot loop
 
-                    % ----- Extract the full-resolution RF slice -----------
-                    switch stimType
+                totalPages = pg;  % total pages needed for this animal
 
-                        case "linearlyMovingBall"
-                            % Preferred direction: use table value if available
-                            % (MB-responsive neuron), otherwise use the cached
-                            % value computed for all good units
-                            prefIdx = tblStim.prefDirIdx(ni);
-                            prefDeg = tblStim.prefDirDeg(ni);
+                % ==========================================================
+                % PAGE RENDERING LOOP
+                % ==========================================================
+                for pg = 1:totalPages
 
+                    % Extract the assignments that belong to this page
+                    pgAssign = assignments([assignments.page] == pg);
+
+                    % Create an invisible figure sized to A4 portrait (21 × 29.7 cm)
+                    fig_rf = figure('Visible', 'off', ...
+                        'Units', 'centimeters', ...
+                        'Position', [0 0 21 29.7]);
+
+                    % Tiled layout with compact spacing to maximise tile area
+                    tl = tiledlayout(nRows_rf, nCols_rf, ...
+                        'TileSpacing', 'compact', ...
+                        'Padding',     'compact');
+
+                    % Build a descriptive page-level title
+                    if params.plotRFunion
+                        pageLabel = sprintf('%s — MB vs SB (union)', animalCat);
+                    else
+                        pageLabel = sprintf('%s — %s', animalCat, char(stimType_loop));
+                    end
+                    title(tl, sprintf('%s   [%s, page %d/%d]', ...
+                        pageLabel, params.indexType, pg, totalPages), ...
+                        'FontSize', 9, 'FontName', 'Helvetica');
+
+                    % ---- Render each assigned tile on this page ---------
+                    for ti = 1:numel(pgAssign)
+
+                        ta = pgAssign(ti);   % current tile assignment
+
+                        % =====================================================
+                        % HEADER TILE
+                        % =====================================================
+                        if strcmp(ta.type, 'header')
+
+                            % In union mode: header spans 2 columns (one pair width)
+                            % so that it visually matches the neuron-pair width.
+                            % In standard mode: header occupies one tile.
+                            if params.plotRFunion
+                                nexttile(ta.tile, [1, 2]);   % span 1 row × 2 cols
+                            else
+                                nexttile(ta.tile);           % single tile
+                            end
+
+                            % Draw the insertion label centred in the tile
+                            text(0.5, 0.5, ...
+                                sprintf('Insertion %s', ta.expNum), ...
+                                'Units', 'normalized', ...           % normalised so 0.5 = centre
+                                'HorizontalAlignment', 'center', ... % centre horizontally
+                                'VerticalAlignment', 'middle', ...   % centre vertically
+                                'FontSize', 7, ...                   % legible but compact
+                                'FontWeight', 'bold', ...            % bold for emphasis
+                                'FontName', 'Helvetica');
+                            axis off;   % hide axes for a clean look
+
+                        % =====================================================
+                        % NEURON TILE(S)
+                        % =====================================================
+                        else
+
+                            ri    = ta.rowIdx;                                       % row index into animalRows
+                            phyID = animalRows.phyID(ri);                            % Phy cluster ID
+                            ex    = str2double(string(animalRows.experimentNum(ri))); % experiment number as double
+
+                            % -------------------------------------------------
+                            % Load and cache experiment data
+                            % The cache stores heavy RF data structures so each
+                            % experiment is read from disk only once.  Both MB
+                            % and RG RF data are loaded unconditionally because
+                            % union mode needs both, and caching both is cheap
+                            % compared to the disk read.
+                            % -------------------------------------------------
+                            if ~cachedExp.isKey(ex)
+
+                                % Load the NeuropixelsClass object for this experiment
+                                NP_tmp = loadNPclassFromTable(ex);
+
+                                % Build linearlyMovingBallAnalysis — always needed
+                                % for preferred-direction computation and phy_IDg
+                                obj_lmb     = linearlyMovingBallAnalysis(NP_tmp);
+                                % Convert phy sorting to get good-unit phy IDs
+                                p_s_tmp     = NP_tmp.convertPhySorting2tIc(obj_lmb.spikeSortingFolder);
+                                % Extract phy IDs of units labelled 'good'
+                                phy_IDg_tmp = p_s_tmp.phy_ID(string(p_s_tmp.label') == 'good');
+
+                                % Load MB receptive field data (always needed for prefDir)
+                                S_rf_lmb = obj_lmb.CalculateReceptiveFields;
+
+                                % Load RG receptive field data (needed for rectGrid
+                                % tiles; wrapped in try-catch in case this experiment
+                                % lacks a rectGrid recording)
+                                try
+                                    obj_rg  = rectGridAnalysis(NP_tmp);
+                                    S_rf_rg = obj_rg.CalculateReceptiveFields;
+                                catch
+                                    S_rf_rg = [];   % flag: no RG data for this experiment
+                                end
+
+                                % ---- Compute preferred direction for ALL good units ----
+                                % Uses NeuronVals from the ResponseWindow at the speed
+                                % used during RF computation.  Identical logic to the
+                                % main computation block above.
+                                rfSpeed    = S_rf_lmb.params.speed;              % speed used in RF
+                                rfField    = sprintf('Speed%d', rfSpeed);         % field name
+                                NeuronResp = obj_lmb.ResponseWindow;             % response data
+                                NeuronVals = NeuronResp.(rfField).NeuronVals;    % [nGU, nCond, nFeat]
+
+                                dirLabels  = NeuronVals(:,:,6);    % direction (radians) per condition
+                                spikeRates = NeuronVals(:,:,1);    % spike rate per condition
+                                uDirsLocal = unique(dirLabels(1,:));  % sorted unique direction values
+
+                                % Max spike rate per direction per good unit (avoids
+                                % dilution from other conditions sharing that direction)
+                                nGU    = size(NeuronVals, 1);                 % number of good units
+                                maxRPD = zeros(nGU, numel(uDirsLocal));       % preallocate
+                                for dd = 1:numel(uDirsLocal)
+                                    dMask = dirLabels(1,:) == uDirsLocal(dd); % conditions at this dir
+                                    maxRPD(:,dd) = max(spikeRates(:, dMask), [], 2);  % max across conds
+                                end
+
+                                % Preferred direction = direction with highest max spike rate
+                                [~, prefDirIdxAll] = max(maxRPD, [], 2);               % [nGU, 1]
+                                prefDirDegAll      = rad2deg(uDirsLocal(prefDirIdxAll))'; % [nGU, 1] degrees
+
+                                % Store everything in the cache
+                                cachedExp(ex) = struct( ...
+                                    'S_rf_lmb',      S_rf_lmb, ...       % MB RF data
+                                    'S_rf_rg',       {S_rf_rg}, ...      % RG RF data (may be [])
+                                    'phy_IDg',       phy_IDg_tmp, ...    % good-unit phy IDs
+                                    'prefDirIdxAll', prefDirIdxAll, ...  % pref dir index per good unit
+                                    'prefDirDegAll', prefDirDegAll);     % pref dir degrees per good unit
+                            end
+
+                            % Retrieve cached data for this experiment
+                            cached = cachedExp(ex);
+
+                            % Find this neuron's index within the good-unit phy ID array
+                            [~, nIdx] = ismember(phyID, cached.phy_IDg);
+
+                            % Guard: if phyID is not found in this experiment,
+                            % annotate the tile and skip to the next neuron
+                            if nIdx == 0
+                                nexttile(ta.tile);   % advance to the tile position
+                                text(0.5, 0.5, sprintf('phy%d\nnot found', phyID), ...
+                                    'Units', 'normalized', ...
+                                    'HorizontalAlignment', 'center', ...
+                                    'FontSize', 5);
+                                axis off;
+                                % In union mode, also blank the paired tile
+                                if params.plotRFunion
+                                    nexttile(ta.tile + 1);
+                                    axis off;
+                                end
+                                continue   % skip to next tile assignment
+                            end
+
+                            % ---- Determine preferred direction for this neuron ----
+                   
+                            % Read preferred-direction metadata from the neuron table
+                            % (same column exists in both union and per-stim tables)
+                            prefIdx = animalRows.prefDirIdx(ri);
+                            prefDeg = animalRows.prefDirDeg(ri);
                             if isnan(prefIdx)
-                                % Neuron was not MB-responsive — use cached
-                                % preferred direction computed from NeuronVals
+                                % Neuron was not MB-responsive — use cached pref dir
                                 prefIdx = cached.prefDirIdxAll(nIdx);
                                 prefDeg = cached.prefDirDegAll(nIdx);
                             end
 
-                            % Slice RFuSTDirSizeLum: [nDir,nSize,nLum,rfY,rfX,nN]
-                            % Use the MB-specific RF cache (S_rf_lmb) since
-                            % S_rf may be rectGrid when this is the SB iteration
-                            rfSlice = squeeze( ...
-                                cached.S_rf_lmb.RFuSTDirSizeLum( ...
-                                prefIdx, params.sizeIdx, params.lumIdx, :, :, nIdx));
+                            % =============================================
+                            % UNION MODE: paired MB + SB tiles
+                            % =============================================
+                            if params.plotRFunion
 
-                            if params.subtractShuffle
-                                rfShuff = cached.S_rf_lmb.RFuShuffST(:, :, nIdx);
-                                rfSlice = rfSlice - rfShuff;
-                            end
+                                % Define the stim types and their labels for
+                                % the left (MB) and right (SB) tiles
+                                stimPair  = ["linearlyMovingBall", "rectGrid"];
+                                tileLabel = ["MB", "SB"];
 
-                        case "rectGrid"
-                            % Slice RFu: [2(onOff), nLums, nSize, sR, sR, nN]
-                            rfSlice = squeeze( ...
-                                cached.S_rf.RFu( ...
-                                params.onOff, params.lumIdx, params.sizeIdx, :, :, nIdx));
+                                % Loop over the two paired tiles
+                                for sp = 1:2
+                                    nexttile(ta.tile + sp - 1);  % left tile at ta.tile, right at ta.tile+1
 
-                            if params.subtractShuffle
-                                rfShuff = squeeze( ...
-                                    cached.S_rf.RFuShuffMean( ...
-                                    params.onOff, params.lumIdx, params.sizeIdx, :, :, nIdx));
-                                rfSlice = rfSlice - rfShuff;
-                            end
-                    end
+                                    rfSlice = [];       % will hold the RF image
+                                    canPlot = true;     % flag: set false if data unavailable
 
-                    % ----- Plot the RF as a colour image -----------------
-                    imagesc(rfSlice);
-                    axis equal tight;
-                    axis off;
+                                    % Extract the full-resolution RF slice for this stim type
+                                    switch stimPair(sp)
+                                        case "linearlyMovingBall"
+                                            try
+                                                % Slice at preferred direction, requested size & lum
+                                                % RFuSTDirSizeLum: [nDir, nSize, nLum, rfY, rfX, nN]
+                                                rfSlice = squeeze( ...
+                                                    cached.S_rf_lmb.RFuSTDirSizeLum( ...
+                                                    prefIdx, params.sizeIdx, params.lumIdx, :, :, nIdx));
+                                                if params.subtractShuffle
+                                                    % Subtract the per-neuron shuffle mean
+                                                    rfShuff = cached.S_rf_lmb.RFuShuffST(:, :, nIdx);
+                                                    rfSlice = rfSlice - rfShuff;
+                                                end
+                                            catch
+                                                canPlot = false;  % data missing or dimension mismatch
+                                            end
 
-                    if params.subtractShuffle
-                        maxAbs = max(abs(rfSlice(:)));
-                        if maxAbs > 0
-                            clim([-maxAbs, maxAbs]);
-                        end
-                    end
+                                        case "rectGrid"
+                                            if isempty(cached.S_rf_rg)
+                                                canPlot = false;  % no rectGrid recording for this experiment
+                                            else
+                                                try
+                                                    % Slice at requested onOff, lum, size
+                                                    % RFu: [2(onOff), nLums, nSize, sR, sR, nN]
+                                                    rfSlice = squeeze( ...
+                                                        cached.S_rf_rg.RFu( ...
+                                                        params.onOff, params.lumIdx, params.sizeIdx, :, :, nIdx));
+                                                    if params.subtractShuffle
+                                                        % Subtract the per-neuron shuffle mean
+                                                        rfShuff = squeeze( ...
+                                                            cached.S_rf_rg.RFuShuffMean( ...
+                                                            params.onOff, params.lumIdx, params.sizeIdx, :, :, nIdx));
+                                                        rfSlice = rfSlice - rfShuff;
+                                                    end
+                                                catch
+                                                    canPlot = false;  % data missing or dimension mismatch
+                                                end
+                                            end
+                                    end
 
-                    cb = colorbar;
-                    cb.FontSize  = 3.5;
-                    cb.TickDirection = 'out';
-                    cb.Ticks = linspace(cb.Limits(1), cb.Limits(2), 3);
+                                    % Render the RF or a placeholder
+                                    if canPlot && ~isempty(rfSlice)
+                                        imagesc(rfSlice);                 % display as colour image
+                                        axis equal tight off;             % square pixels, no padding, no axes
+                                        if params.subtractShuffle
+                                            % Symmetric colour scale centred at zero so that
+                                            % positive (excitatory) and negative (suppressive)
+                                            % signals are equally visible
+                                            maxAbs = max(abs(rfSlice(:)));
+                                            if maxAbs > 0
+                                                clim([-maxAbs maxAbs]);
+                                            end
+                                        end
+                                        % Compact colourbar showing min/zero/max
+                                        cb = colorbar;
+                                        cb.FontSize      = 3;
+                                        cb.TickDirection  = 'out';
+                                        cb.Ticks = linspace(cb.Limits(1), cb.Limits(2), 3);
+                                    else
+                                        % No data available — show placeholder text
+                                        text(0.5, 0.5, 'n/a', ...
+                                            'Units', 'normalized', ...
+                                            'HorizontalAlignment', 'center', ...
+                                            'FontSize', 6, 'Color', [0.5 0.5 0.5]);
+                                        axis off;
+                                    end
 
-                    % ----- Tile title annotation -------------------------
-                    if params.plotRFunion
-                        % Union mode: show both stim type indices on every tile
-                        mbVal = tblStim.valueMB(ni);
-                        sbVal = tblStim.valueSB(ni);
-                        mbStr = ternaryStr(isnan(mbVal), 'n/r', sprintf('%.2f', mbVal));
-                        sbStr = ternaryStr(isnan(sbVal), 'n/r', sprintf('%.2f', sbVal));
+                                    % Tile title annotation
+                                    if sp == 1
+                                        % Left tile (MB): show phyID, MB index, pref direction
+                                        mbVal  = animalRows.valueMB(ri);             % MB tuning index
+                                        valStr = ternaryStr(isnan(mbVal), 'n/r', sprintf('%.2f', mbVal));
+                                        title(sprintf('phy%d  MB:%s  %d°', ...
+                                            phyID, valStr, round(prefDeg)), ...
+                                            'FontSize', 4.5, 'FontName', 'Helvetica');
+                                    else
+                                        % Right tile (SB): show SB index only (phyID already on left)
+                                        sbVal  = animalRows.valueSB(ri);             % SB tuning index
+                                        valStr = ternaryStr(isnan(sbVal), 'n/r', sprintf('%.2f', sbVal));
+                                        title(sprintf('SB:%s', valStr), ...
+                                            'FontSize', 4.5, 'FontName', 'Helvetica');
+                                    end
 
-                        switch stimType
-                            case "linearlyMovingBall"
-                                % Also show preferred direction
-                                tileTitle = sprintf('phy%d|MB %s|SB %s|%d°', ...
-                                    phyID, mbStr, sbStr, round(prefDeg));
-                            case "rectGrid"
-                                tileTitle = sprintf('phy%d|MB %s|SB %s', ...
-                                    phyID, mbStr, sbStr);
-                        end
+
+                                    % --- Stripe annotation (union mode) ---
+                                    % Check the stim-specific stripe flag
+                                    if sp == 1 && ismember('isStripeMB', animalRows.Properties.VariableNames)
+                                        isStr = animalRows.isStripeMB(ri);
+                                        sAng  = animalRows.stripeAngleMB(ri);
+                                    elseif sp == 2 && ismember('isStripeSB', animalRows.Properties.VariableNames)
+                                        isStr = animalRows.isStripeSB(ri);
+                                        sAng  = animalRows.stripeAngleSB(ri);
+                                    else
+                                        isStr = false;
+                                        sAng  = NaN;
+                                    end
+                                    if isStr
+                                        hold on;
+                                        text(2, 3, 'S', 'Color', [1 0.2 0.2], ...
+                                            'FontSize', 7, 'FontWeight', 'bold');
+                                        if canPlot && ~isnan(sAng)
+                                            cx = size(rfSlice,2)/2;  cy = size(rfSlice,1)/2;
+                                            ll = max(size(rfSlice))*0.35;
+                                            plot([cx-ll*cosd(sAng), cx+ll*cosd(sAng)], ...
+                                                [cy+ll*sind(sAng), cy-ll*sind(sAng)], ...
+                                                'r-', 'LineWidth', 1.2);
+                                        end
+                                        hold off;
+                                    end
+                                end  % sp loop (MB / SB pair)
+
+                                % =============================================
+                            % STANDARD MODE: single RF tile
+                            % =============================================
+                            else
+
+                                nexttile(ta.tile);   % advance to the assigned tile
+
+                                % Extract the full-resolution RF slice for this stim type
+                                switch stimType_loop
+                                    case "linearlyMovingBall"
+                                        % Slice at preferred direction, requested size & lum
+                                        rfSlice = squeeze( ...
+                                            cached.S_rf_lmb.RFuSTDirSizeLum( ...
+                                            prefIdx, params.sizeIdx, params.lumIdx, :, :, nIdx));
+                                        if params.subtractShuffle
+                                            rfShuff = cached.S_rf_lmb.RFuShuffST(:, :, nIdx);
+                                            rfSlice = rfSlice - rfShuff;
+                                        end
+
+                                    case "rectGrid"
+                                        rfSlice = squeeze( ...
+                                            cached.S_rf_rg.RFu( ...
+                                            params.onOff, params.lumIdx, params.sizeIdx, :, :, nIdx));
+                                        if params.subtractShuffle
+                                            rfShuff = squeeze( ...
+                                                cached.S_rf_rg.RFuShuffMean( ...
+                                                params.onOff, params.lumIdx, params.sizeIdx, :, :, nIdx));
+                                            rfSlice = rfSlice - rfShuff;
+                                        end
+                                end
+
+                                imagesc(rfSlice);             % display as colour image
+                                axis equal tight off;         % square pixels, no padding, no axes
+
+                                if params.subtractShuffle
+                                    maxAbs = max(abs(rfSlice(:)));
+                                    if maxAbs > 0
+                                        clim([-maxAbs maxAbs]);   % symmetric colour scale
+                                    end
+                                end
+
+                                % Compact colourbar
+                                cb = colorbar;
+                                cb.FontSize      = 3.5;
+                                cb.TickDirection  = 'out';
+                                cb.Ticks = linspace(cb.Limits(1), cb.Limits(2), 3);
+
+                                % Tile title: phyID, tuning index, and (for MB) pref direction
+                                switch stimType_loop
+                                    case "linearlyMovingBall"
+                                        title(sprintf('phy%d | %.2f | %d°', ...
+                                            phyID, animalRows.value(ri), round(prefDeg)), ...
+                                            'FontSize', 5, 'FontName', 'Helvetica');
+                                    case "rectGrid"
+                                        title(sprintf('phy%d | %.2f', ...
+                                            phyID, animalRows.value(ri)), ...
+                                            'FontSize', 5, 'FontName', 'Helvetica');
+                                end
+
+                                % --- Stripe annotation (standard mode) ---
+                                if ismember('isStripe', animalRows.Properties.VariableNames) ...
+                                        && animalRows.isStripe(ri)
+                                    hold on;
+                                    text(2, 3, 'S', ...
+                                        'Color', [1 0.2 0.2], ...
+                                        'FontSize', 7, 'FontWeight', 'bold');
+                                    sAng = animalRows.stripeBestAngle(ri);
+                                    if ~isnan(sAng)
+                                        cx = size(rfSlice,2)/2;  cy = size(rfSlice,1)/2;
+                                        ll = max(size(rfSlice))*0.35;
+                                        plot([cx-ll*cosd(sAng), cx+ll*cosd(sAng)], ...
+                                            [cy+ll*sind(sAng), cy-ll*sind(sAng)], ...
+                                            'r-', 'LineWidth', 1.2);
+                                    end
+                                    hold off;
+                                end
+
+                            end  % union vs standard rendering
+
+                        end  % header vs neuron
+
+                    end  % tile assignment loop (ti)
+
+                    % ----- Export this page to the multi-page PDF ---------
+                    if firstPdfPage
+                        % First page across all animals: create the PDF
+                        exportgraphics(fig_rf, pdfPath, 'ContentType', 'vector');
+                        firstPdfPage = false;   % subsequent pages will append
                     else
-                        % Standard mode: show only this stim type's index
-                        switch stimType
-                            case "linearlyMovingBall"
-                                tileTitle = sprintf('phy%d | %.2f | %d°', ...
-                                    phyID, tVal, round(tblStim.prefDirDeg(ni)));
-                            case "rectGrid"
-                                tileTitle = sprintf('phy%d | %.2f', phyID, tVal);
-                        end
+                        % Append to the existing PDF
+                        exportgraphics(fig_rf, pdfPath, ...
+                            'ContentType', 'vector', 'Append', true);
                     end
-                    title(tileTitle, 'FontSize', 5, 'FontName', 'Helvetica');
 
-                end  % neuron loop (tiles on this page)
+                    close(fig_rf);   % free memory before the next page
 
-                % ----- Export this page to the PDF -----------------------
-                if pg == 1
-                    % First page: create the PDF file
-                    exportgraphics(fig_rf, pdfPath, 'ContentType', 'vector');
-                else
-                    % Subsequent pages: append to the existing PDF
-                    exportgraphics(fig_rf, pdfPath, 'ContentType', 'vector', 'Append', true);
-                end
+                    fprintf('  [plotRFs] %s — %s page %d/%d exported.\n', ...
+                        animalCat, stimLabel_file, pg, totalPages);
 
-                close(fig_rf);  % close figure to free memory before next page
+                end  % page loop (pg)
 
-                fprintf('  [plotRFs] %s — page %d/%d exported.\n', ...
-                    char(stimType), pg, nPages);
+            end  % animal loop (ai)
 
-            end  % page loop
+            fprintf('  [plotRFs] Saved %s to:\n    %s\n', stimLabel_file, pdfPath);
 
-            fprintf('  [plotRFs] Saved %d pages to:\n    %s\n', nPages, pdfPath);
-
-        end  % stim-type loop
+        end  % stim-type loop (ssLoop)
 
     end  % prefDir guard
 

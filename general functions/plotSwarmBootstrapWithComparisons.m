@@ -46,7 +46,7 @@ arguments
     params.yLegend         char          = 'value'     % y-axis label
     params.diff            logical       = false       % plot per-pair difference only
     params.Xjitter                       = 'density'   % swarm jitter scheme
-    params.dotSize                       = 7           % marker size (pts^2)
+    params.dotSize                       = 5           % marker size (pts^2)
     params.yMaxVis                       = 1           % visible y-axis cap
     params.filled          logical       = true        % filled vs open markers
     params.Alpha                         = 0.2         % marker face/edge alpha
@@ -300,98 +300,155 @@ end % plotRawSwarm
 
 % =========================================================================
 % LOCAL FUNCTION: plotDiffSwarm
+% Draws a swarm plot of pairwise differences for one condition pair,
+% overlays a bootstrap mean ± SE bar, a zero reference line, and
+% (if significant) a star annotation.
 % =========================================================================
 function randiColors = plotDiffSwarm(ax, tblDiff, pairs, pValues, params, ...
     yMaxVis, bracketPad, textPad)
 
+% Hold axes so subsequent drawing commands add to the same panel
 hold(ax, 'on');
+
+% Allow markers and text to render outside the strict axes box;
+% required so significance stars above yMaxVis remain visible
 set(ax, 'Clipping', 'off');
 
-% Handle empty diff table (no overlapping data for this pair)
+% ---- Guard: empty diff table --------------------------------------------
+% This should already be caught by the caller, but defend here too
 if height(tblDiff) == 0
     randiColors = [];
-    text(ax, 0.5, 0.5, 'No paired data', 'Units', 'normalized', ...
-        'HorizontalAlignment', 'center', 'FontSize', 8, 'Color', [0.6 0.6 0.6]);
+    text(ax, 0.5, 0.5, 'No paired data', ...
+        'Units',              'normalized', ...
+        'HorizontalAlignment','center', ...
+        'FontSize',           8, ...
+        'Color',              [0.6 0.6 0.6]);
     return
 end
 
-% Reproducible draw order
-randiColors = randperm(height(tblDiff));
+% ---- Reproducible draw order --------------------------------------------
+% Fix the RNG seed immediately before randperm so that the colour-to-unit
+% mapping is identical on every re-render (required for publication).
+% Use a deterministic seed derived from the pair names so different panels
+% get different (but stable) permutations.
+rng(sum(double(char(strjoin({pairs{1,1}, pairs{1,2}}, '')))));
+randiColors = randperm(height(tblDiff));   % shuffled row index for plotting order
 
-% Color source
+% ---- Colour source ------------------------------------------------------
+% Choose per-dot colour based on z-score (diverging) or animal identity
 if params.colorByZScore && ismember('zScore', tblDiff.Properties.VariableNames)
+    % Numeric z-score maps onto a diverging colormap set below
     colorData = tblDiff.zScore(randiColors);
 else
-    colorData = tblDiff.animal(randiColors);
+    % Animal identity is categorical; convert to numeric so swarmchart
+    % accepts it as a valid colour index vector
+    colorData = double(tblDiff.animal(randiColors));
 end
 
+% ---- Swarm chart ---------------------------------------------------------
 if params.filled
-    s = swarmchart(ax, tblDiff.stimulus(randiColors), tblDiff.value(randiColors), ...
-        params.dotSize, colorData, 'filled', ...
+    % Filled circles; face transparency controlled by params.Alpha
+    s = swarmchart(ax, ...
+        tblDiff.stimulus(randiColors), ...   % x: condition label (categorical)
+        tblDiff.value(randiColors), ...      % y: difference value
+        params.dotSize, ...                  % marker area (pt²)
+        colorData, ...                       % colour data (numeric)
+        'filled', ...
         'MarkerFaceAlpha', params.Alpha);
 else
-    s = swarmchart(ax, tblDiff.stimulus(randiColors), tblDiff.value(randiColors), ...
-        params.dotSize, colorData, ...
-        'MarkerEdgeAlpha', params.Alpha, 'LineWidth', 1, 'SizeData', 30);
+    % Open circles; use params.dotSize for size consistency with filled branch
+    s = swarmchart(ax, ...
+        tblDiff.stimulus(randiColors), ...
+        tblDiff.value(randiColors), ...
+        params.dotSize, ...                  % fixed: was hardcoded 30, ignoring params
+        colorData, ...
+        'MarkerEdgeAlpha', params.Alpha, ...
+        'LineWidth',       1);
 end
+
+% Horizontal jitter style for the swarm (e.g. 'rand', 'none')
 s.XJitter = params.Xjitter;
 
-% Build readable tick label from pair names (e.g. 'MB 1.57 - MG 90')
+% ---- X tick label --------------------------------------------------------
+% Combine the two condition names into a single readable label,
+% e.g. "MB 1.57 - MG 90"
 pairLabels = buildTickLabels(string({pairs{1,1}, pairs{1,2}}));
 xticklabels(ax, join(pairLabels, " - "));
 
-% Colormap
+% ---- Colormap & colour bar -----------------------------------------------
 if params.colorByZScore && ismember('zScore', tblDiff.Properties.VariableNames)
+    % Symmetric diverging colormap centred on zero
     colormap(ax, buildRdBuColormap(256));
-    maxZ = max(abs(tblDiff.zScore), [], 'omitnan');
-    if isempty(maxZ) || maxZ == 0, maxZ = 1; end
+    maxZ = max(abs(tblDiff.zScore), [], 'omitnan');   % symmetric colour limit
+    if isempty(maxZ) || maxZ == 0, maxZ = 1; end      % avoid degenerate clim
     clim(ax, [-maxZ maxZ]);
     cb = colorbar(ax);
     cb.Label.String = 'Z-score';
 else
+    % One colour per unique animal; categories() requires a categorical column
     colormap(ax, lines(numel(categories(tblDiff.animal))));
 end
 
-% Zero reference line
+% ---- Reference line at zero ---------------------------------------------
+% Makes it immediately clear which differences are positive vs negative
 yline(ax, 0, 'LineWidth', 1, 'Alpha', 0.7);
 
+% Y-axis label (e.g. 'Δ firing rate (spk/s)')
 ylabel(ax, params.yLegend);
-ax.Box   = 'off';
-ax.Layer = 'top';
 
-% Bootstrap mean +/- SE
+% Clean axes appearance for publication
+ax.Box   = 'off';
+ax.Layer = 'top';   % draw axes on top of data so tick marks are not obscured
+
+% ---- Bootstrap mean ± SE bars -------------------------------------------
 if params.plotMeanSem
-    stimuli = categories(tblDiff.stimulus);
+    stimuli = categories(tblDiff.stimulus);      % ordered condition list
     plotMeanSemBars(ax, tblDiff, stimuli, params, 0.6);
 end
 
-% -------------------------------------------------------------------------
-% Significance annotation (four-tier: ***, **, *, or nothing)
-% -------------------------------------------------------------------------
+% ---- Significance annotation --------------------------------------------
+% Capture the current auto-scaled Y limits AFTER all data have been drawn
+% so the lower bound reflects the true data range
 ylims = ylim(ax);
-if ~isempty(pValues) && numel(pValues) >= 1
-    pVal = pValues(1);                                 % scalar for this diff panel
-    fprintf('Diff significance: p = %.4e\n', pVal);
 
-    vals = tblDiff.value;
-    maxVisible = max(min(vals(:), yMaxVis(1)));
-    if isempty(maxVisible), maxVisible = yMaxVis; end
+if ~isempty(pValues) && numel(pValues) >= 1
+    pVal = pValues(1);   % scalar p-value for this difference panel
+
+    % Compute the highest data point that falls within the visible window.
+    % This anchors the star text just above the top of the visible data,
+    % not above data that has been clipped by yMaxVis.
+    % Equivalent to min(max(vals), yMaxVis) but written for clarity.
+    vals       = tblDiff.value;
+    maxVisible = min(max(vals(:), [], 'omitnan'), yMaxVis);  % fixed: was max(min(...)) with no 'omitnan'
+
+    % Fallback if vals was empty or all-NaN (isempty catches []; isnan catches NaN)
+    if isempty(maxVisible) || isnan(maxVisible)
+        maxVisible = yMaxVis;
+    end
+
+    % Text sits bracketPad above the highest visible data point
     yText = maxVisible + bracketPad;
 
-    % Only draw stars for significant results
+    % Draw significance stars only when the result clears the α = 0.05 threshold
     if ~isnan(pVal) && pVal < 0.05
         if     pVal < 0.001, txt = '***';
         elseif pVal < 0.01,  txt = '**';
         else,                txt = '*';
         end
+        % x = 1 centres the label over the single swarm column;
+        % 'Clipping','off' keeps it visible even when yText > yMaxVis
         text(ax, 1, yText, txt, ...
-            'HorizontalAlignment', 'center', 'FontSize', 7, 'Clipping', 'off');
+            'HorizontalAlignment', 'center', ...
+            'FontSize',            7, ...
+            'Clipping',            'off');
     end
-
-    ylim(ax, [ylims(1) yMaxVis]);
-else
-    ylim(ax, [ylims(1) yMaxVis]);
 end
+
+% Fix the upper Y limit to yMaxVis so all panels in plotAllPairDiffs
+% start from the same ceiling before linkaxes applies the shared lower bound.
+% The lower bound is left as auto-scaled so it reflects each panel's data range;
+% plotAllPairDiffs will then extend it to the global minimum via linkaxes.
+ylim(ax, [ylims(1), yMaxVis]);
 
 end % plotDiffSwarm
 
@@ -649,38 +706,97 @@ end % plotBrackets
 function figAll = plotAllPairDiffs(tbl, pairs, pValues, params, ...
     isInsertionLevel, yMaxVis, bracketPad, textPad)
 
+% Total number of pairwise comparisons to tile
 nPairs = size(pairs, 1);
 
+% Guard: nothing to plot
+if nPairs == 0
+    figAll = figure;
+    return
+end
+
+% Create figure with white background for publication
 figAll = figure;
 set(figAll, 'Color', 'w');
 
-% Compute a reasonable grid for many tiles
-nCols = min(nPairs, 7);                                % max 7 columns wide
+% Determine grid dimensions: cap columns at 7 to keep tiles legible;
+% add as many rows as needed to accommodate all pairs
+nCols = min(nPairs, 7);
 nRows = ceil(nPairs / nCols);
+
+% Build the tiled layout with tight spacing for a compact multi-panel figure
 tl = tiledlayout(figAll, nRows, nCols, ...
     'TileSpacing', 'compact', 'Padding', 'compact');
+
+% Overall figure title
 title(tl, 'All pairwise differences');
 
+% Pre-allocate axes handle array so we can link Y axes after the loop.
+% Initialise with gobjects so empty-data tiles can be excluded cleanly.
+axHandles = gobjects(nPairs, 1);
+
 for k = 1:nPairs
+
+    % Open the next tile in reading order
     ax = nexttile(tl);
 
-    pairK = pairs(k, :);                               % 1x2 cell for this pair
-    pValK = pValues(k);
+    % Extract the condition pair (1×2 cell) and its omnibus p-value for tile k
+    pairK  = pairs(k, :);
+    pValK  = pValues(k);
 
+    % Build the difference table for this pair (one row per unit/insertion)
     tblDiff = buildDiffTable(tbl, pairK, params, isInsertionLevel);
 
-    % Empty diff table: show a minimal label and move on
+    % --- Empty-data path ---------------------------------------------------
     if height(tblDiff) == 0
+        % Suppress all axes decorations so the blank tile is invisible in print
+        axis(ax, 'off');
+
+        % Build a human-readable label from the two condition names
         pairLabels = buildTickLabels(string({pairK{1}, pairK{2}}));
+
+        % Place a low-contrast annotation so the missing pair is still legible
+        % when inspecting the figure interactively
         text(ax, 0.5, 0.5, join(pairLabels, " - ") + " (no data)", ...
-            'Units', 'normalized', 'HorizontalAlignment', 'center', ...
-            'FontSize', 6, 'Color', [0.6 0.6 0.6]);
+            'Units',              'normalized', ...
+            'HorizontalAlignment','center', ...
+            'FontSize',           6, ...
+            'Color',              [0.6 0.6 0.6]);
+
+        % Do NOT store this handle — we exclude empty tiles from Y-axis linking
         continue
     end
+    % -----------------------------------------------------------------------
 
+    % Draw the swarm + significance bracket into ax
     plotDiffSwarm(ax, tblDiff, pairK, pValK, params, ...
         yMaxVis, bracketPad, textPad);
+
+    % Record the handle for this successfully plotted tile
+    axHandles(k) = ax;
+
+end % for k
+
+% --- Shared Y axis ---------------------------------------------------------
+% Retain only the axes handles that were actually plotted (non-null gobjects)
+validAx = axHandles(isvalid(axHandles));
+
+if numel(validAx) > 1
+    % Couple all valid tile axes so interactive zoom/pan stays synchronised
+    linkaxes(validAx, 'y');
+
+    % Compute the union of all individual Y ranges so no data are clipped.
+    % We do this explicitly rather than relying on linkaxes auto-scaling,
+    % because plotDiffSwarm may have expanded ylim for brackets/text and
+    % we want the *tightest* common range that honours those expansions.
+    allYLims = cell2mat(arrayfun(@(a) ylim(a), validAx, ...
+        'UniformOutput', false));      % numel(validAx) × 2 matrix
+    sharedYLim = [min(allYLims(:,1)),  max(allYLims(:,2))];
+
+    % Apply the shared limits; linkaxes propagates this to every coupled axis
+    ylim(validAx(1), sharedYLim);
 end
+% ---------------------------------------------------------------------------
 
 end % plotAllPairDiffs
 
@@ -717,50 +833,96 @@ end
 % Decode category names into short human-readable tick labels.
 % e.g. 'MB_dir_1p57' -> 'MB 1.57', 'MG_ang_90' -> 'MG 90'
 % =========================================================================
+% =========================================================================
 function out = buildTickLabels(Str)
+% buildTickLabels  Convert coded condition strings (e.g. "MB0p05") into
+%   reader-friendly tick labels (e.g. "MB 0.05"), stripping redundant
+%   prefixes when only one prefix exists in the set, and silently
+%   discarding any entries whose numeric payload is NaN.
+%
+%   Input:  Str  – string array of coded condition names
+%   Output: out  – string array of formatted labels (same size as Str,
+%                   with NaN entries replaced by "")
 
-% ---- detect whether prefix is informative ----
-prefixes = strings(size(Str));
+% ---- Step 1: extract the leading uppercase prefix from each entry ----
+% Matches one or more capital letters at the start of each string.
+% Returns <missing> for entries without an uppercase prefix.
+prefixes = strings(size(Str));                    % pre-allocate output
 for i = 1:numel(Str)
     prefixes(i) = regexp(Str(i), '^[A-Z]+', 'match', 'once');
 end
 
-uniquePrefixes = unique(prefixes);
-removePrefix = numel(uniquePrefixes) == 1;   % <-- key logic
+% ---- Step 2: decide whether the prefix carries information ----
+% If every entry shares the same prefix (e.g. all start with "TF"),
+% the prefix is redundant and can be dropped to declutter the axis.
+uniquePrefixes = unique(prefixes(~ismissing(prefixes)));  % ignore <missing> when counting
+removePrefix   = numel(uniquePrefixes) <= 1;              % true → prefixes are uninformative
 
-out = strings(size(Str));
+% ---- Step 3: format each entry ----
+out = strings(size(Str));                         % pre-allocate output
 
 for i = 1:numel(Str)
-    s = Str(i);
+    s      = Str(i);                              % current coded string
+    prefix = prefixes(i);                         % its uppercase prefix (or <missing>)
 
-    prefix = prefixes(i);
+    % -- Extract the numeric part of the string --
+    % Matches an optional minus sign, one or more digits, and an optional
+    % decimal part delimited by 'p' or '.'.  (Inside a character class
+    % the dot is already literal, so no backslash is needed.)
+    numStr = regexp(s, '-?\d+(?:[p.]\d+)?', 'match', 'once');
 
-    numStr = regexp(s, '-?\d+(?:[p\.]\d+)?', 'match', 'once');
-
-    if isempty(numStr)
-        out(i) = s;
+    % -- Guard: skip entries with no numeric payload --
+    if ismissing(numStr)
+        out(i) = s;                               % preserve non-numeric labels as-is
         continue
     end
 
+    % -- Convert the 'p' decimal convention to a real decimal point --
     numStr = replace(numStr, 'p', '.');
+
+    % -- Convert to a numeric value for formatting decisions --
     numVal = str2double(numStr);
 
-    if numVal < 0.01 && numVal ~= 0
-        numFormatted = compose("%.2e", numVal);
-    else
-        numFormatted = compose("%.2f", numVal);
+    % ================================================================
+    % BUG FIX: upstream code occasionally produces NaN-valued entries
+    % (e.g. "MB NaN").  The digit regex above will not match "NaN",
+    % but it *will* match if the string is e.g. "MBNaN" with stray
+    % digits nearby.  Either way, any NaN that survives to this point
+    % must be caught or it will appear as "MB NaN" on the axis.
+    % ================================================================
+    if isnan(numVal)
+        out(i) = "";                              % blank label; caller should
+        continue                                  %   remove or handle these
     end
-    numFormatted = regexprep(numFormatted, '\.?0+$', '');
 
-    % ---- conditional prefix removal ----
+    % -- Choose a readable numeric format --
+    % Use scientific notation for very small non-zero magnitudes;
+    % otherwise use fixed-point with two decimal places.
+    if abs(numVal) < 0.01 && numVal ~= 0
+        numFormatted = compose("%.2e", numVal);   % e.g. "1.50e-03"
+    else
+        numFormatted = compose("%.2f", numVal);   % e.g. "0.25"
+    end
+
+    % -- Strip unnecessary trailing zeros from the mantissa --
+    % For scientific notation the zeros sit before the 'e', so we
+    % first handle the mantissa, then reassemble with the exponent.
+    if contains(numFormatted, 'e')
+        parts = split(numFormatted, 'e');         % {"1.50", "-03"}
+        parts(1) = regexprep(parts(1), '\.?0+$', '');  % "1.50" → "1.5"
+        numFormatted = join(parts, 'e');           % "1.5e-03"
+    else
+        numFormatted = regexprep(numFormatted, '\.?0+$', '');  % "0.250" → "0.25"
+    end
+
+    % ---- Reassemble: prefix + number (or number alone) ----
     if ~ismissing(prefix) && ~removePrefix
-        out(i) = prefix + " " + numFormatted;
+        out(i) = prefix + " " + numFormatted;     % e.g. "MB 0.25"
     else
-        out(i) = numFormatted;
+        out(i) = numFormatted;                     % e.g. "0.25"
     end
 end
 end
-
 
 % =========================================================================
 % LOCAL FUNCTION: reorderStimulusByLevel

@@ -58,15 +58,15 @@ uLum  = unique(responses.(fieldName).C(:, 6));  % Unique luminance levels
 if params.OneDirection ~= "all"
     switch params.OneDirection
         case "up"
-            dirIDX = find(uDir == 0);       % 0 rad = upward motion
+            dirIDX = find(round(uDir,2) == 0);       % 0 rad = upward motion
         case "left"
-            dirIDX = find(uDir == 1.57);    % π/2 rad ≈ leftward motion
+            dirIDX = find(round(uDir,2) == 1.57);    % π/2 rad ≈ leftward motion
         case "down"
-            dirIDX = find(uDir == 3.14);    % π rad ≈ downward motion
+            dirIDX = find(round(uDir,2) == 3.14);    % π rad ≈ downward motion
         case "right"
             % BUG FIX: was find(uDir==1.57) which is identical to "left".
             % Right corresponds to 3π/2 ≈ 4.71 rad.
-            dirIDX = find(uDir == 4.71);
+            dirIDX = find(round(uDir,2) == 4.71);
         otherwise
             error("Unknown OneDirection value: %s", params.OneDirection)
     end

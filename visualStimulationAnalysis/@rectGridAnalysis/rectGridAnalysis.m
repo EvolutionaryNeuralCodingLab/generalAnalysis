@@ -94,10 +94,11 @@ classdef rectGridAnalysis < VStimAnalysis
             label = string(p.label');
             goodU = p.ic(:,label == 'good');
 
-            if isempty(goodU) || size(goodU,2) < 3
-                warning('%s Has less than 3 somatic Neurons, skipping experiment%n',obj.dataObj.recordingName)
+            if isempty(goodU)
+                warning('%s has No somatic Neurons, skipping experiment/n',obj.dataObj.recordingName)
                 return
             end
+
 
             %%Create window to scan rasters and get the maximum response
             duration = params.durationWindow; %window in ms, same as in MB
