@@ -718,21 +718,11 @@ if ~goto_plot
                             passingDirs        = find(dirIsPass);          % indices of passing dirs
                             stripePassDirStr{u} = strjoin(string(passingDirs), ',');  % e.g. "1,3,5"
 
-                            % Best direction: among directions that PASSED all filters, pick the one
-                            % with the highest score.  This guarantees stripeBestAngle is the angle of
-                            % an accepted stripe — not a higher-scoring direction that the filters
-                            % rejected (e.g. horizontal/vertical/wrong-diagonal).
-                            % If no direction passed, fall back to the global best (for diagnostics).
-                            if stripeIsAny(u)
-                                scoresMasked = dirScores;
-                                scoresMasked(~dirIsPass) = -Inf;            % exclude non-passing dirs
-                                [stripeBestScore(u), bestDirIdx] = max(scoresMasked);
-                            else
-                                [stripeBestScore(u), bestDirIdx] = max(dirScores);
-                            end
+                            % Best direction = direction with highest stripe score
+                            [stripeBestScore(u), bestDirIdx] = max(dirScores);
                             stripeBestPval(u)  = dirPvals(bestDirIdx);
                             stripeBestAngle(u) = dirAngles(bestDirIdx);
-                            stripeBestDir(u)   = bestDirIdx;
+                            stripeBestDir(u)   = bestDirIdx;              % direction index (1:nDir)
 
                             if mod(u, 10) == 0
                                 fprintf('    stripe detection: %d/%d neurons done.\n', u, nN);
