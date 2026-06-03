@@ -3375,8 +3375,8 @@ classdef sleepAnalysis < recAnalysis
                 disp('No Video CSV!!')
             end
             % getting the data of the oe recording: triggers times in oe
-            camTrigCh = obj.recTable.camTriggerCh(obj.currentPRec);% ch can be change according to the setup.
-            oeCamTrig = obj.currentDataObj.getCamerasTrigger(camTrigCh, trigStop)';
+            % camTrigCh = obj.recTable.camTriggerCh(obj.currentPRec);% ch can be change according to the setup.
+            oeCamTrig = obj.getCameraTriggers(trigStop,overwrite)';
             arenaCSVs.oeCamTrig = oeCamTrig;
 
             % check trigger synchrony:
@@ -3387,7 +3387,7 @@ classdef sleepAnalysis < recAnalysis
                 fprintf('Triggers num dont match video frames. Diff is %d. \n',framediff)
             end
 
-            arenaCSVs.videoFPS = 1/mean(diff(arenaCSVs.oeCamTrig));
+            arenaCSVs.videoFPS = 1000/mean(diff(arenaCSVs.oeCamTrig));
 
             % get block data:
             if all(cellfun(@isempty,obj.recTable.blockPath(obj.currentPRec)))
@@ -3716,7 +3716,7 @@ classdef sleepAnalysis < recAnalysis
         end
 
         %% getCameraTriggers
-        function camTrigs = getCameraTriggers(obj,overwrite,stop_len)
+        function camTrigs = getCameraTriggers(obj,stop_len,overwrite)
             %Extract triggers fron event channel, only for the times
             %between 2 triggers stops of above 1 sec.
             % It calls the regular getTiggers, and add another selection
@@ -3724,7 +3724,7 @@ classdef sleepAnalysis < recAnalysis
 
             filename = [obj.currentAnalysisFolder filesep 'camTrigs.mat'];
 
-            if nargin < 2
+            if nargin < 3
                 overwrite = 0;
             end
 
@@ -3738,7 +3738,7 @@ classdef sleepAnalysis < recAnalysis
                 end
             end
 
-            if nargin < 3
+            if nargin < 2
                 stop_len = 5000; % assuming that in Reptilearn the stop in the triggers are ~8000 ms.
             end
             trigCh = obj.recTable.camTriggerCh(obj.currentPRec);
@@ -5524,7 +5524,7 @@ classdef sleepAnalysis < recAnalysis
             times=times(pp);
             if maxDendroClusters==2
 
-                [DC,order,clusters,~,~,cop]=DendrogramMatrix(corrMat,'linkMetric','euclidean','linkMethod','ward','maxClusters',maxDendroClusters);
+                [DC,order,clusters]=DendrogramMatrix(corrMat,'linkMetric','euclidean','linkMethod','ward','maxClusters',maxDendroClusters);
 
                 S1=mean(normsPxx(:,clusters==1),2);
                 S2=mean(normsPxx(:,clusters==2),2);
@@ -5534,7 +5534,7 @@ classdef sleepAnalysis < recAnalysis
                     crossFreq=freqHz(find(S1-S2>=0,1,'first'));
                 end
             else
-                [DC,order,clusters,~,~,cop]=DendrogramMatrix(corrMat,'linkMetric','euclidean','linkMethod','ward','maxClusters',maxDendroClusters);
+                [DC,order,clusters]=DendrogramMatrix(corrMat,'linkMetric','euclidean','linkMethod','ward','maxClusters',maxDendroClusters);
 
                 for i=1:maxDendroClusters
                     S(:,i)=mean(normsPxx(:,clusters==i),2);
