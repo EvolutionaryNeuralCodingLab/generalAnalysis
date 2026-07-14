@@ -3217,7 +3217,7 @@ classdef sleepAnalysis < recAnalysis
 
         %% getSharpWaves
         function [data]=getSharpWavesAnalysis(obj,varargin)
-
+    
             obj.checkFileRecording;
 
             parseObj = inputParser;
@@ -3398,27 +3398,32 @@ classdef sleepAnalysis < recAnalysis
             end
             blockLog = readtable(strcat(blockPath,'/block.log'), "Delimiter",' - ');
             % get the IR trigger timings, from the OE system:
+            
             irTrigCh = obj.recTable.IrtrigCh(obj.currentPRec);
-            obj.getDigitalTriggers;
-            t = obj.getDigitalTriggers;
-            irTrig = t.tTrig{irTrigCh};
-            % find the closest frame to the ir trigger
-            f = find(irTrig(1)>oeCamTrig);
-            oeIRFrame = f(end);
+            if irTrigCh ==0 % no IR trigs in recording 
+                IRframeShift=0;
+                 arenaCSVs.IRFrames=[];
+            else
+                obj.getDigitalTriggers;
+                t = obj.getDigitalTriggers;
+                irTrig = t.tTrig{irTrigCh};
+                % find the closest frame to the ir trigger
+                f = find(irTrig(1)>oeCamTrig);
+                oeIRFrame = f(end);
 
-            %finding the ir trigger, 1 second after the "trigger was off
-            %for.."
-            blockLog.DateTime = datetime(blockLog{:,1}, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSS', 'TimeZone', 'Asia/Jerusalem');
-            blockLog.Timestamps = posixtime(blockLog.DateTime);
-            arenaCSVs.blockLog=blockLog;
+                %finding the ir trigger, 1 second after the "trigger was off
+                %for.."
+                blockLog.DateTime = datetime(blockLog{:,1}, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSS', 'TimeZone', 'Asia/Jerusalem');
+                blockLog.Timestamps = posixtime(blockLog.DateTime);
+                arenaCSVs.blockLog=blockLog;
 
-            trigLogInd = find(startsWith(blockLog{:,5},'Trigger was off')); %index for the trigger annoncment
-            irTimestamp = blockLog.Timestamps(trigLogInd)+ 1; %adding 1 second to the posixtime
-            arenaIRFrame = getVideoFrames(obj,arenaCSVs.videoFrames,irTimestamp);
-            %             oeIrTrig = OEcamTrig(arenairFrame);
-            IRframeShift = arenaIRFrame-oeIRFrame;
-            arenaCSVs.IRFrames = [IRframeShift, oeIRFrame, arenaIRFrame];
-
+                trigLogInd = find(startsWith(blockLog{:,5},'Trigger was off')); %index for the trigger annoncment
+                irTimestamp = blockLog.Timestamps(trigLogInd)+ 1; %adding 1 second to the posixtime
+                arenaIRFrame = getVideoFrames(obj,arenaCSVs.videoFrames,irTimestamp);
+                %             oeIrTrig = OEcamTrig(arenairFrame);
+                IRframeShift = arenaIRFrame-oeIRFrame;
+                arenaCSVs.IRFrames = [IRframeShift, oeIRFrame, arenaIRFrame];
+            end
 
             % get the bug location into a table and add timestamps (S):
             %notice - if yu need the timestamps in ms the code needs to change.
@@ -4433,6 +4438,10 @@ classdef sleepAnalysis < recAnalysis
             save(obj.files.dbAutocorr,'parDbAutocorr','xcf','xcf_bounds','BetaRatioForSlidingAutocorr','autoCorrTimeBin','autocorrTimes','timeBin',...
                 'pPeriod','period','acf','vallyPeriod','peak2VallyDiff','pSleepDBRatio','pSleepSlidingAC','acfPeakAll','acfVallyAll','peak2VallyDiffSliding','tSlidingAC','acfPeriodAll',...
                 'tStartSleep','tEndSleep','filteredSlidingPeriod','tFilteredSlidingPeriod','pSleepSlidingAC','pSleepDBRatioAC','bestSleepTime');
+            if nargout==1
+                    data=load(obj.files.dbAutocorr);
+            end
+        
         end
 
         %% plotRespirationSlidingAC
