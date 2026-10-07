@@ -31,7 +31,7 @@ markUnits = { 1, 'MB', 'PV233', 6 ;   % -> X in the MB column [1, 8, 40:43,49:54
               14, 'RG', 'PV140', 9 };
 % CategoryLevels={["offsets","directions"],["position"]}
 
-[tempTableMW] = AllExpAnalysis([1, 8, 40:43,49:54,64:66,68:85 87:97], overwrite=false,ComparePairs={'MB','RG'},PaperFig=true,...
+[tempTableMW, summaryStats] = AllExpAnalysis([1, 8, 40:43,49:54,64:66,68:85 87:97], overwrite=false,ComparePairs={'MB','RG'},PaperFig=true,...
     overwriteResponse=false,overwriteStats=true,useFDR=false,SpatialGridMode=false,maxCategory=true,durationWindow=250, markUnits = markUnits, BaseRespWindow=250, useTtest=false,...
     Lock={{"luminosities",255},{"luminosities",255}});
 
@@ -92,6 +92,25 @@ for ex =[74]%
     vs = linearlyMovingBallAnalysis(NP);
     vs.plotRaster('exNeuronsPhyID',[],'exNeurons',1111,'overwrite',true,'MergeNtrials',1,'PaperFig',true,OneLuminosity= 'white',OneDirection='up',bin=20)
 end
+
+
+%% DATASET SUMMARY: units responsive to at least one stimulus
+% Cross-stimulus, so it belongs to no single stimulus section. Each family's
+% p-values come from the StatisticsPerNeuron cache the sections above already
+% wrote — MB/SB keep BaseRespWindow=250 + Lock{luminosities,255}, MG/SG keep
+% 1000 ms, MBR keeps 500 ms — read with a bare call, so nothing is recomputed
+% or overwritten.
+[Tresp, Sresp] = AllExpResponsiveUnion([1, 8, 40:43,49:54,64:66,68:85 87:97], ...
+    Stimuli        = {'MB','RG','MBR','SDGm','SDGs','FFF'}, ...
+    threshold      = 0.05, ...      % same cutoff as the MB/RG swarm above
+    useTtest       = false, ...     % permutation p, matching the Figure-1 call
+    computeMissing = false, ...     % cache-only: never writes stats
+    overwrite      = false, ...     % reuse the pooled cache; true forces a rerun
+    plotFig        = true, ...
+    PaperFig       = true);
+
+fprintf('%d / %d somatic units respond to >=1 stimulus | %.2f somatic per responsive\n', ...
+    Sresp.totalUnion, Sresp.totalSomatic, Sresp.somaticPerResponsive);
 
 %% FIGURE 2: SPATIAL TUNING ANS STRIPE ANALYSIS
 %%%%%%%%
@@ -280,7 +299,7 @@ plotRaster_MultiExp([49:54,64:66,68:85 87:97], overwrite=true, sortBy="preferred
 plotRaster_MultiExp([49:54,64:66,68:85 87:97], overwrite=true, sortBy="preferredCategory", ...
     splitCategory="directions", stimTypes="MB",zScore=true,PaperFig=true)
 
-%%
+%% END OF FIGURE CALLS
 %%%%%%%%
 %%%%%%%%
 %%%%%%%%

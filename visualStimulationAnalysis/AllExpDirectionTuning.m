@@ -1,4 +1,4 @@
-function [tblOut, figs] = AllExpDirectionTuning(expList, params)
+function [tblOut, figs, stats] = AllExpDirectionTuning(expList, params)
 % AllExpDirectionTuning  Pool OSI and DSI across multiple Neuropixels
 %   recordings, run hierarchical bootstrap statistics for pairwise
 %   stimulus comparisons, and generate publication-ready swarm plots.
@@ -18,6 +18,10 @@ function [tblOut, figs] = AllExpDirectionTuning(expList, params)
 %     tblOut   table   Long table with columns:
 %                        animal, insertion, stimulus, NeurID, metric, value
 %     figs     struct  Figure handles (.OSI, .DSI, .prefDir)
+%     stats    struct  Stats blocks behind those panels (.OSIDSI), same schema
+%                      as plotSwarmBootstrapWithComparisons returns. Also written
+%                      to disk next to the figures when PaperFig is true, so
+%                      makeSupplementaryStatsTable can pick them up.
 %
 %   EXAMPLES
 %     % Compare OSI between moving gratings and moving ball:
@@ -69,6 +73,7 @@ end
 
 nStim = numel(params.stimuli);                              % number of stimuli to pool
 figs  = struct();                                           % output figure handles
+stats = struct();                                           % stats blocks behind those figures (for the supplementary table)
 
 % Fix RNG seed for reproducible bootstrap confidence intervals across runs
 rng(params.rngSeed, 'twister');                             % Mersenne Twister, fixed seed
@@ -360,8 +365,11 @@ if params.plot && height(tblPlot) > 0
     % Compute hierBoot p-values for every pair
     psAll = computeHierBootPvals(tblPlot, pairs, params.nBoot);
 
-    % Single combined plot: one swarm per condition group
-    [figAll, ~] = plotSwarmBootstrapWithComparisons(tblPlot, pairs, psAll, {'value'}, ...
+    % Single combined plot: one swarm per condition group.
+    % 4th output is the stats block behind the panel; previously discarded,
+    % captured so it can be persisted next to the figure for the supplementary
+    % table.
+    [figAll, ~, ~, stOSIDSI] = plotSwarmBootstrapWithComparisons(tblPlot, pairs, psAll, {'value'}, ...
         yLegend     = 'OSI / DSI', ...
         yMaxVis     = params.yMax, ...
         diff        = false, ...                            % all conditions on same axis, no diff panel
@@ -370,12 +378,20 @@ if params.plot && height(tblPlot) > 0
 
     title(sprintf('Direction & Orientation Selectivity — %s', stimLabel), 'FontSize', 10);
 
+    statsName = sprintf('OSI-DSI-%s', stimLabel);
+
     if params.PaperFig
-        firstObj.printFig(figAll, sprintf('OSI-DSI-%s', stimLabel), ...
-            PaperFig = params.PaperFig);
+        firstObj.printFig(figAll, statsName, PaperFig = params.PaperFig);
     end
 
-    figs.OSIDSI = figAll;
+    % Persist the numbers next to the figure so makeSupplementaryStatsTable
+    % can table them once both are filed into the figure's folder.
+    saveStatsStruct(firstObj, statsName, ...
+        {sprintf('OSI / DSI (%s)', stimLabel), stOSIDSI, 'neurons'}, ...
+        params, params.PaperFig);
+
+    figs.OSIDSI  = figAll;
+    stats.OSIDSI = stOSIDSI;                 % 3rd output: stats behind the panel
 end
 
 % =========================================================================

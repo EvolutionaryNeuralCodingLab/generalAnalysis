@@ -1391,7 +1391,10 @@ if params.plot
     tblPlot.stimulus(tblPlot.stimulus == "linearlyMovingBall") = "MB";
     tblPlot.stimulus(tblPlot.stimulus == "rectGrid")           = "SB";
 
-    [fig, ~] = plotSwarmBootstrapWithComparisons(tblPlot, pairs, ps, {'value'}, ...
+    % 4th output is the stats block behind the panel (means, medians, CIs,
+    % effect sizes). Previously discarded; captured so the numbers can be
+    % persisted alongside the figure and picked up by the supplementary table.
+    [fig, ~, ~, stSwarm] = plotSwarmBootstrapWithComparisons(tblPlot, pairs, ps, {'value'}, ...
         yLegend      = params.yLegend, ...
         yMaxVis      = max(params.yMaxVis, V1max), ...
         diff         = useDiff, ...
@@ -1411,15 +1414,24 @@ if params.plot
     ax.XAxis.FontSize = 8; ax.XAxis.FontName = 'helvetica';
     set(fig, 'Units', 'centimeters', 'Position', [20 20 5 4]);
 
+    statsName = sprintf('SpatialTuningIndex-%s-%s-RF%d-prefDir%d-allResp%d-tp-%d', ...
+        params.indexType, strjoin(params.stimTypes, '-'), ...
+        params.useRF, params.prefDir, params.allResponsive, params.topPercent);
+
     if params.PaperFig
-        vs_first.printFig(fig, sprintf('SpatialTuningIndex-%s-%s-RF%d-prefDir%d-allResp%d-tp-%d', ...
-            params.indexType, strjoin(params.stimTypes, '-'), ...
-            params.useRF, params.prefDir, params.allResponsive,params.topPercent), ...
-            PaperFig = params.PaperFig);
+        vs_first.printFig(fig, statsName, PaperFig = params.PaperFig);
     end
 
-    results.fig = fig;
-    results.ps  = ps;
+    % Persist the numbers next to the figure, under the same name, so
+    % makeSupplementaryStatsTable can table them once both are filed into the
+    % figure's folder. Gated on PaperFig, exactly like the figure export.
+    saveStatsStruct(vs_first, statsName, ...
+        {sprintf('Spatial tuning index (%s)', params.indexType), stSwarm, 'neurons'}, ...
+        params, params.PaperFig);
+
+    results.fig   = fig;
+    results.ps    = ps;
+    results.stats = stSwarm;                 % also returned for interactive use
 
 end
 

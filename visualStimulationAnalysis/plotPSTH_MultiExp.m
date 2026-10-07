@@ -370,6 +370,14 @@ if forloop
     % insert NaN placeholder rows for skipped experiments.
     psthAll = cell(nStim, nDepthBins, maxCats);
 
+    % ----- Provenance: why each experiment did or did not contribute -------
+    % An experiment can silently fail to append a row at five different points
+    % below, so the stored PSTH alone cannot tell you which sessions the
+    % reported N refers to. Record a reason per experiment ("" = contributed)
+    % and save it alongside the traces so the N in the figure title is
+    % auditable after the fact.
+    dropReason = strings(nExp, 1);
+
     % ----- Time-axis parameters: locked on the first successful experiment ----
     lockedPreBase = [];                                                    % pre-stimulus baseline duration, locked once
     lockedNBins   = [];                                                    % number of time bins, locked once
@@ -386,6 +394,7 @@ if forloop
         % ---- Check if this experiment was excluded by requireAllStims ---
         if params.requireAllStims && all(sessionMap(ei, :) < 0)
             fprintf('  Skipping exp %d (excluded by requireAllStims).\n', ex);
+            dropReason(ei) = "requireAllStims: stim type absent";           % record why
             continue                                                       % advance to the next experiment (no row appended)
         end
 
@@ -394,6 +403,7 @@ if forloop
             NP = loadNPclassFromTable(ex);                                 % load the Neuropixels data class
         catch ME
             warning('Could not load experiment %d: %s', ex, ME.message);
+            dropReason(ei) = "experiment failed to load";                   % record why
             continue
         end
 
@@ -503,6 +513,7 @@ if forloop
             % ---- If the union is empty, skip this experiment entirely ---
             if isempty(unionENeurons)
                 fprintf('  No neurons responsive to any stim type — skipping exp %d.\n', ex);
+                dropReason(ei) = "no union-responsive neurons";             % record why
                 continue                                                   % advance to the next experiment (no row appended)
             end
         end
@@ -881,6 +892,7 @@ if forloop
         % this experiment — nothing to commit.
         if isempty(lockedNBins)
             fprintf('  Exp %d produced no data for any stim — not committed.\n', ex);
+            dropReason(ei) = "no usable trace for any stim";                % record why
             continue
         end
 
@@ -909,6 +921,11 @@ if forloop
                                  'usable trace; dropping this experiment from ALL stim ', ...
                                  'lines for this condition to keep N matched.'], ...
                                  ex, b, ci, strjoin(cellstr(params.stimTypes(missing)), ', '));
+                        % Record why, without overwriting an earlier reason
+                        if dropReason(ei) == ""
+                            dropReason(ei) = "matched-inclusion: no trace for " + ...
+                                strjoin(params.stimTypes(missing), '/');
+                        end
                     end
                 end
             end
@@ -932,6 +949,31 @@ if forloop
     % =====================================================================
     %  Save results to disk
     % =====================================================================
+    % =====================================================================
+    %  Experiment-inclusion summary
+    % =====================================================================
+    % The figure title reports N contributing experiments, but five separate
+    % code paths above can drop one. Print the accounting and store it so the
+    % reported N can be justified later without re-running.
+    contributed = (dropReason == "");                                      % experiments that appended a row
+    S.expUsed    = exList(contributed);                                    % experiment IDs behind the reported N
+    S.expDropped = exList(~contributed);                                   % experiment IDs excluded
+    S.dropReason = dropReason;                                             % per-experiment reason ("" = contributed)
+
+    fprintf('\n===== EXPERIMENT INCLUSION SUMMARY =====\n');
+    fprintf('  %d of %d experiments contributed to the PSTH.\n', ...
+        sum(contributed), nExp);
+    if any(~contributed)
+        fprintf('  Excluded:\n');
+        reasons = unique(dropReason(~contributed));                        % group the excluded by reason
+        for r = 1:numel(reasons)
+            hit = dropReason == reasons(r);                                % experiments sharing this reason
+            fprintf('    [%s] n=%d: exp %s\n', reasons(r), sum(hit), ...
+                strjoin(string(exList(hit)), ', '));
+        end
+    end
+    fprintf('========================================\n');
+
     S.expList        = exList;                                             % store experiment list for cache-validity check on reload
     S.lockedEdges    = lockedEdges;                                        % bin edge vector, needed to reconstruct tAxis on reload
     S.lockedPreBase  = lockedPreBase;                                      % baseline duration, needed for tAxisPlot alignment

@@ -1,8 +1,8 @@
-function [fig, randiColors, figAllDiffs] = plotSwarmBootstrapWithComparisons(tbl, pairs, pValues, valueField, params)
+function [fig, randiColors, figAllDiffs, stats] = plotSwarmBootstrapWithComparisons(tbl, pairs, pValues, valueField, params)
 % PLOTSWARMBOOTSTRAPWITHCOMPARISONS  Per-stimulus swarm plot with hierarchical
 %   bootstrap central tendency, uncertainty bar, and pairwise significance brackets.
 %
-%   [fig, randiColors, figAllDiffs] = plotSwarmBootstrapWithComparisons(tbl, ...
+%   [fig, randiColors, figAllDiffs, stats] = plotSwarmBootstrapWithComparisons(tbl, ...
 %       pairs, pValues, valueField, params)
 %
 %   tbl        - One row per observation. Required columns: stimulus, animal,
@@ -29,6 +29,51 @@ function [fig, randiColors, figAllDiffs] = plotSwarmBootstrapWithComparisons(tbl
 %
 %   Returns the figure handle, random dot-draw permutation, and (when >1 pair)
 %   a second figure showing every pairwise difference in separate tiles.
+%
+%   stats - struct with two summary tables (the numbers behind the plotted bars):
+%     stats.groups - one row per stimulus, in x-axis (category) order.
+%     stats.diffs  - one row per entry of `pairs`, in the SAME row order as
+%                    `pairs`, with stimA/stimB/p appended.
+%   Both tables carry the columns:
+%     group       - label ('MB' for a group, 'MB-SB' for a difference)
+%     n           - number of non-NaN observations (neurons or insertions)
+%     nAnimals    - distinct animals contributing to those observations
+%     nInsertions - distinct insertions contributing to those observations
+%     mean,median - PLAIN pooled sample statistics of the observations actually
+%                   plotted: every observation counts equally. `mean` is the
+%                   true centre of the dot cloud and IS the value drawn as the
+%                   thick black bar.
+%     bootMean    - mean of the hierarchical-bootstrap distribution. DIAGNOSTIC
+%                   ONLY, not plotted (see note below).
+%     ciLo, ciHi  - bootstrap uncertainty bounds on the mean (params.ciMethod:
+%                   95% percentile interval of the bootstrap distribution, or
+%                   the observed mean +/- the bootstrap SE).
+%     effect      - Cohen's d of the plotted values (mean / SD). In
+%                   stats.groups this is a one-sample d against zero; in
+%                   stats.diffs the values ARE the paired differences, so it is
+%                   Cohen's d_z, the standard paired effect size.
+%     effectLo/Hi - 95% hierarchical-bootstrap percentile CI on effect.
+%     propPos     - fraction of values greater than zero. In stats.diffs this
+%                   is the common-language effect size, P(stimA > stimB) per
+%                   unit; Cliff's delta = 2*propPos - 1 when there are no ties.
+%     propPosLo/Hi- 95% hierarchical-bootstrap percentile CI on propPos.
+%   Effect-size CIs are always percentile intervals even when ciMethod='sem',
+%   because a symmetric +/-SE interval can leave the valid range of a bounded
+%   quantity like propPos.
+%   Point estimate vs interval: following the standard bootstrap convention
+%   (Efron & Tibshirani), the bar is the OBSERVED statistic and the hierarchical
+%   resampling supplies only the interval, which is what carries the
+%   cross-animal inference. bootMean is reported so the bootstrap bias is
+%   visible: it is NOT an equal-weight-per-animal mean, because
+%   hierBootMatchFreq pools all resampled observations and takes one flat mean,
+%   making the resampled statistic a ratio with a random denominator. Its
+%   expectation drifts off the observed mean when neuron counts are unbalanced
+%   across animals. A large (mean - bootMean) gap therefore signals strong
+%   count imbalance, and a percentile CI may sit noticeably asymmetric about
+%   the bar — that asymmetry is informative, not a bug.
+%   hierBootMatchFreq returns the mean of each resample, so no bootstrap CI is
+%   available for the median; the reported median is a plain sample median.
+%   Groups with n < 3 get mean/median but NaN bootstrap columns (no bar drawn).
 %
 %   Bootstrap details: uses hierBoot (Saravanan et al. 2020) when grouping
 %   levels are present, resampling each level with replacement in turn.
@@ -58,7 +103,9 @@ arguments
     params.ciMethod        char          = 'percentile'% 'sem' | 'percentile'
     params.bootGroupVars   cell          = {'__auto__'}% hierarchical bootstrap levels
     params.markUnits       cell          = {}          % N×4 {NeurID,stimulus,animal,insertion}; all marked with the same symbol
-    params.nearSigThresh   (1,1) double  = 0.1         % print exact p when 0.05 <= p < this; nothing above it
+    params.nearSigThresh   (1,1) double  = 0.1         % raw panel: draw a bracket only when p < this (exact p is always the label)
+    params.pValRes                       = []          % smallest resolvable p behind pValues (2/nBoot of the test that produced them).
+                                                       %   Sets the '<' floor printed when a p is exactly 0. Empty -> conservative 0.001.
     params.swarmWidth      (1,1) double  = 0.6         % swarm jitter width; mean/CI bar drawn wider so it always shows
 end
 
@@ -113,8 +160,6 @@ isInsertionLevel = height(tbl) == height(unique(tbl(:, {'insertion','stimulus'})
 yMaxVis    = params.yMaxVis;
 bracketPad = yMaxVis * 0.05;                           % gap between data and first bracket
 stackPad   = yMaxVis * 0.05;                           % vertical stacking between brackets
-textPad    = yMaxVis * 0.01;                           % gap between bracket and star text
-semAlpha   = 1;                                      % alpha for bootstrap error bars
 
 % -------------------------------------------------------------------------
 % Pre-process tbl: rename legacy labels, reorder categories, compute value
@@ -144,14 +189,20 @@ tbl.insertion = removecats(tbl.insertion);
 fig = figure;
 set(fig, 'Color', 'w');                               % white background for publication
 
+% Summary accumulators. Each panel returns the stats it computed; whatever a
+% given plotting mode does not produce is filled in afterwards so the returned
+% struct has the same schema in every mode.
+statsGroups  = statsSchema();                         % per-stimulus summary (raw panel)
+statsDiffOne = statsSchema();                         % single-pair summary (diff panel)
+
 if params.showBothAndDiff
     % Left tile: every stimulus shown raw; right tile: most-significant diff
     tl     = tiledlayout(fig, 1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
     axRaw  = nexttile(tl, 1);
     axDiff = nexttile(tl, 2);
 
-    randiColors = plotRawSwarm(axRaw, tbl, pairs, pValues, params, ...
-        yMaxVis, bracketPad, stackPad, textPad, semAlpha, isInsertionLevel);
+    [randiColors, statsGroups] = plotRawSwarm(axRaw, tbl, pairs, pValues, params, ...
+        yMaxVis, bracketPad, stackPad, isInsertionLevel);
 
     % Pick the most significant pair for the diff tile
     if ~isempty(pValues)
@@ -163,8 +214,8 @@ if params.showBothAndDiff
     pValForDiff = pValues(sigIdx);
 
     tblDiff = buildDiffTable(tbl, pairForDiff, params, isInsertionLevel);
-    plotDiffSwarm(axDiff, tblDiff, pairForDiff, pValForDiff, params, ...
-        yMaxVis, bracketPad, textPad);
+    [~, statsDiffOne] = plotDiffSwarm(axDiff, tblDiff, pairForDiff, pValForDiff, params, ...
+        yMaxVis, bracketPad);
 else
     % Single-axes mode: either the raw swarm or the difference
     ax = axes(fig);
@@ -173,11 +224,11 @@ else
 
     if params.diff
         tblDiff     = buildDiffTable(tbl, pairs, params, isInsertionLevel);
-        randiColors = plotDiffSwarm(ax, tblDiff, pairs, pValues, params, ...
-            yMaxVis, bracketPad, textPad);
+        [randiColors, statsDiffOne] = plotDiffSwarm(ax, tblDiff, pairs, pValues, params, ...
+            yMaxVis, bracketPad);
     else
-        randiColors = plotRawSwarm(ax, tbl, pairs, pValues, params, ...
-            yMaxVis, bracketPad, stackPad, textPad, semAlpha, isInsertionLevel);
+        [randiColors, statsGroups] = plotRawSwarm(ax, tbl, pairs, pValues, params, ...
+            yMaxVis, bracketPad, stackPad, isInsertionLevel);
     end
 end
 
@@ -185,11 +236,45 @@ end
 % Additional figure: one tile per pairwise difference (only when >1 pair)
 % -------------------------------------------------------------------------
 if size(pairs, 1) > 1
-    figAllDiffs = plotAllPairDiffs(tbl, pairs, pValues, params, ...
-        isInsertionLevel, yMaxVis, bracketPad, textPad);
+    [figAllDiffs, statsDiffs] = plotAllPairDiffs(tbl, pairs, pValues, params, ...
+        isInsertionLevel, yMaxVis, bracketPad);
 else
     figAllDiffs = [];
+    statsDiffs  = statsDiffOne;                       % 0 or 1 pair: whatever the diff panel produced
 end
+
+% -------------------------------------------------------------------------
+% Assemble the summary struct
+% -------------------------------------------------------------------------
+
+% Pure-difference mode never draws the raw panel, so the per-stimulus summary
+% is computed here instead (same routine, so identical numbers either way).
+if isempty(statsGroups)
+    statsGroups = computeSwarmStats(tbl, categories(tbl.stimulus), params);
+end
+
+% Single pair with no difference panel drawn (raw-only mode): build it now so
+% the caller still gets the pairwise difference summary.
+if size(pairs, 1) == 1 && isempty(statsDiffs)
+    tblDiff1   = buildDiffTable(tbl, pairs, params, isInsertionLevel);
+    statsDiffs = computeSwarmStats(tblDiff1, categories(tblDiff1.stimulus), params);
+end
+
+% Attach the pair identity and its p-value. plotAllPairDiffs emits exactly one
+% row per pair, in pair order (empty tiles emit an all-NaN placeholder row), so
+% this is a positional join guarded by a hard assertion.
+if ~isempty(pairs) && ~isempty(statsDiffs)
+    assert(height(statsDiffs) == size(pairs, 1), ...
+        ['plotSwarmBootstrapWithComparisons: %d difference-summary rows for %d ', ...
+         'pairs; row alignment broken.'], height(statsDiffs), size(pairs, 1));
+    statsDiffs.stimA = string(pairs(:, 1));            % first stimulus of the pair
+    statsDiffs.stimB = string(pairs(:, 2));            % second stimulus (subtracted)
+    if numel(pValues) == size(pairs, 1)
+        statsDiffs.p = pValues(:);                     % caller-supplied p-value per pair
+    end
+end
+
+stats = struct('groups', statsGroups, 'diffs', statsDiffs);
 
 end % main function
 
@@ -199,8 +284,8 @@ end % main function
 % =========================================================================
 % LOCAL FUNCTION: plotRawSwarm
 % =========================================================================
-function randiColors = plotRawSwarm(ax, tbl, pairs, pValues, params, ...
-    yMaxVis, bracketPad, stackPad, textPad, semAlpha, isInsertionLevel)
+function [randiColors, statsGroups] = plotRawSwarm(ax, tbl, pairs, pValues, params, ...
+    yMaxVis, bracketPad, stackPad, isInsertionLevel)
 
 hold(ax, 'on');
 set(ax, 'Clipping', 'off');                           % brackets may sit above yMaxVis
@@ -287,9 +372,12 @@ ylabel(ax, params.yLegend);
 ax.Box   = 'off';
 ax.Layer = 'top';
 
-% Hierarchical bootstrap mean +/- SE (or 95% CI)
+% Hierarchical bootstrap mean +/- SE (or 95% CI). The numbers are computed
+% unconditionally so the caller always receives the summary table; only the
+% drawing is gated on plotMeanSem.
+statsGroups = computeSwarmStats(tblPlot, stimuli, params);   % one row per stimulus, in category order
 if params.plotMeanSem
-    plotMeanSemBars(ax, tblPlot, stimuli, params, semAlpha);
+    drawMeanSemBars(ax, statsGroups, params);
 end
 
 % Significance brackets. When >5 pairs, only bracket adjacent groups to
@@ -298,7 +386,8 @@ maxBracketY = yMaxVis;                                 % default top when no bra
 if ~isempty(pairs) && numel(pValues) == size(pairs, 1)
     adjacentOnly = size(pairs, 1) > 6;
     maxBracketY = plotBrackets(ax, tblPlot, stimuli, pairs, pValues, ...
-        yMaxVis, bracketPad, stackPad, textPad, adjacentOnly, params.nearSigThresh);
+        yMaxVis, bracketPad, stackPad, adjacentOnly, params.nearSigThresh, ...
+        params.pValRes);
 end
 
 % Overlay user-specified example-unit markers (same symbol for every unit)
@@ -318,8 +407,8 @@ end % plotRawSwarm
 % overlays a bootstrap mean ± SE bar, a zero reference line, and
 % (if significant) a star annotation.
 % =========================================================================
-function randiColors = plotDiffSwarm(ax, tblDiff, pairs, pValues, params, ...
-    yMaxVis, bracketPad, textPad)
+function [randiColors, statsDiff] = plotDiffSwarm(ax, tblDiff, pairs, pValues, params, ...
+    yMaxVis, bracketPad)
 
 % Hold axes so subsequent drawing commands add to the same panel
 hold(ax, 'on');
@@ -332,6 +421,7 @@ set(ax, 'Clipping', 'off');
 % This should already be caught by the caller, but defend here too
 if height(tblDiff) == 0
     randiColors = [];
+    statsDiff   = emptyStatsRow(sprintf('%s-%s', pairs{1,1}, pairs{1,2}));  % NaN placeholder keeps row/pair alignment
     text(ax, 0.5, 0.5, 'No paired data', ...
         'Units',              'normalized', ...
         'HorizontalAlignment','center', ...
@@ -416,9 +506,12 @@ ax.Box   = 'off';
 ax.Layer = 'top';   % draw axes on top of data so tick marks are not obscured
 
 % ---- Bootstrap mean ± SE bars -------------------------------------------
+% Stats are computed unconditionally (the caller collects them); only drawing
+% is gated on plotMeanSem.
+stimuli   = categories(tblDiff.stimulus);        % ordered condition list (single 'A-B' entry)
+statsDiff = computeSwarmStats(tblDiff, stimuli, params);
 if params.plotMeanSem
-    stimuli = categories(tblDiff.stimulus);      % ordered condition list
-    plotMeanSemBars(ax, tblDiff, stimuli, params, 0.6);
+    drawMeanSemBars(ax, statsDiff, params);
 end
 
 % ---- Significance annotation --------------------------------------------
@@ -441,15 +534,14 @@ if ~isempty(pValues) && numel(pValues) >= 1
     % Label sits bracketPad above the highest visible point
     yText = maxVisible + bracketPad;
 
-    % Significant -> stars; near-significant (0.05 <= p < nearSigThresh) -> exact
-    % p; clearly non-significant or NaN -> nothing.
-    txt = '';                                                    % default: draw nothing
-    if ~isnan(pVal)
-        if     pVal < 0.001,                txt = '***';
-        elseif pVal < 0.01,                 txt = '**';
-        elseif pVal < 0.05,                 txt = '*';
-        elseif pVal < params.nearSigThresh, txt = sprintf('%.3f', pVal);  % trend
-        end
+    % The exact p-value is always printed on the single difference panel (no
+    % stars): thresholded symbols flip between categories on Monte Carlo noise
+    % alone when p sits near 0.001 or 0.05. NaN p prints nothing.
+    [pNum, pOp] = formatPValue(pVal, params.pValRes);            % plain decimal, no exponent
+    if ~isempty(pNum)
+        txt = ['p' pOp pNum];                                    % 'p=0.012' or 'p<0.001'
+    else
+        txt = '';                                                % NaN p: draw nothing
     end
 
     if ~isempty(txt)
@@ -595,83 +687,39 @@ end
 end % buildDiffTable
 
 
+% -------------------------------------------------------------------------
+% statsSchema, emptyStatsRow, computeSwarmStats and hierBootEffect used to be
+% local functions here. They are now public functions in "general functions/"
+% so that analyses which do not plot a swarm (e.g. the depth and
+% stripe-direction comparisons in analyzeStripeNeurons) can produce
+% schema-compatible stats blocks from the same code, and so buildStatsTable can
+% compute statistics without creating a figure just to harvest them.
+% Behaviour is unchanged; this file calls them exactly as before.
+% -------------------------------------------------------------------------
+
+
+
 % =========================================================================
-% LOCAL FUNCTION: plotMeanSemBars
-% Hierarchical-bootstrap central tendency and uncertainty per stimulus.
-% Uses hierBoot (Saravanan et al. 2020) for hierarchical resampling.
+% LOCAL FUNCTION: drawMeanSemBars
+% Draw the bootstrap central tendency and uncertainty computed by
+% computeSwarmStats. Row i of statsTbl corresponds to x-position i, which is
+% the invariant computeSwarmStats guarantees by emitting one row per category.
 % =========================================================================
-function plotMeanSemBars(ax, tblPlot, stimuli, params, semAlpha)
+function drawMeanSemBars(ax, statsTbl, params)
 
-for i = 1:numel(stimuli)
-    idx = tblPlot.stimulus == stimuli{i};
-    if ~any(idx), continue; end
+for i = 1:height(statsTbl)
 
-    % Pull values and drop NaNs
-    vals = tblPlot.value(idx);
-    keep = ~isnan(vals);
-    vals = vals(keep);
-
-    n = numel(vals);
-    if n < 3
-        fprintf('Stimulus %s: n=%d < 3; skipping mean/SE bar.\n', char(stimuli{i}), n);
+    % Rows with no bootstrap (absent group, or n < 3) get no bar
+    if isnan(statsTbl.bootMean(i))
         continue
     end
 
-    % Pull each grouping column aligned with NaN drop
-    groupVars = params.bootGroupVars;
-    groupVals = cell(1, numel(groupVars));
-    for g = 1:numel(groupVars)
-        col = tblPlot.(groupVars{g})(idx);
-        col = col(keep);
-        if iscategorical(col)
-            col = double(col);                         % hierBoot requires numeric
-        end
-        groupVals{g} = col;
-    end
-
-    % Make the level-2 (insertion) key unique *within* animal. Insertion
-    % numbering is reset per animal, so double(insertion) gives the same index
-    % to "insertion 1" of every animal; findgroups over (animal, insertion)
-    % yields one ID per distinct pair, so two animals' same-labelled insertions
-    % can never be merged when the bootstrap builds its animal->insertion
-    % nesting. No-op if the resampler already enumerates insertions within each
-    % animal; a silent-bug fix if it keys insertion globally.
-    if numel(groupVars) == 2 && all(strcmp(groupVars(:)', {'animal','insertion'}))
-        groupVals{2} = findgroups(groupVals{1}, groupVals{2});   % composite within-animal insertion ID
-    end
-
-
-    % Hierarchical (animal -> insertion) or flat bootstrap of the mean.
-    % hierBootMatchFreq is hard-coded for exactly two grouping levels and
-    % expects them coarsest-first (lvl1 = animal, lvl2 = insertion). The
-    % default bootGroupVars ordering {'animal','insertion'} satisfies this.
-    if isempty(groupVars)
-        bootMean = bootstrp(params.nBoot, @mean, vals);          % no hierarchy: ordinary bootstrap
-    else
-        assert(numel(groupVars) == 2, ...                        % enforce the 2-level contract
-            ['plotMeanSemBars: hierBootMatchFreq needs exactly two grouping ', ...
-            'levels (animal, insertion); got %d. Adjust bootGroupVars, or ', ...
-            'pass {} for a flat bootstrap.'], numel(groupVars));
-        bootMean = hierBootMatchFreq(vals, params.nBoot, ...     % lvl1 = animal (coarsest)
-            groupVals{1}, groupVals{2});                         % lvl2 = insertion
-    end
-
-    % Point estimate: mean of the bootstrap distribution
-    % (weights animals/insertions equally, matching the mixed model)
-    mu = mean(bootMean);
-
-    % Uncertainty bar
-    switch lower(params.ciMethod)
-        case 'sem'
-            se  = std(bootMean);
-            yLo = mu - se;
-            yHi = mu + se;
-        case 'percentile'
-            yLo = prctile(bootMean,  2.5);
-            yHi = prctile(bootMean, 97.5);
-        otherwise
-            error('Unknown ciMethod: %s. Use ''sem'' or ''percentile''.', params.ciMethod);
-    end
+    % Point estimate = the OBSERVED mean of the plotted points, so the bar
+    % always sits at the centre of its own swarm. The bootstrap contributes
+    % only the interval (see computeSwarmStats).
+    mu  = statsTbl.mean(i);                            % observed pooled mean (drawn)
+    yLo = statsTbl.ciLo(i);                            % lower uncertainty bound
+    yHi = statsTbl.ciHi(i);                            % upper uncertainty bound
 
     xb    = i;                                         % centre the bar on the swarm column
     halfW = params.swarmWidth/2 + 0.2;                % extend past the (now bounded) dot cloud so the bar always shows
@@ -689,7 +737,7 @@ for i = 1:numel(stimuli)
     uistack(pat,   'bottom');                          % patch drops below the mean line (backmost)
 end
 
-end % plotMeanSemBars
+end % drawMeanSemBars
 
 
 % =========================================================================
@@ -699,7 +747,7 @@ end % plotMeanSemBars
 % with many comparisons). All pairs are always reported to plotAllPairDiffs.
 % =========================================================================
 function maxY  = plotBrackets(ax, tblPlot, stimuli, pairs, pValues, ...
-    yMaxVis, bracketPad, stackPad, textPad, adjacentOnly,nearSigThresh)
+    yMaxVis, bracketPad, stackPad, adjacentOnly,nearSigThresh, pValRes)
 
 % Track y-positions of placed brackets to prevent overlap
 usedHeights = zeros(size(pairs, 1), 1);
@@ -744,21 +792,16 @@ for k = 1:size(pairs, 1)
     line(ax, [x1 x1], [y - yMaxVis*0.01, y], 'Color', 'k', 'LineWidth', 1.2, 'Clipping', 'off');
     line(ax, [x2 x2], [y - yMaxVis*0.01, y], 'Color', 'k', 'LineWidth', 1.2, 'Clipping', 'off');
 
-    % Significant -> stars; near-significant -> exact p above the bracket.
-    if     pValues(k) < 0.001, txt = '***';
-    elseif pValues(k) < 0.01,  txt = '**';
-    elseif pValues(k) < 0.05,  txt = '*';
-    else,                      txt = sprintf('%.3f', pValues(k));  % 0.05 <= p < nearSigThresh
-    end
+    % Exact p above every bracket that is drawn (no stars). Which brackets get
+    % drawn is still filtered by nearSigThresh above, so the panel does not fill
+    % with labels for clearly null pairs; the complete set of p-values is in the
+    % returned stats.diffs table and in the all-pairs figure.
+    [pNum, pOp] = formatPValue(pValues(k), pValRes);   % plain decimal, no exponent
+    txt = ['p' pOp pNum];                              % 'p=0.012' or 'p<0.001'
 
-    % Numeric labels are taller and sit closer to the line than stars, so lift
-    % them further and anchor by their bottom edge so they grow upward, away
-    % from the bracket, instead of overlapping it.
-    if ~startsWith(txt, '*')
-        yTxt = y + bracketPad;                         % extra lift for numbers
-    else
-        yTxt = y + textPad;                            % stars sit just above
-    end
+    % Numeric labels are taller than stars were, so lift them clear of the
+    % bracket and anchor by their bottom edge so they grow upward.
+    yTxt = y + bracketPad;                             % lift for numeric labels
     text(ax, mean([x1 x2]), yTxt, txt, ...
         'HorizontalAlignment', 'center', ...
         'VerticalAlignment',   'bottom', ...           % text grows up, off the bracket
@@ -774,11 +817,15 @@ end % plotBrackets
 % LOCAL FUNCTION: plotAllPairDiffs
 % Stand-alone figure with one tile per pairwise difference.
 % =========================================================================
-function figAll = plotAllPairDiffs(tbl, pairs, pValues, params, ...
-    isInsertionLevel, yMaxVis, bracketPad, textPad)
+function [figAll, statsDiffs] = plotAllPairDiffs(tbl, pairs, pValues, params, ...
+    isInsertionLevel, yMaxVis, bracketPad)
 
 % Total number of pairwise comparisons to tile
 nPairs = size(pairs, 1);
+
+% One summary row per pair, appended in pair order (including placeholder rows
+% for pairs with no paired data) so the caller can join it positionally.
+statsDiffs = statsSchema();
 
 % Guard: nothing to plot
 if nPairs == 0
@@ -820,6 +867,9 @@ for k = 1:nPairs
 
     % --- Empty-data path ---------------------------------------------------
     if height(tblDiff) == 0
+        % Placeholder summary row so statsDiffs keeps one row per pair
+        statsDiffs = [statsDiffs; emptyStatsRow(sprintf('%s-%s', pairK{1}, pairK{2}))];  %#ok<AGROW>
+
         % Suppress all axes decorations so the blank tile is invisible in print
         axis(ax, 'off');
 
@@ -839,9 +889,15 @@ for k = 1:nPairs
     end
     % -----------------------------------------------------------------------
 
-    % Draw the swarm + significance bracket into ax
-    plotDiffSwarm(ax, tblDiff, pairK, pValK, params, ...
-        yMaxVis, bracketPad, textPad);
+    % Draw the swarm + significance bracket into ax, keeping its summary row
+    [~, statsK] = plotDiffSwarm(ax, tblDiff, pairK, pValK, params, ...
+        yMaxVis, bracketPad);
+
+    % Each diff table holds exactly one condition ('A-B'), so one row per pair
+    assert(height(statsK) == 1, ...
+        'plotAllPairDiffs: pair %d produced %d summary rows; expected 1.', ...
+        k, height(statsK));
+    statsDiffs = [statsDiffs; statsK];                 %#ok<AGROW>
 
     % Record the handle for this successfully plotted tile
     axHandles(k) = ax;

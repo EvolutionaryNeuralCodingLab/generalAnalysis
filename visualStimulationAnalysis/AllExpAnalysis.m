@@ -1,4 +1,4 @@
-function [tempTable] = AllExpAnalysis(expList, params)
+function [tempTable, summaryStats] = AllExpAnalysis(expList, params)
 % AllExpAnalysis  Pool neural responses across Neuropixels recordings,
 %   run pairwise statistical comparisons via hierarchical bootstrapping,
 %   and generate publication-ready swarm and scatter plots.
@@ -33,6 +33,28 @@ function [tempTable] = AllExpAnalysis(expList, params)
 %     tempTable  table   Fraction-responsive table (one row per insertion x
 %                        item), filtered to insertions containing all
 %                        compared items.
+%     summaryStats struct  Central-tendency summaries behind every swarm panel.
+%                        Fields: Zscore, SpkR, FracResponsive; each with
+%                          .groups - one row per stimulus
+%                          .diffs  - one row per pair (stimA, stimB, p)
+%                        Columns: n, nAnimals, nInsertions, mean, median
+%                        (plain pooled descriptives; `mean` is the plotted bar);
+%                        bootMean, ciLo, ciHi (hierarchical bootstrap;
+%                        ciLo/ciHi are the plotted uncertainty patch);
+%                        effect, effectLo, effectHi (Cohen's d, d_z on the
+%                        differences, with bootstrap CI); propPos, propPosLo,
+%                        propPosHi (P(value > 0) with bootstrap CI - the
+%                        common-language effect size on the differences).
+%                        bootMean is diagnostic only - it is NOT an equal-
+%                        weight-per-animal mean, and a large mean-vs-bootMean
+%                        gap signals unbalanced neuron counts across animals.
+%                        FracResponsive additionally carries .sensitivity when
+%                        minSomaticN > 0: the same summary recomputed over
+%                        insertions with at least that many somatic units, as a
+%                        robustness check. The primary result never excludes.
+%                        All blocks are printed to the console, and saved into
+%                        the companion _analysisStruct.mat when PaperFig=true.
+%                        See the plotSwarmBootstrapWithComparisons header.
 %
 %   EXAMPLES
 %     % Mode 1
@@ -81,6 +103,30 @@ arguments
     % --- Bootstrap parameters ---
     params.nBoot            double          = 10000 % Iterations for pairwise hierarchical bootstrap
     params.nBootCategory    double          = 10000 % Iterations for per-category bootstrap
+    params.nBootPval        double          = 1e5   % Iterations for the reported p-values only. Higher than
+                                                    %   nBoot because a p near 0.001 is estimated from only
+                                                    %   ~10 tail counts at 1e4, so Monte Carlo error is the
+                                                    %   same order as the threshold. Cost scales with the
+                                                    %   number of pairs: set to nBoot to restore old speed.
+    params.pvalSeed         double          = 0     % RNG seed applied immediately before each p-value loop.
+                                                    %   Without it the p-values inherit whatever global RNG
+                                                    %   state the preceding plotting calls left behind, so
+                                                    %   re-running the same analysis could change a reported p.
+    params.minSomaticN      double          = 5     % SENSITIVITY analysis for the fraction panel ONLY.
+                                                    %   An insertion with few somatic units yields a quantised
+                                                    %   fraction (2 units -> only 0, 0.5 or 1), which inflates
+                                                    %   the SD and attenuates the effect size, and the
+                                                    %   bootstrap cannot down-weight it: the fraction analysis
+                                                    %   hands hierBootMatchFreq exactly one value per insertion,
+                                                    %   so every insertion carries equal weight regardless of
+                                                    %   how many units it held.
+                                                    %   The PRIMARY figure, p-value and annotation always use
+                                                    %   EVERY insertion; this only adds a second, filtered
+                                                    %   summary alongside them. 0 disables the extra work.
+                                                    %   Never applied to the z-score/spike-rate panels: there
+                                                    %   the observation is the neuron, and dropping sparse
+                                                    %   insertions would remove marginally-significant units
+                                                    %   and inflate the mean z-score.
 
     % --- Data extraction ---
     params.useZmean         logical         = true  % true = use z_mean field; false = peak spike rate
@@ -798,7 +844,8 @@ end
 
 if isempty(S.TableStimComp) || height(S.TableStimComp) == 0
     warning('AllExpAnalysis:noUnits', 'No significant units found. Returning empty.');
-    tempTable = table();
+    tempTable    = table();
+    summaryStats = struct('Zscore', [], 'SpkR', [], 'FracResponsive', []);  % keep the output defined on every path
     return
 end
 
@@ -847,6 +894,12 @@ if (mode == 3 || mode == 2) && ...
 end
 
 
+% Smallest p-value the bootstrap can resolve: the two-tailed statistic doubles
+% the smaller tail, so with zero counts on one side the minimum non-zero value
+% is 2/nBootPval. Passed to the plotting and printing helpers so a p of exactly
+% 0 is reported as '< that resolution' rather than against a hard-coded floor.
+pValRes = 2 / params.nBootPval;
+
 % All pairwise combinations of comparison items
 compLabels = cellstr(categories(S.TableStimComp.stimulus));  % unique sorted item labels
 pairsAll   = nchoosek(compLabels, 2);                        % Kx2 cell of pairs
@@ -858,21 +911,28 @@ labelMap = {'RG','SB'; 'SDGs','SG'; 'SDGm','MG'};
 % SECTION 8 — Z-SCORE PAIRWISE COMPARISON
 % =========================================================================
 
-% Compute a hierarchical-bootstrap p-value for each pair (z-score metric)
+% Compute a hierarchical-bootstrap p-value for each pair (z-score metric).
+% Seed first so the reported p-values are reproducible and independent of the
+% global RNG state left by any earlier plotting call.
+rng(params.pvalSeed);
 pValsZ = zeros(1, size(pairsAll, 1));
 for pi = 1:size(pairsAll, 1)
     pValsZ(pi) = bootstrapPairDifference( ...
-        S.TableStimComp, pairsAll(pi,:), params.nBoot, 'Z-score');
+        S.TableStimComp, pairsAll(pi,:), params.nBootPval, 'Z-score');
 end
 
 % Upper y-limit: ceiling of max z-score plus headroom for significance brackets
 ZscoreYlim = ceil(max(S.TableStimComp.('Z-score'))) +0.1*ceil(max(S.TableStimComp.('Z-score')));
 
 % Generate swarm + bootstrap plot for z-scores
-[fig,~,figAllDiffs] = plotSwarmBootstrapWithComparisons( ...
+[fig,~,figAllDiffs,summaryStats.Zscore] = plotSwarmBootstrapWithComparisons( ...
     S.TableStimComp, pairsAll, pValsZ, {'Z-score'}, ...
-    yLegend = 'Z-score', yMaxVis = ZscoreYlim, ...
+    yLegend = 'Z-score', yMaxVis = ZscoreYlim, pValRes = pValRes, ...
     diff = true, plotMeanSem = true, Alpha = 0.7,   markUnits = params.markUnits)  ;        % N×4 {NeurID,stimulus,animal,insertion}; row1->X, row2->+);
+
+% Echo the numbers behind the panel: mean/median, the plotted 95% CI, and the
+% effect sizes with their bootstrap CIs, per stimulus and per pair.
+printStatsSummary('Z-score', summaryStats.Zscore, pValRes);
 
 % Apply consistent font formatting to all axes in the figure
 ax = findobj(fig, 'Type', 'axes');
@@ -926,21 +986,27 @@ end
 % SECTION 9 — SPIKE-RATE PAIRWISE COMPARISON
 % =========================================================================
 
-% Compute a hierarchical-bootstrap p-value for each pair (spike rate metric)
+% Compute a hierarchical-bootstrap p-value for each pair (spike rate metric).
+% Re-seed: this loop runs after the z-score panels were drawn, so without it the
+% p-values would depend on how many random draws that plotting consumed.
+rng(params.pvalSeed);
 pValsSpk = zeros(1, size(pairsAll, 1));
 for pi = 1:size(pairsAll, 1)
     pValsSpk(pi) = bootstrapPairDifference( ...
-        S.TableStimComp, pairsAll(pi,:), params.nBoot, 'SpkR');
+        S.TableStimComp, pairsAll(pi,:), params.nBootPval, 'SpkR');
 end
 
 % Upper y-limit for spike rate
 spkMax = max(S.TableStimComp.SpkR) +0.1*max(S.TableStimComp.SpkR);
 
 % Generate swarm + bootstrap plot for spike rates
-[fig,~,figAllDiffs] = plotSwarmBootstrapWithComparisons( ...
+[fig,~,figAllDiffs,summaryStats.SpkR] = plotSwarmBootstrapWithComparisons( ...
     S.TableStimComp, pairsAll, pValsSpk, {'SpkR'}, ...
-    yLegend = 'SpkR', yMaxVis = spkMax, ...
+    yLegend = 'SpkR', yMaxVis = spkMax, pValRes = pValRes, ...
     diff = true, plotMeanSem = true, Alpha = 0.7, markUnits = params.markUnits);
+
+% Echo the spike-rate summary (same layout as the z-score one)
+printStatsSummary('Spike rate', summaryStats.SpkR, pValRes);
 
 % Apply consistent font formatting
 ax = findobj(fig, 'Type', 'axes');
@@ -1006,45 +1072,20 @@ tempTable = S.TableRespNeurs( ...
 % The previous flat bootstrp(@mean, diffs) ignored the nesting of insertions
 % within animals.  Using hierBoot is consistent with the mixed model.
 
-pairsAll   = nchoosek(compLabels, 2);    
+pairsAll   = nchoosek(compLabels, 2);
 
+% Re-seed: this loop runs last, after both sets of swarm panels were drawn.
+% Without it the fraction p-values inherit the RNG state those plots left, so
+% a p sitting near a threshold could change on re-run with identical data.
+rng(params.pvalSeed);
 pValsFrac = zeros(1, size(pairsAll, 1));
 for pi = 1:size(pairsAll, 1)
-
-    diffs      = [];    % per-insertion fraction differences
-    insLabels  = [];    % insertion indices for hierBoot (level 1)
-    animLabels = [];    % animal indices for hierBoot    (level 2)
-
-    for ins = unique(S.TableRespNeurs.insertion)'
-
-        % Find rows for this insertion and each stimulus in the pair
-        idx1 = S.TableRespNeurs.insertion == ins & ...
-               S.TableRespNeurs.stimulus  == pairsAll{pi,1};
-        idx2 = S.TableRespNeurs.insertion == ins & ...
-               S.TableRespNeurs.stimulus  == pairsAll{pi,2};
-
-        % Both stimuli must be present for a valid paired comparison
-        if any(idx1) && any(idx2)
-            total = S.TableRespNeurs.totalSomaticN(idx1);       % total neurons
-            f1    = S.TableRespNeurs.respNeur(idx1) / total;    % fraction, stim 1
-            f2    = S.TableRespNeurs.respNeur(idx2) / total;    % fraction, stim 2
-            d     = f1 - f2;                                    % paired difference
-
-            animal = S.TableRespNeurs.animal(idx1);             % animal for this insertion
-
-            diffs      = [diffs;      d];                       
-            insLabels  = [insLabels;  double(ins)];             
-            animLabels = [animLabels; double(animal)];          
-        end
-    end
-
-    % Hierarchical bootstrap: resample animals -> insertions -> fractions
-    bootDiff = hierBootMatchFreq(diffs, params.nBoot, animLabels,insLabels);
-
-    % Two-tailed p-value
-    pLeft         = mean(bootDiff <= 0);
-    pRight        = mean(bootDiff >= 0);
-    pValsFrac(pi) = min(2 * min(pLeft, pRight), 1);
+    % Per-insertion paired fraction difference + hierarchical bootstrap.
+    % Extracted to its own function so the primary result, the sensitivity
+    % analysis below, and any downstream summary table all use one
+    % implementation and cannot drift apart.
+    pValsFrac(pi) = bootstrapFractionDifference( ...
+        S.TableRespNeurs, pairsAll(pi,:), params.nBootPval);
 end
 
 % Compute total responsive neurons per insertion (across stimuli)
@@ -1053,15 +1094,96 @@ totals                  = splitapply(@sum, tempTable.respNeur, G);
 tempTable.TotalRespNeur = totals(G);
 
 % Generate swarm plot for fraction responsive
-[fig,~,figAllDiffs] = plotSwarmBootstrapWithComparisons( ...
+[fig,~,figAllDiffs,summaryStats.FracResponsive] = plotSwarmBootstrapWithComparisons( ...
     tempTable, pairsAll, pValsFrac, ...
     {'respNeur','totalSomaticN'}, ...
-    fraction = true, showBothAndDiff = false, ...
+    fraction = true, showBothAndDiff = false, pValRes = pValRes, ...
     yLegend = 'Responsive/total units', ...
     diff = false, filled = false, Xjitter = 'none', ...
     Alpha = 0.6, drawLines = true);
 
-set(gca, 'Clipping', 'off')
+% Echo the fraction-responsive summary (insertion-level, so n = # insertions)
+printStatsSummary('Fraction responsive', summaryStats.FracResponsive, pValRes);
+
+% =========================================================================
+% SECTION 10b — FRACTION-RESPONSIVE SENSITIVITY ANALYSIS
+% =========================================================================
+% Insertions with very few somatic units give a quantised fraction estimate
+% (2 units -> only 0, 0.5 or 1). They cannot be down-weighted by the
+% bootstrap, because this panel supplies exactly one value per insertion, so
+% every insertion counts equally whether it held 2 units or 113. That
+% quantisation noise inflates the SD and therefore ATTENUATES Cohen's d.
+%
+% The primary result above is left untouched (no exclusions to justify in
+% Methods). This recomputes the same comparison over the higher-yield
+% insertions only, so both numbers come out of a single run and the paper can
+% state that the conclusion does not depend on the low-yield sessions.
+%
+% NOTE: this is a guard on the DENOMINATOR (units recorded), which is set by
+% insertion quality and is independent of the visual response. Never filter on
+% the NUMERATOR (units responsive) — that selects on the dependent variable and
+% removes precisely the insertions where MB and SB agreed.
+if params.minSomaticN > 0
+
+    % Insertions passing the yield threshold (evaluated per row; totalSomaticN
+    % is constant across the stimulus rows of one insertion)
+    keepRows = tempTable.totalSomaticN >= params.minSomaticN;
+    tempTableSens = tempTable(keepRows, :);
+
+    nInsAll  = numel(unique(tempTable.insertion));           % insertions in the primary analysis
+    nInsKept = numel(unique(tempTableSens.insertion));       % insertions surviving the threshold
+
+    if nInsKept < 3
+        % Too little left to bootstrap; say so rather than emitting a stat
+        warning('AllExpAnalysis:sensitivityTooSmall', ...
+            ['minSomaticN=%g leaves only %d insertion(s); skipping the ', ...
+             'fraction-responsive sensitivity analysis.'], ...
+            params.minSomaticN, nInsKept);
+    else
+        % ---- Filtered p-value: same loop and same seed as the primary ----
+        rng(params.pvalSeed);
+        pValsFracSens = zeros(1, size(pairsAll, 1));
+        for pi = 1:size(pairsAll, 1)
+            % Same routine as the primary p-value above, on the filtered table
+            pValsFracSens(pi) = bootstrapFractionDifference( ...
+                tempTableSens, pairsAll(pi,:), params.nBootPval);
+        end
+
+        % ---- Filtered CI and effect sizes ----
+        % Reuse the plotting routine rather than duplicating the statistics:
+        % computeSwarmStats is a local function of plotSwarmBootstrapWithComparisons
+        % and cannot be called directly, and going through the same entry point
+        % guarantees these numbers are produced identically to the primary ones.
+        % The figure it creates is closed immediately — only the stats are kept.
+        [figSens, ~, figSensDiffs, sensStats] = plotSwarmBootstrapWithComparisons( ...
+            tempTableSens, pairsAll, pValsFracSens, ...
+            {'respNeur','totalSomaticN'}, ...
+            fraction = true, showBothAndDiff = false, pValRes = pValRes, ...
+            yLegend = 'Responsive/total units', ...
+            diff = false, filled = false, Xjitter = 'none', ...
+            Alpha = 0.6, drawLines = true);
+
+        close(figSens);                                    % discard the transient figure
+        if ~isempty(figSensDiffs) && isgraphics(figSensDiffs)
+            close(figSensDiffs);                           % and the all-pairs one, if any
+        end
+
+        % Record alongside the primary result
+        sensStats.minSomaticN = params.minSomaticN;        % threshold applied
+        sensStats.nDropped    = nInsAll - nInsKept;        % insertions removed
+        summaryStats.FracResponsive.sensitivity = sensStats;
+
+        fprintf(['\n### SENSITIVITY ANALYSIS: insertions with >= %g somatic units ', ...
+                 '(%d of %d kept, %d dropped).\n', ...
+                 '### The primary result above uses ALL insertions; this is a ', ...
+                 'robustness check, not a replacement.\n'], ...
+            params.minSomaticN, nInsKept, nInsAll, nInsAll - nInsKept);
+        printStatsSummary(sprintf('Fraction responsive [minSomaticN>=%g]', ...
+            params.minSomaticN), sensStats, pValRes);
+    end
+end
+
+set(findobj(fig, 'Type', 'axes'), 'Clipping', 'off');   % target the primary panel explicitly: gca is unreliable here now that the sensitivity block above creates and closes figures
 
 % Count total unique responsive neurons across all (animal, insertion) pairs
 totalResp = 0;
@@ -1149,6 +1271,12 @@ if params.PaperFig
     [~, cacheName, ~] = fileparts(nameOfFile);
     figStructPath = fullfile(figSaveDir, [cacheName '_analysisStruct.mat']);
 
+    % Attach the summary statistics so the figure folder also carries the exact
+    % numbers plotted (means, CIs, effect sizes) and not just the raw tables.
+    % Safe to mutate S here: the analysis cache was already written in SECTION 5,
+    % and this is the last use of S in the function.
+    S.summaryStats = summaryStats;
+
     % Save the full struct (duplicates ~tens of KB; guarantees self-containment)
     save(figStructPath, '-struct', 'S');
     fprintf('Saved analysis struct to figure directory: %s\n', figStructPath);
@@ -1160,6 +1288,71 @@ end  % end function AllExpAnalysis
 % #########################################################################
 %                       LOCAL HELPER FUNCTIONS
 % #########################################################################
+
+function printStatsSummary(label, stats, pValRes)
+% printStatsSummary  Console report of one metric's swarm-panel statistics.
+%   Prints the per-stimulus block and the pairwise-difference block in a
+%   paper-ready layout: observed central tendency with its bootstrap CI, then
+%   the effect sizes with theirs. The effect size is labelled d for single
+%   groups (one-sample Cohen's d vs zero) and d_z for differences (the paired
+%   Cohen's d, since those rows hold per-unit differences).
+
+    fprintf('\n=== %s: per-stimulus summary ===\n', label);
+    printStatsBlock(stats.groups, 'd', pValRes);         % single-group effect size
+
+    fprintf('\n=== %s: pairwise differences ===\n', label);
+    printStatsBlock(stats.diffs,  'd_z', pValRes);       % paired effect size
+
+end % printStatsSummary
+
+
+function printStatsBlock(T, effectName, pValRes)
+% printStatsBlock  Print one summary table, two lines per row.
+
+    % Nothing computed for this metric (e.g. no pairs requested)
+    if isempty(T)
+        fprintf('  (no rows)\n');
+        return
+    end
+
+    % The p column exists only on the differences table
+    hasP = ismember('p', T.Properties.VariableNames);
+
+    for i = 1:height(T)
+
+        % Header line: label, sample sizes, and the pair p-value when present.
+        % formatPValue keeps this identical to the figure label (plain decimal,
+        % never scientific notation) so console and figure cannot disagree.
+        if hasP
+            [pNum, pOp] = formatPValue(T.p(i), pValRes);
+            pStr = sprintf('   p %s %s', pOp, pNum);
+        else
+            pStr = '';
+        end
+        fprintf('  %-16s n=%-5d (%d animals, %d insertions)%s\n', ...
+            T.group(i), T.n(i), T.nAnimals(i), T.nInsertions(i), pStr);
+
+        % Central tendency: observed mean (the plotted bar), median, and the
+        % hierarchical-bootstrap interval (the plotted patch).
+        % bootMean is the mean of the bootstrap distribution and is NOT what is
+        % drawn -- the bar is the observed mean. It is printed as a diagnostic:
+        % a large gap signals unbalanced per-animal counts, because
+        % hierBootMatchFreq pools every resampled observation flat, making the
+        % resampled statistic a ratio with a random denominator whose
+        % expectation drifts away from the observed mean.
+        fprintf(['     mean %9.4f   median %9.4f   95%% CI [%9.4f, %9.4f]' ...
+                 '   bootMean %9.4f (%+.4f)\n'], ...
+            T.mean(i), T.median(i), T.ciLo(i), T.ciHi(i), ...
+            T.bootMean(i), T.bootMean(i) - T.mean(i));
+
+        % Effect sizes with their bootstrap intervals
+        fprintf('     %-4s %8.3f  95%% CI [%7.3f, %7.3f]     P(>0) %.3f  95%% CI [%.3f, %.3f]\n', ...
+            effectName, T.effect(i), T.effectLo(i), T.effectHi(i), ...
+            T.propPos(i), T.propPosLo(i), T.propPosHi(i));
+    end
+
+end % printStatsBlock
+
 
 function specOut = normalizeFocusSpec(specIn, nStim, defaultVal)
 % normalizeFocusSpec  Broadcast/validate a per-stimulus focus spec cell.
@@ -1606,74 +1799,6 @@ function [z, p, spkR, spkDiff] = extractStimData(stats, vsObj, stimName, useZmea
 end
 
 
-function pVal = bootstrapPairDifference(tbl, pair, nBoot, metric)
-% bootstrapPairDifference  Hierarchical bootstrap test for a single pair.
-%
-%   BUG FIX (was Bug #2): Pairs neurons explicitly by NeurID within each
-%   insertion using innerjoin, instead of relying on row order.  The
-%   previous row-order approach silently produced wrong differences if the
-%   table was ever sorted or filtered asymmetrically.
-%
-%   INPUTS
-%     tbl    table   Long-format with columns: insertion, stimulus, NeurID,
-%                    animal, and the metric column.
-%     pair   {1x2}  Cell pair of stimulus labels.
-%     nBoot  double  Number of bootstrap iterations.
-%     metric char    Column name to test ('Z-score' or 'SpkR').
-%
-%   OUTPUT
-%     pVal   double  Two-tailed p-value from hierarchical bootstrap.
-
-    diffs   = [];       % per-neuron paired differences
-    insers  = [];       % insertion label for each difference (hierBoot level 1)
-    animals = [];       % animal label for each difference   (hierBoot level 2)
-
-    for ins = unique(tbl.insertion)'
-
-        % Logical masks: rows for this insertion x each stimulus
-        mask1 = tbl.insertion == ins & tbl.stimulus == pair{1};
-        mask2 = tbl.insertion == ins & tbl.stimulus == pair{2};
-
-        if ~any(mask1) || ~any(mask2), continue; end    % skip if either is absent
-
-        % Extract sub-tables with the metric, NeurID, and animal columns
-        sub1 = tbl(mask1, {metric, 'NeurID', 'animal'});
-        sub2 = tbl(mask2, {metric, 'NeurID'});
-
-        % Inner-join on NeurID ensures correct neuron-to-neuron pairing
-        merged = innerjoin(sub1, sub2, 'Keys', 'NeurID', ...
-                           'LeftVariables',  {metric, 'NeurID', 'animal'}, ...
-                           'RightVariables', {metric});
-
-        % MATLAB auto-suffixes duplicated variable names after innerjoin;
-        % find both metric columns by prefix matching
-        mergedVarNames = merged.Properties.VariableNames;
-        metricCols     = mergedVarNames(startsWith(mergedVarNames, metric));
-
-        % Paired difference: stimulus 1 minus stimulus 2
-        d = merged.(metricCols{1}) - merged.(metricCols{2});
-
-        % Animal identity (constant within an insertion)
-        animal = merged.animal(1);
-
-        % Append to accumulators
-        nPaired = numel(d);
-        diffs   = [diffs;   d];                                             %#ok<AGROW>
-        insers  = [insers;  double(repmat(ins,    nPaired, 1))];            %#ok<AGROW>
-        animals = [animals; double(repmat(animal, nPaired, 1))];            %#ok<AGROW>
-    end
-
-    % Hierarchical bootstrap: resample animals -> insertions -> neurons
-    %bootMeans = hierBoot(diffs, nBoot, insers, animals);
-    bootMeans = hierBootMatchFreq(diffs, nBoot, animals ,insers);
-    
-
-    % Two-tailed p-value: probability that |bootstrap mean| >= |observed|
-    pLeft  = mean(bootMeans <= 0);          % fraction of bootstrap means <= 0
-    pRight = mean(bootMeans >= 0);          % fraction of bootstrap means >= 0
-    pVal   = 2 * min(pLeft, pRight);        % double the smaller tail
-    pVal   = min(pVal, 1);                  % cap at 1
-end
 
 
 function fig = plotPairScatter(tbl, compLabels, metric, cmap, animalIdx, labelMap)
