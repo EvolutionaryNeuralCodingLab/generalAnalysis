@@ -3792,7 +3792,7 @@ classdef sleepAnalysis < recAnalysis
 
         end
 
-        %% plotDelta2BetaRatio
+        %% plotSharpWavesAnalysis
         function [h]=plotSharpWavesAnalysis(obj,varargin)
 
             parseObj = inputParser;
