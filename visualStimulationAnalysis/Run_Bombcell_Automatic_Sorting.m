@@ -2,7 +2,7 @@
 %% Run/load bombcell and confusion matrices
 
 %
-exp = [49:54,64:97];%
+exp = [19];%
 %tiledlayout(numel(exp),1)
 for ex =  exp%GoodRecordingsPV%allGoodRec %GoodRecordings%GoodRecordingsPV%GoodRecordingsPV%selecN{1}(1,:) %1:size(data,1)
     %%%%%%%%%%%% Load data and data paremeters
@@ -11,10 +11,12 @@ for ex =  exp%GoodRecordingsPV%allGoodRec %GoodRecordings%GoodRecordingsPV%GoodR
     vs = linearlyMovingBallAnalysis(NP,Session=1);
     KSversion =4;
 
-    [qMetric,unitType]=NP.getBombCell(NP.recordingDir+"\kilosort4",0,KSversion);
+    [qMetric,unitType]=NP.getBombCell(NP.recordingDir+"\kilosort4",0,KSversion,1);
 
     %convertPhySorting2tIc(obj,pathToPhyResults,tStart,BombCelled)
-
+end
+%%
+for ex =  exp
     %
     % goodUnits = unitType == 1;
     % muaUnits = unitType == 2;
@@ -124,8 +126,70 @@ for ex =  exp%GoodRecordingsPV%allGoodRec %GoodRecordings%GoodRecordingsPV%GoodR
     %     sum(mismatch_ks_man), numel(mismatch_ks_man), ...
     %     100*mean(mismatch_ks_man));
 
+    imec = Neuropixel.ImecDataset(NP.recordingDir);
+    ks = Neuropixel.KilosortDataset(vs.spikeSortingFolder,'imecDataset', imec);
+    ks.load();
+
 end
 %I want to compare bombcell unit classification with manual classification in phy.
 
 
 
+%% Plot raw waveforms of specific units:
+
+% 1. Add to path: https://github.com/cortex-lab/spikes
+%                 https://github.com/kwikteam/npy-matlab  (dependency)
+
+
+ksDir = vs.spikeSortingFolder;
+sp = loadKSdir(ksDir);   % loads all KS output into a struct
+
+% Get waveforms
+gwfparams.dataDir    = ksDir;
+gwfparams.fileName   = NP.recordingDir;
+gwfparams.dataType   = 'int16';
+gwfparams.nCh        = 385;
+gwfparams.wfWin      = [-40 41];   % samples around spike
+gwfparams.nWf        = 100;        % waveforms per unit
+gwfparams.spikeTimes = sp.st;      % spike times
+gwfparams.spikeClusters = sp.clu;  % cluster IDs
+
+wf = getWaveForms(gwfparams);      % wf.waveForms: [units x waveforms x channels x samples]
+
+% Plot mean waveform for unit 1, best channel
+figure;
+plot(squeeze(mean(wf.waveFormsMean(1,:,:), 2)));
+
+%% Check low amp waveforms 10 neurons per experiment
+
+PVexps = [49:54,64:97];
+idx = randi(length(PVexps), 1, 4);
+selected = PVexps(idx);
+
+
+%%
+selected =69; 
+for i = selected(1:end)
+    NP = loadNPclassFromTable(i);
+    vs = linearlyMovingBallAnalysis(NP,Session=1);
+
+    p = vs.dataObj.convertPhySorting2tIc(vs.spikeSortingFolder);
+    phy_IDg = p.phy_ID(string(p.label') == 'good');
+
+    [param, qMetric, fractionRPVs_allTauR] = bc.load.loadSavedMetrics([NP.recordingDir filesep 'qMetrics']);
+
+    [~ ,idx] = sort(qMetric.rawAmplitude(ismember(qMetric.phy_clusterID,phy_IDg)));
+    
+    %Select units with lowest amplitude
+    selecUnits = qMetric.phy_clusterID(ismember(qMetric.phy_clusterID,phy_IDg));
+    selecUnits = selecUnits(idx(1:min([10 numel(selecUnits)])));
+
+    selecUnits = 104;
+    
+    plotRawWaveforms(vs, selecUnits, showCorr=true, corrWin=50, corrBin=0.5,nChanAround=6)
+
+    qMetric.signalToNoiseRatio(qMetric.phy_clusterID == 630,:)
+     % q = qMetric(ismember(qMetric.phy_clusterID,selecUnits),:);
+end
+
+[qMetric,unitType]=NP.getBombCell(NP.recordingDir+"\kilosort4",1,KSversion,0);

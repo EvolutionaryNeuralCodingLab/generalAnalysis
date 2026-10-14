@@ -3,8 +3,8 @@ function results = BootstrapPerNeuron(obj, params)
 arguments (Input)
     obj
     params.nBoot = 10000
-    params.EmptyTrialPerc = 0.6
-    params.FilterEmptyResponses = false
+    params.EmptyTrialPerc = 0.7 %If empty trials per category are higher than EmptyTrialPerc then filter
+    params.FilterEmptyResponses = true
     params.overwrite = false
 end
 % Computes per-neuron z-scores of stimulus responses vs baseline using bootstrap
@@ -24,10 +24,61 @@ end
 p = obj.dataObj.convertPhySorting2tIc(obj.spikeSortingFolder);
 label = string(p.label');
 goodU = p.ic(:,label == 'good'); %somatic neurons
+responseParams = obj.ResponseWindow;
+
 
 
 if isempty(goodU)
     warning('%s has No somatic Neurons, skipping experiment/n',obj.dataObj.recordingName)
+    results = [];
+    fprintf('Saving results to file.\n');
+     if isequal(obj.stimName, 'linearlyMovingBall')
+        % S.(fieldName).BootResponse = respBoot;
+        % S.(fieldName).BootBaseline = baseBoot;
+        S.Speed1.BootDiff = [];
+        S.Speed1.pvalsResponse = [];
+        S.Speed1.ZScoreU = []; 
+        S.Speed1.ObsDiff = [];
+        S.Speed1.ObsReponse = [];
+        S.Speed1.ObsBaseline = [];
+
+        if isfield(responseParams, "Speed2")
+            S.Speed2.BootDiff = [];
+            S.Speed2.pvalsResponse = [];
+            S.Speed2.ZScoreU = [];
+            S.Speed2.ObsDiff = [];
+            S.Speed2.ObsReponse = [];
+            S.Speed2.ObsBaseline = [];
+        end
+    elseif isequal(obj.stimName,'StaticDriftingGrating')
+        % S.(fieldName).BootResponse = respBoot;
+        % S.(fieldName).BootBaseline = baseBoot;
+        S.Moving.BootDiff = [];
+        S.Moving.pvalsResponse = [];
+        S.Moving.ZScoreU = [];
+        S.Moving.ObsDiff = [];
+        S.Moving.ObsReponse = [];
+        S.Moving.ObsBaseline = [];
+
+        S.Static.BootDiff = [];
+        S.Static.pvalsResponse = [];
+        S.Static.ZScoreU = [];
+        S.Static.ObsDiff = [];
+        S.Static.ObsReponse = [];
+        S.Static.ObsBaseline = [];
+    else
+        % S.BootResponse = respBoot;
+        % S.BootBaseline = baseBoot;
+        S.BootDiff = [];
+        S.pvalsResponse = [];
+        S.ZScoreU = []; 
+        S.ObsDiff = [];
+        S.ObsReponse = [];
+        S.ObsBaseline = [];
+    end
+
+    S.params = params;
+    save(obj.getAnalysisFileName,'-struct', 'S');
     return
 end
 
@@ -40,7 +91,6 @@ catch
 end
 
 
-responseParams = obj.ResponseWindow;
 
 %%If it is a moving stimulus with speed cathegories
 if isfield(responseParams, "Speed1")
@@ -92,6 +142,11 @@ for s=1:x
  
     end
 
+    if isequal(obj.stimName, 'linearlyMovingBall')
+
+
+    end
+
     %Mr = BuildBurstMatrix(goodU,round(p.t),round(directimesSorted),round(stimDur+ responseParams.params.durationWindow)); %response matrix
     Mr = BuildBurstMatrix(goodU,round(p.t),round(directimesSorted),round(stimDur)); %response matrix
     Mb = BuildBurstMatrix(goodU,round(p.t),round(directimesSorted-0.75*obj.VST.interTrialDelay*1000),round(0.75*obj.VST.interTrialDelay*1000)); %baseline matrix
@@ -108,31 +163,30 @@ for s=1:x
         for i=1:trialsCat:size(Mr,1)
 
             for u = 1:size(goodU,2)
-                tempM = responses(i:i+trialsCat-1,u);
-                emptyRows = all(tempM == 0, 2);
-                perc = sum(emptyRows) / size(tempM,1);
+                emptyRows = all(responses(i:i+trialsCat-1, u) == 0, 2);
+                perc = sum(emptyRows) / trialsCat;
 
                 if perc >= params.EmptyTrialPerc
-                    responses(i:i+trialsCat-1, u) = zeros(1,trialsCat);
-                    baselines(i:i+trialsCat-1, u) = zeros(1,trialsCat);% Store z-scores for neurons with sufficient trials
+                    rowsToRemove = [rowsToRemove; (i:i+trialsCat-1)'];  % collect indices
                 end
             end
         end
     end
 
-
     Diff = responses - baselines;
 
-    bootDiff = bootstrp(params.nBoot,@mean,Diff);
+    Diff(rowsToRemove, :) = [];  % remove before permutation test
 
-    pVal = mean(bootDiff <= 0); 
-                    %Test the proportion of times the difference is greater or equal than 0
-    bootBase = bootstrp(params.nBoot,@mean,baselines);
-    stdDiff = std(bootDiff);
-    
-    stdBase = std(bootBase);
+    % Generate all sign matrices at once: [nTrials × nBoot]
+    signs = 2 * randi(2, size(Diff,1), params.nBoot) - 3;
 
-    z = mean(bootDiff,1) ./ stdDiff;
+    % Matrix multiply to get all null means at once: [nBoot × nNeurons]
+    nullDist = (signs' * Diff) / size(Diff, 1);
+
+    pVal = mean(nullDist >= ObsMeanDiff);
+
+    % True z-score: normalize by baseline variability
+    z = mean(Diff, 1) ./ std(baselines, 1);
    
 
     if isfield(responseParams, "Speed1")
@@ -178,3 +232,4 @@ results = S;
 % p_sh = mean(D_sh <= 0);
 
 end
+%% 

@@ -20,6 +20,16 @@ end
 tic
 NP = obj.dataObj;
 raw_signal = squeeze(NP.getData(opts.chan,opts.startTimes,opts.window));
+
+% NP.getData can silently return an empty or truncated array when the requested
+% window falls outside the recording (e.g. past end-of-file) — warn explicitly
+% instead of silently plotting a blank/near-blank trace.
+expectedSamples = round(opts.window/1000*NP.samplingFrequency);  % window is in ms -> samples via sampling rate
+actualSamples = max(size(raw_signal));  % samples run along the larger dimension
+if isempty(raw_signal) || actualSamples < 0.5*expectedSamples
+    warning('PlotRawDataNP:ShortOrEmptyRawData: NP.getData returned %d samples (expected ~%d) for chan=%d, startTimes=%s ms, window=%d ms. Raw-data panel may be blank or truncated.', ...
+        actualSamples, expectedSamples, opts.chan, mat2str(opts.startTimes), opts.window);
+end
 toc
 %raw_signal = squeeze(aaa(:,1,:));
 

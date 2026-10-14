@@ -80,6 +80,10 @@ classdef rectGridAnalysis < VStimAnalysis
 
             stimDur = mean(-stimOn+stimOff);
 
+            if ~isfield(obj.VST,'tilingRatios')
+                obj.VST.tilingRatios = ones(1,length(stimOn));
+            end
+
             A = [stimOn' obj.VST.pos' obj.VST.tilingRatios' obj.VST.rectLuminosity(obj.VST.luminosities)'];
 
             [C indRG]= sortrows(A,[2 3 4]);
@@ -94,10 +98,11 @@ classdef rectGridAnalysis < VStimAnalysis
             label = string(p.label');
             goodU = p.ic(:,label == 'good');
 
-            if isempty(goodU) || size(goodU,2) < 3
-                warning('%s Has less than 3 somatic Neurons, skipping experiment%n',obj.dataObj.recordingName)
+            if isempty(goodU)
+                warning('%s has No somatic Neurons, skipping experiment/n',obj.dataObj.recordingName)
                 return
             end
+
 
             %%Create window to scan rasters and get the maximum response
             duration = params.durationWindow; %window in ms, same as in MB
@@ -131,7 +136,12 @@ classdef rectGridAnalysis < VStimAnalysis
             mergeTrials = trialDivision;
 
             %Baseline = size window
-            preBase = params.preBase;
+
+            if params.preBase > window_size(2)
+                preBase = params.preBase;
+            else
+                preBase = window_size(2)+50;
+            end
 
             [Mbd] = BuildBurstMatrix(goodU,round(p.t/bin),round((directimesSorted-preBase)/bin),round(preBase/bin)); %Baseline matrix plus
             
@@ -210,11 +220,15 @@ classdef rectGridAnalysis < VStimAnalysis
 
 
                     %4% real spike rate of response posTr*trialDivision-trialDivision+1:posTr*trialDivision
-                    NeuronRespProfile(k,4) = mean(Mr(max_position_Trial(k,1)*trialDivision-trialDivision+1:max_position_Trial(k,1)*trialDivision-1,u,...
+                    NeuronRespProfile(k,4) = mean(Mr(max_position_Trial(k,1)*trialDivision-trialDivision+1:max_position_Trial(k,1)*trialDivision,u,...
                         max_position_Trial(k,2):max_position_Trial(k,2)+window_size(2)-1),'all');%max_position_Trial(k,2);
 
-                    BaseResp = mean(Mbd(max_position_TrialB(k,1)*trialDivision-trialDivision+1:max_position_TrialB(k,1)*trialDivision-1,u,...
+                    try
+                    BaseResp = mean(Mbd(max_position_TrialB(k,1)*trialDivision-trialDivision+1:max_position_TrialB(k,1)*trialDivision,u,...
                         max_position_TrialB(k,2):max_position_TrialB(k,2)+window_size(2)-1),'all');
+                    catch
+                        2+2
+                    end
 
                     %4%. Resp - Baseline
                     % NeuronRespProfile(i,4) = (max_mean_value_Trial(i) - (spkRateBM(u)+max_mean_value_Trial(i))/2)/denom(u); %Zscore

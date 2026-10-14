@@ -203,10 +203,10 @@ classdef fullFieldFlashAnalysis < VStimAnalysis
 
 
                     %4% real spike rate of response posTr*trialDivision-trialDivision+1:posTr*trialDivision
-                    NeuronRespProfile(k,4) = mean(Mr(max_position_Trial(k,1)*mergeTrials-mergeTrials+1:max_position_Trial(k,1)*mergeTrials-1,u,...
+                    NeuronRespProfile(k,4) = mean(Mr(max_position_Trial(k,1)*mergeTrials-mergeTrials+1:max_position_Trial(k,1)*mergeTrials,u,...
                         max_position_Trial(k,2):max_position_Trial(k,2)+window_size(2)-1),'all');%max_position_Trial(k,2);
 
-                    BaseResp = mean(Mbd(max_position_TrialB(k,1)*mergeTrials-mergeTrials+1:max_position_TrialB(k,1)*mergeTrials-1,u,...
+                    BaseResp = mean(Mbd(max_position_TrialB(k,1)*mergeTrials-mergeTrials+1:max_position_TrialB(k,1)*mergeTrials,u,...
                         max_position_TrialB(k,2):max_position_TrialB(k,2)+window_size(2)-1),'all');
 
                     %4%. Resp - Baseline
@@ -223,7 +223,7 @@ classdef fullFieldFlashAnalysis < VStimAnalysis
                 NeuronVals(u,:,:) = NeuronRespProfile;
             end
 
-            colNames = {'Resp','MaxWinTrial','MaxWinBin','RespSubsBaseline','Position','Size','Luminosities'};
+            colNames = {''};
 
             S.params = params;
             S.colNames = {colNames};

@@ -40,6 +40,7 @@ classdef (Abstract) VStimAnalysis < handle
             else
                 obj.dataObj=dataObj;
             end
+            
            
         end
     end
@@ -73,10 +74,13 @@ classdef (Abstract) VStimAnalysis < handle
                 out = [fullfile(parts{1:2}), filesep, 'Paper_figs'];
 
                 %disp(['Printing fig: ',obj.visualStimPlotsFolder,filesep,figName]);
-                print([out,filesep,figName],'-djpeg','-vector','-r300');
+                % '-vector' is a content-type flag only valid for vector formats (e.g. -dpdf);
+                % JPEG is raster-only, and pairing it with '-djpeg' silently broke MATLAB's
+                % automatic filename-extension logic, saving files with no extension.
+                print([out,filesep,figName],'-djpeg','-r300');
             else
                 disp(['Printing fig: ',obj.visualStimPlotsFolder,filesep,figName]);
-                print([obj.visualStimPlotsFolder,filesep,figName],'-djpeg','-vector','-r300');
+                print([obj.visualStimPlotsFolder,filesep,figName],'-djpeg','-r300');
             end
         end
 
@@ -261,6 +265,8 @@ classdef (Abstract) VStimAnalysis < handle
                 params.overwrite logical = false %if true overwrites results
                 params.analysisTime = datetime('now') %extract the time at which analysis was performed
                 params.inputParams = false %if true - prints out the iput parameters so that it is clear what can be manipulated in the method
+                params.fallbackToDigitalTriggers logical = true
+                params.mismatchThreshold = 0.1
             end
             if params.inputParams,disp(params),return,end
 
@@ -289,11 +295,11 @@ classdef (Abstract) VStimAnalysis < handle
             elseif isfield(obj.VST,'flip')
                 allFlips=obj.VST.flip';
             elseif isfield(obj.VST,'flipOnsetTimeStamp')
-                 if ~params.analyzeOnlyOnFlips
+                if ~params.analyzeOnlyOnFlips
                     allFlips=[obj.VST.flipOnsetTimeStamp;obj.VST.flipOffsetTimeStamp];
                 else
                     allFlips=[obj.VST.flipOnsetTimeStamp];
-                 end
+                end
             end
 
 
@@ -318,9 +324,38 @@ classdef (Abstract) VStimAnalysis < handle
 
             expectedFlips=numel(allFlips);
             fprintf('%d flips expected, %d found (diff=%d). Linking existing flip times with stimuli...\n',expectedFlips,measuredFlips,expectedFlips-measuredFlips);
-            if (expectedFlips-measuredFlips)>0.1*expectedFlips
-                fprintf('There are more than 10 percent mismatch in the number of diode and vStim expected flips. Cant continue!!! Please check diode extraction!\n');
-                return;
+            mismatchFrac = (expectedFlips - measuredFlips) / expectedFlips;
+            if mismatchFrac > params.mismatchThreshold
+                if params.fallbackToDigitalTriggers
+                    fprintf('Diode/vStim mismatch %.1f%% exceeds %.0f%% threshold. Re-extracting via digitalTriggerDiode...\n', ...
+                        mismatchFrac*100, params.mismatchThreshold*100);
+                    try
+                        % digitalTriggerDiode windows each trial with the TTL triggers (t{3}/t{4}) and
+                        % interpolates frame times where the photodiode failed.
+                        % overwrite=true REQUIRED: getDiodeTriggers caches per method-name only and does
+                        % not validate params.extractionMethod on reload, so without it the cached analog
+                        % result is returned. Side effect: the cache now holds the digital extraction.
+                        diode = obj.getDiodeTriggers('extractionMethod','digitalTriggerDiode','overwrite',true);
+                    catch ME
+                        fprintf('digitalTriggerDiode extraction failed (%s). Cant continue!!!\n', ME.message);
+                        return;
+                    end
+                    allDiodeFlips = sort([diode.diodeUpCross,diode.diodeDownCross]);
+                    allDiodeFlips(1+find(diff(allDiodeFlips)<obj.VST.ifi*1000*params.minDiodeInterval)) = [];
+                    measuredFlips = numel(allDiodeFlips);
+                    mismatchFrac = (expectedFlips - measuredFlips) / expectedFlips;
+                    fprintf('After digitalTriggerDiode fallback: %d expected, %d found (diff=%d, %.1f%%).\n', ...
+                        expectedFlips, measuredFlips, expectedFlips-measuredFlips, mismatchFrac*100);
+                    if mismatchFrac > params.mismatchThreshold
+                        fprintf('Mismatch still exceeds %.0f%% after digital fallback. Cant continue!!!\n', ...
+                            params.mismatchThreshold*100);
+                        return;
+                    end
+                else
+                    fprintf('There are more than %.0f%% mismatch in the number of diode and vStim expected flips. Cant continue!!! Please check diode extraction!\n', ...
+                        params.mismatchThreshold*100);
+                    return;
+                end
             end
             switch obj.trialType
                 case 'videoTrials'
@@ -329,16 +364,62 @@ classdef (Abstract) VStimAnalysis < handle
                     stimOnFlipTimes=allDiodeFlips(pTrialStarts);
                     stimOffFlipTimes=allDiodeFlips(pTrialEnds);
 
-                    if isequal(obj.stimName,'StaticDriftingGrating') %Change because static time could be equal to intertrial delat
-                      
-                        % Compute differences
-                        dv_prev = [NaN diff(allDiodeFlips)];      % difference from previous element
-                        dv_next = [diff(allDiodeFlips) NaN];      % difference from next element
-                        pTrialStarts = [1 find(abs(dv_prev) >= obj.VST.static_time*0.7*1000 & abs(dv_next) >= obj.VST.interTrialDelay*0.7*1000)];
-                        pTrialEnds = [find(abs(dv_prev) <= (1/obj.VST.fps)*10*1000 & abs(dv_next) >= obj.VST.interTrialDelay*0.7*1000) numel(allDiodeFlips)];
+                    if isequal(obj.stimName,'StaticDriftingGrating')
 
-                        stimOnFlipTimes=allDiodeFlips(pTrialStarts);
-                        stimOffFlipTimes=allDiodeFlips(pTrialEnds);
+                        % --- Compute the minimum gap expected between the last drifting
+                        %     flip of trial N and the first drifting flip of trial N+1.
+                        %     This gap spans: interTrialDelay + static_time (both in seconds
+                        %     in obj.VST, so convert to ms).  We use 70 % of the sum as a
+                        %     conservative threshold to absorb timing jitter.
+                        combinedGapMs = (obj.VST.interTrialDelay + obj.VST.static_time) * 1000;  % expected total gap [ms]
+                        gapThresh     = combinedGapMs * 0.7;                                      % 70 % detection threshold [ms]
+
+                        % --- Compute inter-flip intervals --------------------------------
+                        dv = diff(allDiodeFlips);                   % interval between consecutive diode flips [ms]
+
+                        % --- Identify large gaps that mark trial boundaries ---------------
+                        %     A gap >= gapThresh means "end of one trial's drifting phase
+                        %     → start of the next trial's drifting phase (static flip is
+                        %     missing)."
+                        largeGapIdx = find(dv >= gapThresh);        % indices into allDiodeFlips where large gaps START
+                        % There should be exactly nTotTrials-1 inter-trial gaps;
+                        % discard any trailing gaps beyond that count.
+                        if numel(largeGapIdx) > obj.VST.nTotTrials - 1
+                            largeGapIdx = largeGapIdx(1:obj.VST.nTotTrials - 1);
+                        end
+                        % --- Derive trial-end and trial-start indices ---------------------
+                        %     Trial N ends at the flip just BEFORE the large gap.
+                        %     The first drifting flip of trial N+1 is just AFTER the gap.
+                        pTrialEnds   = [largeGapIdx, numel(allDiodeFlips)];   % last flip index of each trial (last trial ends at final flip)
+                        driftStarts  = [1, largeGapIdx + 1];                   % first *drifting* flip index of each trial (trial 1 starts at flip 1)
+
+                        % --- Sanity-check: did we recover the expected number of trials? --
+                        nDetected = numel(driftStarts);
+                        if nDetected ~= obj.VST.nTotTrials
+                            warning('SDG fix: detected %d trial boundaries but expected %d. Check gap threshold (%.1f ms vs combinedGap %.1f ms).', ...
+                                nDetected, obj.VST.nTotTrials, gapThresh, combinedGapMs);
+                        end
+
+                        % --- Build stimOnFlipTimes by back-dating static_time -------------
+                        %     The diode did not fire at static onset, so we synthesise that
+                        %     time:  static_onset = first_drift_flip − static_time.
+                        %     This is the trial-start time the rest of the pipeline expects.
+                        staticDurMs     = obj.VST.static_time * 1000;                     % static-phase duration [ms]
+                        stimOnFlipTimes = allDiodeFlips(driftStarts) - staticDurMs;        % synthetic static-onset times [ms]
+
+                        % --- stimOffFlipTimes = last detected drifting flip of each trial --
+                        stimOffFlipTimes = allDiodeFlips(pTrialEnds);
+
+                        % --- Overwrite pTrialStarts so the per-trial loop below can use
+                        %     the *drifting* flip indices (the synthetic static onsets are
+                        %     NOT in allDiodeFlips, so we must NOT index into it with them).
+                        pTrialStarts = driftStarts;
+
+                        % --- Diagnostic printout -----------------------------------------
+                        fprintf(['SDG trial detection: %d trials found | gap threshold = %.1f ms\n' ...
+                            '  static_time = %.3f s | interTrialDelay = %.3f s\n'], ...
+                            nDetected, gapThresh, obj.VST.static_time, obj.VST.interTrialDelay);
+
                     end
 
                     if numel(pTrialEnds)~=obj.VST.nTotTrials || numel(pTrialStarts)~=obj.VST.nTotTrials
@@ -366,7 +447,11 @@ classdef (Abstract) VStimAnalysis < handle
                             [in,p]=ismembertol(currentPCFlipTimes-currentPCFlipTimes(1),currentDiodeFlipTimes-currentDiodeFlipTimes(1),obj.VST.ifi*1000/2,'DataScale',1);
                         elseif (frameMatch+sum(pDelayed))==0 && ~isequal(obj.stimName,'StaticDriftingGrating')%at least some of the frames were delayed in presentation and not just missed
                             %look for a delay in diode flips which may explain a consistent delay
-                            tmpDiode=currentDiodeFlipTimes+cumsum([zeros(1,-frameMatch) pDelayed])*(-obj.VST.ifi*1000);
+                            % tmpDiode=currentDiodeFlipTimes+cumsum([zeros(1,-frameMatch) pDelayed])*(-obj.VST.ifi*1000);
+                            % [in,p]=ismembertol(currentPCFlipTimes-currentPCFlipTimes(1),tmpDiode-tmpDiode(1),obj.VST.ifi*1000/2,'DataScale',1);
+                            compensation = [zeros(1,-frameMatch) cumsum(pDelayed)];
+                            compensation = compensation(1:numel(currentDiodeFlipTimes)); % length is n+sum(pDelayed)-1; truncate to n
+                            tmpDiode = currentDiodeFlipTimes + compensation*(-obj.VST.ifi*1000);
                             [in,p]=ismembertol(currentPCFlipTimes-currentPCFlipTimes(1),tmpDiode-tmpDiode(1),obj.VST.ifi*1000/2,'DataScale',1);
                         elseif frameMatch<0 && (numel(currentPCFlipTimes)-numel(currentDiodeFlipTimes))>=0 %identifies irregularities in timing
                             in=ones(1,numel(currentDiodeFlipTimes));
@@ -389,6 +474,29 @@ classdef (Abstract) VStimAnalysis < handle
                     save(obj.getAnalysisFileName,'params','diodeFrameFlipTimes','stimOnFlipTimes','stimOffFlipTimes');
                     results = load(obj.getAnalysisFileName);
                 case 'imageTrials'
+                    % Image-trial sync needs an exact match between expected flips and detected
+                    % crossings (it pairs them off 1-on/1-off). A small over- or under-count from
+                    % the analog photodiode is fatal here, so fall back to digitalTriggerDiode,
+                    % which forces exactly one on + one off crossing per trial.
+                    if expectedFlips ~= measuredFlips && params.fallbackToDigitalTriggers
+                        fprintf('Image-trial trigger mismatch (%d expected vs %d found). Re-extracting via digitalTriggerDiode...\n', ...
+                            expectedFlips, measuredFlips);
+                        try
+                            % Two-step per the framework convention: an overwrite=true call recomputes and
+                            % saves but returns NO output; a second call (no overwrite) loads the result.
+                            obj.getDiodeTriggers('extractionMethod','digitalTriggerDiode','overwrite',true);  % recompute + overwrite cache
+                            diode = obj.getDiodeTriggers('extractionMethod','digitalTriggerDiode');           % load the cached digital result
+                        catch ME
+                            fprintf('digitalTriggerDiode extraction failed (%s). Cant continue!!!\n', ME.message);
+                            return;
+                        end
+                        allDiodeFlips = sort([diode.diodeUpCross,diode.diodeDownCross]);
+                        allDiodeFlips(1+find(diff(allDiodeFlips)<obj.VST.ifi*1000*params.minDiodeInterval)) = [];
+                        measuredFlips = numel(allDiodeFlips);
+                        fprintf('After digitalTriggerDiode fallback: %d expected, %d found (diff=%d).\n', ...
+                            expectedFlips, measuredFlips, expectedFlips-measuredFlips);
+                    end
+
                     if expectedFlips==measuredFlips
                         if params.analyzeOnlyOnFlips
                             stimOnFlipTimes=allDiodeFlips;
@@ -398,15 +506,15 @@ classdef (Abstract) VStimAnalysis < handle
                             stimOffFlipTimes=allDiodeFlips(2:2:end);
                         end
                     else
-                        error('This case of unequal triggers for image type trials was not addressed in the code!');
-                        return;
+                        error('Unequal triggers for image-type trials, unresolved even after digital fallback (%d expected vs %d found).', ...
+                            expectedFlips, measuredFlips);
                     end
-
                     fprintf('Saving results to file.\n');
                     save(obj.getAnalysisFileName,'params','stimOnFlipTimes','stimOffFlipTimes');
                     results=load(obj.getAnalysisFileName);
-            end
-        end
+            end %end to switch case
+
+        end %end to getSyncedTriggers function
 
         function copyFilesFromRecordingFolder(obj)
             %searches visual stimulation files and copies them to a dedicated visual stimulation folder
@@ -419,7 +527,7 @@ classdef (Abstract) VStimAnalysis < handle
                 if ~isempty(matFiles)
                     for i=1:numel(matFiles)
                         tmpVars=whos('-file',[tmpFolder filesep matFiles(i).name]);
-                        if strcmp(tmpVars.name,'VSMetaData')
+                        if any(strcmp({tmpVars.name}, 'VSMetaData'))
                             copyfile([tmpFolder filesep matFiles(i).name], obj.visualStimFolder);
                             fprintf('%s was copied to the visual stimulation folder: %s\n',matFiles(i).name,obj.visualStimFolder);
                             filesFound=true;
@@ -841,6 +949,8 @@ classdef (Abstract) VStimAnalysis < handle
 
                 end
             end
+
+           
             results.diodeUpCross = diodeUpCross;
             results.diodeDownCross = diodeDownCross;
 
